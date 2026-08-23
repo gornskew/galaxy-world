@@ -6,6 +6,13 @@
 (defun point-string (point)
   (format nil "~,1f ~,1f ~,1f" (get-x point) (get-y point) (get-z point)))
 
+(defun viewpoint-x3d (id description position direction field-of-view)
+  "One x3d Viewpoint as markup. x3dom binds the first Viewpoint in
+document order at load, so callers control binding by emission order."
+  (format nil "<Viewpoint id=\"~a\" description=\"~a\" position=\"~a\" orientation=\"~a\" fieldOfView=\"~a\" zNear=\"50\" zFar=\"2500000\"></Viewpoint>"
+          id description (point-string position)
+          (look-orientation direction) field-of-view))
+
 (defun look-orientation (direction)
   "x3d axis-angle string rotating the default gaze (0 0 -1) onto DIRECTION."
   (let* ((d (unitize-vector direction))
@@ -18,10 +25,10 @@
                (format nil "~,5f ~,5f ~,5f ~,5f"
                        (get-x axis) (get-y axis) (get-z axis) angle))))))
 
-;; The view from the bridge: the ship rides above the home planet and
-;; you look out the two side eyes. Each eye is a camera; the toggle
-;; binds one or the other. No ajax, no session machinery -- the page
-;; is view-only by construction.
+;; The view from the bridge: the ship rides her own ring above the
+;; home planet, you look out the two side eyes, and the chart table
+;; plots a course. Course choice travels by classic form post -- the
+;; whole page re-renders, which also gives x3dom a clean re-init.
 (define-object bridge-view (base-html-page)
 
   :input-slots
@@ -30,18 +37,38 @@
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
 
-   ;; Where the ship rides for first light, km, planet at origin.
-   (ship-station (make-point 20000 0 5500))
+   ;; The ship's ring: circular parking orbit, km / degrees. The
+   ;; transfer departs this ring, in this plane.
+   (ship-orbit-radius 20742)
+   (ship-orbit-inclination 15)
+   (ship-orbit-raan 0)
+   ;; where along the ring the ship rides just now
+   (ship-true-anomaly 15)
+
    ;; How far outboard each eye sits from the centerline, km. At
    ;; orbital scale the offset is symbolic, but the eyes are two.
    (eye-offset 40)
    ;; How far outboard of dead-ahead each eye gazes: 0 stares at the
    ;; bow, 1 stares abeam.
    (eye-splay 0.45)
-   (eye-field-of-view "1.0"))
+   (eye-field-of-view "1.0")
+
+   (destination-default :none))
 
   :computed-slots
-  ((bow-direction (unitize-vector
+  ((ship-station
+    (multiple-value-bind (r v)
+        (bsk-astro:elem2rv bsk-astro:+mu-earth+
+                           :a (coerce (the ship-orbit-radius) 'double-float)
+                           :e 0.0005d0
+                           :i (deg->rad (the ship-orbit-inclination))
+                           :big-omega (deg->rad (the ship-orbit-raan))
+                           :little-omega 0d0
+                           :f (deg->rad (the ship-true-anomaly)))
+      (declare (ignore v))
+      (make-point (first r) (second r) (third r))))
+
+   (bow-direction (unitize-vector
                    (subtract-vectors (make-point 0 0 0) (the ship-station))))
 
    (port-eye-position (add-vectors (the ship-station)
@@ -57,11 +84,70 @@
                              (add-vectors (the bow-direction)
                                           (make-vector 0 (- (the eye-splay)) 0))))
 
+   (destination (the destination-choice value))
+   (course-plotted? (and (the destination)
+                         (not (eql (the destination) :none))
+                         (destination-entry (the destination))))
+
+   ;; The chart view: pulled up out of the ring plane, framing
+   ;; whatever is plotted (or the geostationary ring by default).
+   ;; Bound automatically when a course is on the table.
+   (chart-extent (if (the course-plotted?)
+                     (max (the ship-orbit-radius)
+                          (destination-radius (the destination)))
+                     42164))
+   (chart-eye-position (make-point (* 1.15 (the chart-extent))
+                                   (* -1.15 (the chart-extent))
+                                   (* 0.85 (the chart-extent))))
+   (chart-eye-direction (unitize-vector
+                         (subtract-vectors (make-point 0 0 0)
+                                           (the chart-eye-position))))
+
+   ;; The first viewpoint in document order is bound at load: the
+   ;; chart view when a course is on the table, the port eye
+   ;; otherwise.
+   (viewpoints-x3d
+    (let ((port (viewpoint-x3d "port-eye" "Port eye"
+                               (the port-eye-position)
+                               (the port-eye-direction)
+                               (the eye-field-of-view)))
+          (starboard (viewpoint-x3d "starboard-eye" "Starboard eye"
+                                    (the starboard-eye-position)
+                                    (the starboard-eye-direction)
+                                    (the eye-field-of-view)))
+          (chart-eye (viewpoint-x3d "chart-eye" "Chart view"
+                                    (the chart-eye-position)
+                                    (the chart-eye-direction)
+                                    (the eye-field-of-view))))
+      (if (the course-plotted?)
+          (string-append chart-eye port starboard)
+          (string-append port starboard chart-eye))))
+
    (chart-x3d (with-output-to-string (s)
                 (with-format (geom-base::x3d s)
                   (write-the chart (geom-base::cad-output-tree)))))
 
-   (sky-x3d (starfield-x3d))
+   ;; Only the transfer arc itself (with its rider marker) joins the
+   ;; scene -- the departure and arrival rings are already on the
+   ;; chart.
+   (course-x3d (if (the course-plotted?)
+                   (with-output-to-string (s)
+                     (with-format (geom-base::x3d s)
+                       (write-the transfer transfer-orbit
+                                  (geom-base::cad-output-tree))))
+                   ""))
+
+   (sky-x3d (starfield-x3d :radius 900000.0d0))
+
+   ;; with-html-form writes to gwl's *stream*, which with-lhtml-string
+   ;; does not bind -- so the form renders into its own string here.
+   (chart-form-html
+    (with-output-to-string (form-stream)
+      (let ((gwl::*stream* form-stream))
+        (gwl:with-html-form (:cl-who? t :suppress-border? t)
+          (str (the destination-choice html-string))
+          (htm (:input :type "submit" :value "plot course"
+                :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;"))))))
 
    (body
     (with-lhtml-string ()
@@ -70,26 +156,32 @@
           :style "width:100%;height:100%;display:block;"
           (:|Scene|
             (:|Background| :|skyColor| "0 0 0.012")
-            (:|Viewpoint| :|id| "port-eye"
-              :|description| "Port eye"
-              :|position| (point-string (the port-eye-position))
-              :|orientation| (look-orientation (the port-eye-direction))
-              :|fieldOfView| (the eye-field-of-view)
-              :|zNear| "50" :|zFar| "800000"
-              :|set_bind| "true")
-            (:|Viewpoint| :|id| "starboard-eye"
-              :|description| "Starboard eye"
-              :|position| (point-string (the starboard-eye-position))
-              :|orientation| (look-orientation (the starboard-eye-direction))
-              :|fieldOfView| (the eye-field-of-view)
-              :|zNear| "50" :|zFar| "800000")
+            (str (the viewpoints-x3d))
             (str (the sky-x3d))
-            (str (the chart-x3d)))))
+            (str (the chart-x3d))
+            (str (the course-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "port-eye-btn" :type "button" :onclick "bindEye('port-eye')"
           :style (the eye-button-style) "◐ port eye")
         (:button :id "starboard-eye-btn" :type "button" :onclick "bindEye('starboard-eye')"
-          :style (the eye-button-style) "starboard eye ◑"))
+          :style (the eye-button-style) "starboard eye ◑")
+        (:button :id "chart-eye-btn" :type "button" :onclick "bindEye('chart-eye')"
+          :style (the eye-button-style) "⊙ chart view"))
+      ;; the chart table
+      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.88);border:1px solid #e8c839;border-radius:10px;padding:12px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:230px;"
+        (:div :style "font-size:14px;margin-bottom:8px;letter-spacing:0.06em;" "CHART TABLE")
+        (str (the chart-form-html))
+        (when (the course-plotted?)
+          (htm
+           (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+             (:div (fmt "course: ~a" (destination-label (the destination))))
+             (:div (fmt "burn one: ~,3f km/s" (the transfer first-burn-delta-v)))
+             (:div (fmt "burn two: ~,3f km/s" (the transfer second-burn-delta-v)))
+             (:div (fmt "delta-v total: ~,3f km/s" (the transfer total-delta-v)))
+             (:div (fmt "time of flight: ~,1f hours~@[ (~,1f days)~]"
+                        (the transfer transfer-time-hours)
+                        (let ((hours (the transfer transfer-time-hours)))
+                          (when (> hours 48) (/ hours 24.0)))))))))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the view from the bridge (first light)")
       (:script (str "
@@ -101,4 +193,35 @@ function bindEye (id) {
     "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;"))
 
   :objects
-  ((chart :type 'chartroom:assembly)))
+  ((chart :type 'chartroom:assembly
+          :orbit-specs
+          (append
+           (list (list :name "ship-ring"
+                       :semi-major-axis (the ship-orbit-radius)
+                       :eccentricity 0.0005
+                       :inclination (the ship-orbit-inclination)
+                       :raan (the ship-orbit-raan)
+                       :true-anomaly (the ship-true-anomaly)
+                       :display-color :green))
+           ;; destination rings ride the chart too, all with their
+           ;; nodes on the x-axis so a plotted arc meets its ring
+           ;; exactly at arrival
+           (list (list :name "geo-ring" :semi-major-axis 42164
+                       :eccentricity 0 :inclination 0
+                       :display-color :cyan)
+                 (list :name "moon-road" :semi-major-axis 384400
+                       :eccentricity 0 :inclination 20
+                       :display-color :grey))))
+
+   (destination-choice :type 'gwl:menu-form-control
+                       :prompt "destination: "
+                       :default (the destination-default)
+                       :choice-plist (destination-choice-plist))
+
+   (transfer :type 'chartroom:hohmann-transfer
+             :initial-radius (the ship-orbit-radius)
+             :final-radius (if (the course-plotted?)
+                               (destination-radius (the destination))
+                               42164)
+             :inclination (the ship-orbit-inclination)
+             :raan (the ship-orbit-raan))))

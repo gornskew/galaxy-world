@@ -15,6 +15,7 @@ worked by the ship's own chartroom."
   :components
   ((:file "source/package")
    (:file "source/sky")
+   (:file "source/catalog")
    (:file "source/assembly")
    (:file "source/bridge-view")
    (:file "source/publish")))
