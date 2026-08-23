@@ -40,6 +40,13 @@ document order at load, so callers control binding by emission order."
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
 
+   ;; The bridge flies its own colors: a yellow eye, inlined as a
+   ;; data: URI so the icon needs no route and no static asset.
+   ;; Palette matches the page -- iris #e8c839, rim #7a6a1f, sky
+   ;; #000003 (the scene's skyColor).
+   (favicon-type "image/svg+xml")
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
+
    ;; The ship's ring: circular parking orbit, km / degrees. The
    ;; transfer departs this ring, in this plane.
    (ship-orbit-radius 20742)
