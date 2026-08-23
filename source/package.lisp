@@ -4,4 +4,5 @@
 (in-package :gdl-user)
 
 (gwl:define-package :galaxy-world
-  (:export #:assembly))
+  (:export #:assembly
+           #:bridge-view))

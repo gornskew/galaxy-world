@@ -10,7 +10,7 @@ Basilisk is the first seed prototype ship class; the yard
 halls and its scroll chest contains the needed details. This scroll
 chest sets up the galaxy they float in.
 
-A Basilisk is a great yellow-eyed dirigible of a creature — a ship
+A Basilisk is a great yellow-eyed dirigible-shaped vessel — a ship
 that is grown, crewed, and sailed; the yard's own scrolls tell that
 story.
 
@@ -48,13 +48,6 @@ Your ship never needs anyone's servers to sail. The pieces ashore
 are conveniences, not authorities: the game works when the lens is
 dark.
 
-## View and plot only
-
-The public face exposes no eval surface, ever. Only fixed, published
-pages; what you type is read as numbers and catalog choices, never
-as code; the ship's own working surfaces stay in-network. Course
-reckoning runs on the ship's in-image instruments, with the
-Navigator's full engine kept out of anonymous visitors' reach.
 
 ## Getting a ship
 

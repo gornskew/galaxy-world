@@ -14,4 +14,7 @@ worked by the ship's own chartroom."
   :depends-on (:chartroom)
   :components
   ((:file "source/package")
-   (:file "source/assembly")))
+   (:file "source/sky")
+   (:file "source/assembly")
+   (:file "source/bridge-view")
+   (:file "source/publish")))
