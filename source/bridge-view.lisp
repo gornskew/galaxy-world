@@ -29,7 +29,10 @@ document order at load, so callers control binding by emission order."
 ;; home planet, you look out the two side eyes, and the chart table
 ;; plots a course. Course choice travels by classic form post -- the
 ;; whole page re-renders, which also gives x3dom a clean re-init.
-(define-object bridge-view (base-html-page)
+;; session-control-mixin keeps public sessions mortal (the reaper
+;; collects expired ones -- the berth must run
+;; gwl:start-session-reaper).
+(define-object bridge-view (session-control-mixin base-html-page)
 
   :input-slots
   ((title "Galaxy World")
