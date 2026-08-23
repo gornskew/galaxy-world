@@ -3,9 +3,9 @@
 
 (in-package :galaxy-world)
 
-;; GW-0 keel: the chart the bridge view will render. GW-1a hangs the
-;; eyes (two x3dom viewpoints) and the starfield on this; GW-1b adds
-;; the plotted course. See PLAN.md.
+;; The keel: the chart the bridge view will render. The eyes (two
+;; viewpoints), the starfield, and the plotted course land on this
+;; next.
 (define-object assembly (base-object)
   :objects
   ((chart :type 'chartroom:assembly)))

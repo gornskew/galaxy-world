@@ -1,12 +1,18 @@
 # Galaxy World
 
-The world the Basilisk-class vessels sail in.
+This is a game where you get a ship and fly it around in a galaxy.
+
+The game is currently single-player but envisions a multi-player
+future. So for now you can just explore around the (synthetic) galaxy,
+or compete in various challenges that may or may not appear. The
+Basilisk is the first seed prototype ship class; the yard
+(`gitlab.genworks.com/gornskew/basilisk`) builds ships in its vat
+halls and its scroll chest contains the needed details. This scroll
+chest sets up the galaxy they float in.
 
 A Basilisk is a great yellow-eyed dirigible of a creature — a ship
 that is grown, crewed, and sailed; the yard's own scrolls tell that
-story. Galaxy World is the space those ships share: the galaxies they
-form, the challenges the eras bring them, and the glass their keepers
-watch them through.
+story.
 
 ## First light (under construction)
 
@@ -16,14 +22,39 @@ chart table for plotting a course to a star or planet, worked by the
 ship's own chartroom and rendered so you can see the road you would
 sail. View and plot; the helm answers to no one ashore.
 
-## The shape of the world
+## Some Foundations
 
-- **Ships are sovereign.** Everything about a ship lives aboard her.
-  Nothing about your vessel is kept ashore.
-- **Galaxies are company, not government.** Ships find one another by
-  beacon and speak ship-to-ship in hails — words, never workings.
-- **Eras arrive from outside.** Challenges come sealed on the solar
-  wind, and every ship weathers them under the same sky.
+1. **Ships are authoritative over themselves.** A ship's state
+   (herds, courses, logs, era outcomes) lives aboard. There is no
+   central game-state database.
+2. **Ship-to-ship is a narrow hail protocol.** Signed structured
+   messages (identify, view-summary, challenge-attest), terminated at
+   the ship's transporter room. Words, never workings — and words on
+   paper only, until a galaxy holds more than one ship.
+3. **A few things live ashore, and your ship depends on none of
+   them:**
+   - **The lens** — galaxyworld.space, the game's window on the
+     web. For visitors with no ship of their own, it looks out from
+     a reference ship.
+   - **The beacon** — a signpost for ships that want to be found:
+     name, public key, where to hail. A galaxy is a roster of ships
+     that have exchanged keys, not an account on a server — anyone
+     can keep a beacon.
+   - **Eras** — challenges arrive as sealed, signed scrolls any ship
+     can verify. Every ship weathers an era aboard, under the same
+     sky, and what she attests about the outcome is hers to sign.
+
+Your ship never needs anyone's servers to sail. The pieces ashore
+are conveniences, not authorities: the game works when the lens is
+dark.
+
+## View and plot only
+
+The public face exposes no eval surface, ever. Only fixed, published
+pages; what you type is read as numbers and catalog choices, never
+as code; the ship's own working surfaces stay in-network. Course
+reckoning runs on the ship's in-image instruments, with the
+Navigator's full engine kept out of anonymous visitors' reach.
 
 ## Getting a ship
 
