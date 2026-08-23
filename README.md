@@ -25,7 +25,7 @@ sail. View and plot; the helm answers to no one ashore.
 ## Some Foundations
 
 1. **Ships are authoritative over themselves.** A ship's state
-   (herds, courses, logs, era outcomes) lives aboard. There is no
+   (courses, logs, era outcomes) lives aboard. There is no
    central game-state database.
 2. **Ship-to-ship is a narrow hail protocol.** Signed structured
    messages (identify, view-summary, challenge-attest), terminated at
