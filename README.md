@@ -6,9 +6,9 @@ The game is currently single-player but envisions a multi-player
 future. So for now you can just explore around the (synthetic) galaxy,
 or compete in various challenges that may or may not appear. The
 Basilisk is the first seed prototype ship class; the yard
-(`gitlab.genworks.com/gornskew/basilisk`) builds ships in its vat
-halls and its scroll chest contains the needed details. This scroll
-chest sets up the galaxy they float in.
+([github.com/gornskew/basilisk](https://github.com/gornskew/basilisk))
+builds ships in its vat halls and its scroll chest contains the
+needed details. This scroll chest sets up the galaxy they float in.
 
 A Basilisk is a great yellow-eyed dirigible-shaped vessel — a ship
 that is grown, crewed, and sailed; the yard's own scrolls tell that
@@ -42,7 +42,7 @@ sail. View and plot; the helm answers to no one ashore.
      can keep a beacon.
    - **Eras** — challenges arrive as sealed, signed scrolls any ship
      can verify. Every ship weathers an era aboard, under the same
-     sky, and what she attests about the outcome is hers to sign.
+     sky, and what he attests about the outcome is his to sign.
 
 Your ship never needs anyone's servers to sail. The pieces ashore
 are conveniences, not authorities: the game works when the lens is
@@ -51,8 +51,9 @@ dark.
 
 ## Getting a ship
 
-The yard is at `gitlab.genworks.com/gornskew/basilisk`. A ship of
-your own is a clone and a raising: `./basilisk up`.
+The yard is at
+[github.com/gornskew/basilisk](https://github.com/gornskew/basilisk).
+A ship of your own is a clone and a raising: `./basilisk up`.
 
 ## License
 
