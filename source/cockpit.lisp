@@ -498,6 +498,24 @@
                :height 0.03
                :display-controls (list :color +paint+))))
 
+;; The port eye's feed: a live scene-to-texture render on the port
+;; flatscreen.  The camera rides outside the cab to port, looking
+;; along the ship's own flank -- so the screen shows you your own
+;; hull against the stars, the way a hull eye would.  The quad sits
+;; just proud of the dark glass; solid=false spares us the winding
+;; argument.
+(defun port-eye-feed-x3d ()
+  (concatenate 'string
+   "<Shape><Appearance>"
+   "<RenderedTexture update=\"always\" dimensions=\"512 512 4\">"
+   "<Viewpoint position=\"-2.0 2.0 0.9\" orientation=\"0.24354 -0.62610 -0.74074 2.58052\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint>"
+   "</RenderedTexture>"
+   "</Appearance>"
+   "<IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\">"
+   "<Coordinate point=\"0.7135 0.46 0.345, 0.7135 0.22 0.345, 0.7135 0.22 0.495, 0.7135 0.46 0.495\"></Coordinate>"
+   "<TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate>"
+   "</IndexedFaceSet></Shape>"))
+
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
 (defvar *cockpit-x3d-cache* nil)
@@ -564,7 +582,8 @@
             (:|Background| :|skyColor| "0 0 0.012")
             (str (the viewpoints-x3d))
             (str (starfield-x3d :radius 5000.0d0))
-            (str (cockpit-x3d)))))
+            (str (cockpit-x3d))
+            (str (port-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "drivers-seat-btn" :type "button" :onclick "bindEye('drivers-seat')"
           :style (the eye-button-style) "driver's seat")
