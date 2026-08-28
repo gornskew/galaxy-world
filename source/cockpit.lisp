@@ -133,11 +133,9 @@
                 :radius 0.075
                 :number-of-sections 24
                 :display-controls (list :color +gauge-face+))
-   (speedo-needle :type 'c-cylinder
-                  :start (make-point 0.714 0 0.462)
-                  :end (make-point 0.714 -0.035 0.515)
-                  :radius 0.003
-                  :display-controls (list :color +needle+))
+   ;; the speedo and compass needles are NOT here: they read the
+   ;; session's own state, so they render per cockpit, not in the
+   ;; shared cab
 
    (port-gauge-bezel :type 'c-cylinder
                      :start (make-point 0.722 0.19 0.45)
@@ -151,11 +149,6 @@
                     :radius 0.047
                     :number-of-sections 24
                     :display-controls (list :color +gauge-face+))
-   (port-gauge-needle :type 'c-cylinder
-                      :start (make-point 0.715 0.19 0.452)
-                      :end (make-point 0.715 0.162 0.486)
-                      :radius 0.0025
-                      :display-controls (list :color +needle+))
 
    (starboard-gauge-bezel :type 'c-cylinder
                           :start (make-point 0.722 -0.19 0.45)
@@ -498,6 +491,21 @@
                :height 0.03
                :display-controls (list :color +paint+))))
 
+;; A gauge needle, cut per render: hub on the panel face, tip swung
+;; PHI degrees clockwise from straight up as the driver sees it.
+(defun gauge-needle-x3d (hub-y hub-z phi-deg len)
+  (let* ((phi (deg->rad phi-deg))
+         (needle (make-object 'c-cylinder
+                              :start (make-point 0.7135 hub-y hub-z)
+                              :end (make-point 0.7135
+                                               (- hub-y (* len (sin phi)))
+                                               (+ hub-z (* len (cos phi))))
+                              :radius 0.003
+                              :display-controls (list :color +needle+))))
+    (with-output-to-string (s)
+      (with-format (geom-base::x3d s)
+        (write-the-object needle (geom-base::cad-output))))))
+
 ;; The port eye's feed: a live scene-to-texture render on the port
 ;; flatscreen.  The camera rides outside the cab to port, looking
 ;; along the ship's own flank -- so the screen shows you your own
@@ -545,7 +553,34 @@
    (bound-eye :drivers-seat))
 
   :computed-slots
-  ((viewpoints-x3d
+  (;; The ship's state, held per session: where the nose points,
+   ;; how fast and which way she drifts.  Space Travel's plane, one
+   ;; move per form post.
+   (heading-deg 0 :settable)
+   (vel-x 0 :settable)
+   (vel-y 0 :settable)
+   (pos-x 0 :settable)
+   (pos-y 0 :settable)
+   (moves-count 0 :settable)
+   (last-move-note "cast off and coasting -- the dice hang plumb" :settable)
+
+   (speed (sqrt (+ (* (the vel-x) (the vel-x))
+                   (* (the vel-y) (the vel-y)))))
+   (drift (sqrt (+ (* (the pos-x) (the pos-x))
+                   (* (the pos-y) (the pos-y)))))
+   ;; the speedo sweeps 8 o'clock to 4 o'clock, full scale 8 km/s
+   (speedo-phi (+ -120 (* 240 (min 1 (/ (the speed) 8.0)))))
+
+   (helm-form-html
+    (with-form-string ()
+      (:div :style "display:flex;flex-direction:column;gap:4px;"
+        (:div (str (the wheel-control html-string)))
+        (:div (str (the gear-control html-string)))
+        (:div (str (the pedal-control html-string))))
+      (:input :type "submit" :value "make the move"
+       :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;")))
+
+   (viewpoints-x3d
     (let* ((up (make-vector 0 0 1))
            (eyes
             (list
@@ -581,8 +616,14 @@
           (:|Scene|
             (:|Background| :|skyColor| "0 0 0.012")
             (str (the viewpoints-x3d))
-            (str (starfield-x3d :radius 5000.0d0))
+            ;; the universe turns around the ship, never the ship
+            ;; around the universe
+            (:|Transform| :rotation (format nil "0 0 1 ~,5f"
+                                            (- (deg->rad (the heading-deg))))
+              (str (starfield-x3d :radius 5000.0d0)))
             (str (cockpit-x3d))
+            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
             (str (port-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "drivers-seat-btn" :type "button" :onclick "bindEye('drivers-seat')"
@@ -596,6 +637,17 @@
         (:a :href "/" :style (string-append (the eye-button-style)
                                             "text-decoration:none;display:inline-block;")
           "⊙ to the bridge"))
+      ;; the helm card: the controls, and what the ship is doing
+      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.88);border:1px solid #e8c839;border-radius:10px;padding:12px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;"
+        (:div :style "font-size:14px;margin-bottom:8px;letter-spacing:0.06em;" "THE HELM")
+        (str (the helm-form-html))
+        (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+          (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
+          (:div (fmt "speed: ~,2f km/s" (the speed)))
+          (:div (fmt "adrift: ~,0f km off the mark" (the drift)))
+          (:div (fmt "moves made: ~d" (the moves-count)))
+          (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
+            (str (the last-move-note)))))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit (first fitting-out)")
       (:script (str "
@@ -604,4 +656,63 @@ function bindEye (id) {
 }"))))
 
    (eye-button-style
-    "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;")))
+    "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;"))
+
+  :objects
+  ((wheel-control :type 'gwl:menu-form-control
+                  :prompt "wheel: "
+                  :default :amidships
+                  :choice-plist (list :hard-port "hard over, to port"
+                                      :easy-port "easy, to port"
+                                      :amidships "amidships"
+                                      :easy-starboard "easy, to starboard"
+                                      :hard-starboard "hard over, to starboard"))
+
+   (gear-control :type 'gwl:menu-form-control
+                 :prompt "gear: "
+                 :default :first
+                 :choice-plist (list :first "first — close work"
+                                     :second "second — approach"
+                                     :third "third — cruise"
+                                     :reverse "reverse — nose-about"))
+
+   (pedal-control :type 'gwl:menu-form-control
+                  :prompt "pedal: "
+                  :default :coast
+                  :choice-plist (list :coast "clutch in — coast"
+                                      :gas "gas — burn"
+                                      :brake "brake")))
+
+  :functions
+  (;; One move of the game, folded into the ship's state when the
+   ;; helm form posts.  Turn the wheel, then burn (or don't), then
+   ;; drift as far as the gear carries you.  The brake is heard and
+   ;; changes nothing.
+   (after-set!
+    ()
+    (let* ((turn (ecase (the wheel-control value)
+                   (:hard-port 30) (:easy-port 10) (:amidships 0)
+                   (:easy-starboard -10) (:hard-starboard -30)))
+           (gear (the gear-control value))
+           (pedal (the pedal-control value))
+           (heading (mod (+ (the heading-deg) turn) 360))
+           (rad (deg->rad heading))
+           (flip (if (eql gear :reverse) -1 1))
+           (dv (if (eql pedal :gas) 0.5 0))
+           (vx (+ (the vel-x) (* dv flip (cos rad))))
+           (vy (+ (the vel-y) (* dv flip (sin rad))))
+           (dt (ecase gear (:first 1) (:second 4) (:third 16) (:reverse 1)))
+           (note (cond ((eql pedal :brake)
+                        "the brake presses beautifully and does nothing — space doesn't brake")
+                       ((and (eql pedal :gas) (eql gear :reverse))
+                        "retro burn — half a klick against the nose")
+                       ((eql pedal :gas)
+                        "burn — half a klick along the nose; turning never did change your speed")
+                       (t "clutch in, coasting — speed holds; nothing out here slows you"))))
+      (the (set-slot! :heading-deg heading))
+      (the (set-slot! :vel-x vx))
+      (the (set-slot! :vel-y vy))
+      (the (set-slot! :pos-x (+ (the pos-x) (* vx dt))))
+      (the (set-slot! :pos-y (+ (the pos-y) (* vy dt))))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :last-move-note note))))))
