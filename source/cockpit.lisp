@@ -215,36 +215,8 @@
                  :height 0.08
                  :display-controls (list :color +gauge-face+))
 
-   ;; the cosmic dice, hanging from the mirror on their cords.  They
-   ;; are the ship's free inertial indicator: under thrust they lean
-   ;; away from it, and right now they hang perfectly still, plumb to
-   ;; the cab -- which is the dice telling you the ship is coasting.
-   (dice-cords :type 'c-cylinder
-               :sequence (:size 2)
-               :start (make-point 0.77
-                                  (ecase (the-child index) (0 -0.325) (1 -0.395))
-                                  0.91)
-               :end (make-point 0.77
-                                (ecase (the-child index) (0 -0.325) (1 -0.395))
-                                0.85)
-               :radius 0.0018
-               :display-controls (list :color +chrome+))
-
-   (cosmic-dice :type 'box
-                :sequence (:size 2)
-                :center (make-point 0.77
-                                    (ecase (the-child index) (0 -0.325) (1 -0.395))
-                                    0.827)
-                :orientation (ecase (the-child index)
-                               (0 nil)
-                               (1 (alignment :rear (rotate-vector-d
-                                                    (make-vector 0 1 0)
-                                                    35
-                                                    (make-vector 0 0 1)))))
-                :width 0.045
-                :length 0.045
-                :height 0.045
-                :display-controls (list :color "#b04040"))
+   ;; the cosmic dice are NOT here: they answer the last burn, so
+   ;; like the needles they render per cockpit, not in the shared cab
 
    ;; the HELM: big thin-rim wheel on a raked column
    (wheel-rim :type 'torus
@@ -511,6 +483,36 @@
             (* scene-d (sin bearing-rad))
             scene-r)))
 
+;; The cosmic dice, hanging from the mirror on their cords -- the
+;; ship's free inertial indicator.  Under thrust they lean away from
+;; it: aft on a burn, forward on a retro burn, plumb on a coast.
+(defun dice-x3d (lean-deg)
+  (let* ((lam (deg->rad lean-deg))
+         (dir (make-vector (- (sin lam)) 0 (- (cos lam))))
+         (up (make-vector (sin lam) 0 (cos lam))))
+    (with-output-to-string (s)
+      (with-format (geom-base::x3d s)
+        (dolist (y '(-0.325 -0.395))
+          (let* ((pivot (make-point 0.77 y 0.91))
+                 (cord (make-object 'c-cylinder
+                                    :start pivot
+                                    :end (add-vectors pivot (scalar*vector 0.06 dir))
+                                    :radius 0.0018
+                                    :display-controls (list :color +chrome+)))
+                 (die (make-object 'box
+                                   :center (add-vectors pivot (scalar*vector 0.083 dir))
+                                   :orientation
+                                   (if (= y -0.395)
+                                       (alignment :top up
+                                                  :rear (rotate-vector-d
+                                                         (make-vector 0 1 0) 35
+                                                         (make-vector 0 0 1)))
+                                       (alignment :top up))
+                                   :width 0.045 :length 0.045 :height 0.045
+                                   :display-controls (list :color "#b04040"))))
+            (write-the-object cord (cad-output))
+            (write-the-object die (cad-output))))))))
+
 ;; A gauge needle, cut per render: hub on the panel face, tip swung
 ;; PHI degrees clockwise from straight up as the driver sees it.
 (defun gauge-needle-x3d (hub-y hub-z phi-deg len)
@@ -532,17 +534,16 @@
 ;; hull against the stars, the way a hull eye would.  The quad sits
 ;; just proud of the dark glass; solid=false spares us the winding
 ;; argument.
+(defun eye-feed-x3d (camera-position orientation y-left y-right)
+  (format nil
+   "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"512 512 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
+   camera-position orientation y-left y-right y-right y-left))
+
 (defun port-eye-feed-x3d ()
-  (concatenate 'string
-   "<Shape><Appearance>"
-   "<RenderedTexture update=\"always\" dimensions=\"512 512 4\">"
-   "<Viewpoint position=\"-2.0 2.0 0.9\" orientation=\"0.24354 -0.62610 -0.74074 2.58052\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint>"
-   "</RenderedTexture>"
-   "</Appearance>"
-   "<IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\">"
-   "<Coordinate point=\"0.7135 0.46 0.345, 0.7135 0.22 0.345, 0.7135 0.22 0.495, 0.7135 0.46 0.495\"></Coordinate>"
-   "<TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate>"
-   "</IndexedFaceSet></Shape>"))
+  (eye-feed-x3d "-2.0 2.0 0.9" "0.24354 -0.62610 -0.74074 2.58052" 0.46 0.22))
+
+(defun starboard-eye-feed-x3d ()
+  (eye-feed-x3d "-2.0 -2.72 0.9" "0.85652 -0.33317 -0.39418 1.55754" -0.63 -0.87))
 
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
@@ -583,8 +584,12 @@
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
+   (last-burn :none :settable)
    (last-move-note "nose on the world and falling sideways past him -- coast, and see: an orbit never arrives"
                    :settable)
+
+   (dice-lean (ecase (the last-burn)
+                (:none 0) (:forward 38) (:retro -38)))
 
    (speed (sqrt (+ (* (the vel-x) (the vel-x))
                    (* (the vel-y) (the vel-y)))))
@@ -649,9 +654,11 @@
               (str (starfield-x3d :radius 5000.0d0)))
             (str (planet-x3d (the planet-bearing) (the radius)))
             (str (cockpit-x3d))
+            (str (dice-x3d (the dice-lean)))
             (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
             (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-            (str (port-eye-feed-x3d)))))
+            (str (port-eye-feed-x3d))
+            (str (starboard-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "drivers-seat-btn" :type "button" :onclick "bindEye('drivers-seat')"
           :style (the eye-button-style) "driver's seat")
@@ -775,5 +782,8 @@ function bindEye (id) {
              (the (set-slot! :vel-y (second state)))
              (the (set-slot! :pos-x (third state)))
              (the (set-slot! :pos-y (fourth state)))))
+      (the (set-slot! :last-burn (cond ((or crashed? (not (eql pedal :gas))) :none)
+                                       ((eql gear :reverse) :retro)
+                                       (t :forward))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (the (set-slot! :last-move-note note))))))
