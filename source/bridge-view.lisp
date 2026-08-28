@@ -6,15 +6,23 @@
 (defun point-string (point)
   (format nil "~,1f ~,1f ~,1f" (get-x point) (get-y point) (get-z point)))
 
-(defun viewpoint-x3d (id description position direction field-of-view)
+(defun viewpoint-x3d (id description position direction field-of-view
+                      &key (z-near "50") (z-far "2500000") up)
   "One x3d Viewpoint as markup. x3dom binds the first Viewpoint in
-document order at load, so callers control binding by emission order."
-  (format nil "<Viewpoint id=\"~a\" description=\"~a\" position=\"~a\" orientation=\"~a\" fieldOfView=\"~a\" zNear=\"50\" zFar=\"2500000\"></Viewpoint>"
+document order at load, so callers control binding by emission order.
+The default clip planes suit the orbital scenes; a room-sized scene
+passes its own, along with an UP to keep its floor down."
+  (format nil "<Viewpoint id=\"~a\" description=\"~a\" position=\"~a\" orientation=\"~a\" fieldOfView=\"~a\" zNear=\"~a\" zFar=\"~a\"></Viewpoint>"
           id description (point-string position)
-          (look-orientation direction) field-of-view))
+          (if up
+              (look-at-orientation direction up)
+              (look-orientation direction))
+          field-of-view z-near z-far))
 
 (defun look-orientation (direction)
-  "x3d axis-angle string rotating the default gaze (0 0 -1) onto DIRECTION."
+  "x3d axis-angle string rotating the default gaze (0 0 -1) onto DIRECTION.
+Leaves camera roll wherever the rotation lands it -- fine in open
+space, wrong inside a room; there use look-at-orientation."
   (let* ((d (unitize-vector direction))
          (from (make-vector 0 0 -1))
          (dot (dot-vectors from d)))
@@ -24,6 +32,24 @@ document order at load, so callers control binding by emission order."
                    (angle (acos dot)))
                (format nil "~,5f ~,5f ~,5f ~,5f"
                        (get-x axis) (get-y axis) (get-z axis) angle))))))
+
+(defun look-at-orientation (direction up)
+  "x3d axis-angle string for a camera gazing along DIRECTION with its
+screen-up as near UP as the gaze allows. Degenerate when gaze and UP
+are parallel -- don't point this straight up or down."
+  (let* ((g (unitize-vector direction))
+         (r (unitize-vector (cross-vectors g (unitize-vector up))))
+         (u (cross-vectors r g))
+         (trace (+ (get-x r) (get-y u) (- (get-z g))))
+         (angle (acos (max -1.0d0 (min 1.0d0 (/ (- trace 1) 2))))))
+    (if (< angle 1.0d-5)
+        "0 1 0 0"
+        (let ((d (* 2 (sin angle))))
+          (format nil "~,5f ~,5f ~,5f ~,5f"
+                  (/ (+ (get-z u) (get-y g)) d)
+                  (/ (- (- (get-x g)) (get-z r)) d)
+                  (/ (- (get-y r) (get-x u)) d)
+                  angle)))))
 
 ;; The view from the bridge: the ship rides her own ring above the
 ;; home planet, you look out the two side eyes, and the chart table

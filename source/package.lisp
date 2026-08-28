@@ -5,4 +5,6 @@
 
 (gwl:define-package :galaxy-world
   (:export #:assembly
-           #:bridge-view))
+           #:bridge-view
+           #:cockpit
+           #:cockpit-view))

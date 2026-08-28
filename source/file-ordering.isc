@@ -1,3 +1,3 @@
 ;; patches.lisp early: elevation candidates (gap-filling lenses and
 ;; the like) must be in place before anything that renders.
-("package" "patches" "sky" "catalog" "assembly" "bridge-view" "publish")
+("package" "patches" "sky" "catalog" "assembly" "bridge-view" "cockpit" "publish")
