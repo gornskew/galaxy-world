@@ -491,6 +491,26 @@
                :height 0.03
                :display-controls (list :color +paint+))))
 
+;; The world the cockpit falls around: the home planet, at the
+;; origin of the plane.  Real figures -- km, km/s, km^3/s^2.
+(defparameter +mu+ 398600.0d0)
+(defparameter +planet-radius+ 6371.0)
+(defparameter +sky-radius+ 6471.0)      ; meet this and the flight is over
+(defparameter +ring-radius+ 20742.0)    ; the ship's ring, same as the chart's
+(defparameter +ring-speed+ (sqrt (/ +mu+ +ring-radius+)))
+
+;; The planet as seen from the ship: drawn at a fixed scene distance
+;; with the radius that subtends the true angle, so he grows as you
+;; fall toward him and shrinks as you climb away.
+(defun planet-x3d (bearing-rad distance-km)
+  (let* ((scene-d 3000.0)
+         (half-angle (asin (min 0.999 (/ +planet-radius+ (max distance-km 1.0)))))
+         (scene-r (* scene-d (tan half-angle))))
+    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Shape><Appearance><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.03 0.06 0.30\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform>"
+            (* scene-d (cos bearing-rad))
+            (* scene-d (sin bearing-rad))
+            scene-r)))
+
 ;; A gauge needle, cut per render: hub on the panel face, tip swung
 ;; PHI degrees clockwise from straight up as the driver sees it.
 (defun gauge-needle-x3d (hub-y hub-z phi-deg len)
@@ -554,20 +574,26 @@
 
   :computed-slots
   (;; The ship's state, held per session: where the nose points,
-   ;; how fast and which way she drifts.  Space Travel's plane, one
-   ;; move per form post.
-   (heading-deg 0 :settable)
+   ;; how fast and which way she falls.  Space Travel's plane, one
+   ;; move per form post.  She starts on the ring, circular and
+   ;; prograde, the world abeam to port.
+   (heading-deg 180 :settable)
    (vel-x 0 :settable)
-   (vel-y 0 :settable)
-   (pos-x 0 :settable)
+   (vel-y +ring-speed+ :settable)
+   (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
-   (last-move-note "cast off and coasting -- the dice hang plumb" :settable)
+   (last-move-note "nose on the world and falling sideways past him -- coast, and see: an orbit never arrives"
+                   :settable)
 
    (speed (sqrt (+ (* (the vel-x) (the vel-x))
                    (* (the vel-y) (the vel-y)))))
-   (drift (sqrt (+ (* (the pos-x) (the pos-x))
-                   (* (the pos-y) (the pos-y)))))
+   (radius (sqrt (+ (* (the pos-x) (the pos-x))
+                    (* (the pos-y) (the pos-y)))))
+   (altitude (- (the radius) +planet-radius+))
+   ;; where the world stands off the nose
+   (planet-bearing (- (atan (- (the pos-y)) (- (the pos-x)))
+                      (deg->rad (the heading-deg))))
    ;; the speedo sweeps 8 o'clock to 4 o'clock, full scale 8 km/s
    (speedo-phi (+ -120 (* 240 (min 1 (/ (the speed) 8.0)))))
 
@@ -621,6 +647,7 @@
             (:|Transform| :rotation (format nil "0 0 1 ~,5f"
                                             (- (deg->rad (the heading-deg))))
               (str (starfield-x3d :radius 5000.0d0)))
+            (str (planet-x3d (the planet-bearing) (the radius)))
             (str (cockpit-x3d))
             (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
             (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
@@ -644,7 +671,7 @@
         (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
           (:div (fmt "speed: ~,2f km/s" (the speed)))
-          (:div (fmt "adrift: ~,0f km off the mark" (the drift)))
+          (:div (fmt "altitude: ~,0f km" (the altitude)))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note)))))
@@ -684,10 +711,31 @@ function bindEye (id) {
                                       :brake "brake")))
 
   :functions
-  (;; One move of the game, folded into the ship's state when the
+  (;; Fall through DT seconds of gravity: velocity Verlet in
+   ;; one-minute substeps.  Returns the new (vx vy px py).
+   (fall
+    (vx vy px py dt)
+    (let ((h 60.0d0))
+      (flet ((accel (x y)
+               (let* ((r2 (+ (* x x) (* y y)))
+                      (r (sqrt r2))
+                      (a (- (/ +mu+ r2))))
+                 (values (* a (/ x r)) (* a (/ y r))))))
+        (dotimes (step (max 1 (round dt h)))
+          (multiple-value-bind (ax0 ay0) (accel px py)
+            (setq px (+ px (* vx h) (* 0.5 ax0 h h))
+                  py (+ py (* vy h) (* 0.5 ay0 h h)))
+            (multiple-value-bind (ax1 ay1) (accel px py)
+              (setq vx (+ vx (* 0.5 (+ ax0 ax1) h))
+                    vy (+ vy (* 0.5 (+ ay0 ay1) h))))))
+        (list vx vy px py))))
+
+   ;; One move of the game, folded into the ship's state when the
    ;; helm form posts.  Turn the wheel, then burn (or don't), then
-   ;; drift as far as the gear carries you.  The brake is heard and
-   ;; changes nothing.
+   ;; FALL as long as the gear holds the clutch out -- a minute in
+   ;; first, ten in second, an hour in third.  The brake is heard
+   ;; and changes nothing.  Meet the sky of the world and you are
+   ;; set back on the ring.
    (after-set!
     ()
     (let* ((turn (ecase (the wheel-control value)
@@ -699,20 +747,33 @@ function bindEye (id) {
            (rad (deg->rad heading))
            (flip (if (eql gear :reverse) -1 1))
            (dv (if (eql pedal :gas) 0.5 0))
-           (vx (+ (the vel-x) (* dv flip (cos rad))))
-           (vy (+ (the vel-y) (* dv flip (sin rad))))
-           (dt (ecase gear (:first 1) (:second 4) (:third 16) (:reverse 1)))
-           (note (cond ((eql pedal :brake)
+           (dt (ecase gear (:first 60) (:second 600) (:third 3600) (:reverse 60)))
+           (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
+                             (+ (the vel-y) (* dv flip (sin rad)))
+                             (the pos-x) (the pos-y) dt)))
+           (r (sqrt (+ (* (third state) (third state))
+                       (* (fourth state) (fourth state)))))
+           (crashed? (< r +sky-radius+))
+           (note (cond (crashed?
+                        "the world came up to meet you -- back on the ring, falling clean")
+                       ((eql pedal :brake)
                         "the brake presses beautifully and does nothing — space doesn't brake")
                        ((and (eql pedal :gas) (eql gear :reverse))
-                        "retro burn — half a klick against the nose")
+                        "retro burn — half a klick against the nose; less speed means a lower road")
                        ((eql pedal :gas)
-                        "burn — half a klick along the nose; turning never did change your speed")
-                       (t "clutch in, coasting — speed holds; nothing out here slows you"))))
-      (the (set-slot! :heading-deg heading))
-      (the (set-slot! :vel-x vx))
-      (the (set-slot! :vel-y vy))
-      (the (set-slot! :pos-x (+ (the pos-x) (* vx dt))))
-      (the (set-slot! :pos-y (+ (the pos-y) (* vy dt))))
+                        "burn — half a klick along the nose; more speed means a higher road")
+                       (t "coasting — falling around the world; that curve IS the orbit"))))
+      (cond (crashed?
+             (the (set-slot! :heading-deg 90))
+             (the (set-slot! :vel-x 0))
+             (the (set-slot! :vel-y +ring-speed+))
+             (the (set-slot! :pos-x +ring-radius+))
+             (the (set-slot! :pos-y 0)))
+            (t
+             (the (set-slot! :heading-deg heading))
+             (the (set-slot! :vel-x (first state)))
+             (the (set-slot! :vel-y (second state)))
+             (the (set-slot! :pos-x (third state)))
+             (the (set-slot! :pos-y (fourth state)))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (the (set-slot! :last-move-note note))))))
