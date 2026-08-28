@@ -191,7 +191,9 @@ document order at load, so callers control binding by emission order."
              (:div (fmt "time of flight: ~,1f hours~@[ (~,1f days)~]"
                         (the transfer transfer-time-hours)
                         (let ((hours (the transfer transfer-time-hours)))
-                          (when (> hours 48) (/ hours 24.0)))))))))
+                          (when (> hours 48) (/ hours 24.0)))))
+             (:div :style "margin-top:6px;font-size:11px;color:#c9a227;opacity:0.85;"
+               "the least-fuel two-burn road between rings — a Hohmann transfer")))))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the view from the bridge (first light)")
       (:script (str "

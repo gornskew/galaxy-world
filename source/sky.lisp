@@ -20,10 +20,18 @@
                         (* radius u))
                   points)))))))
 
+;; The sky is the same for every session -- deterministic stars --
+;; so the markup is cut once and shared by all cockpits rather than
+;; rendered per instance.
+(defvar *starfield-x3d-cache* (make-hash-table :test 'equal))
+
 (defun starfield-x3d (&key (count 700) (radius 150000.0d0))
   "The night behind everything, as an x3d PointSet."
-  (with-output-to-string (s)
-    (write-string "<Shape><Appearance><Material emissiveColor=\"1 1 1\"></Material></Appearance><PointSet><Coordinate point=\"" s)
-    (dolist (p (starfield-points :count count :radius radius))
-      (format s "~,1f ~,1f ~,1f, " (first p) (second p) (third p)))
-    (write-string "\"></Coordinate></PointSet></Shape>" s)))
+  (let ((key (list count radius)))
+    (or (gethash key *starfield-x3d-cache*)
+        (setf (gethash key *starfield-x3d-cache*)
+              (with-output-to-string (s)
+                (write-string "<Shape><Appearance><Material emissiveColor=\"1 1 1\"></Material></Appearance><PointSet><Coordinate point=\"" s)
+                (dolist (p (starfield-points :count count :radius radius))
+                  (format s "~,1f ~,1f ~,1f, " (first p) (second p) (third p)))
+                (write-string "\"></Coordinate></PointSet></Shape>" s))))))
