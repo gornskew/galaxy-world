@@ -22,6 +22,7 @@
 (defparameter +rubber+ "#202020")
 (defparameter +gauge-face+ "#101418")
 (defparameter +needle+ "#d84b2a")
+(defparameter +glass+ "#aac4d0")        ; barely-there, the stars do the rest
 
 (defparameter +wheel-rake+ (deg->rad 38))
 
@@ -31,13 +32,26 @@
   (;; the column's axis, pointing up and back toward the driver
    (column-axis (let ((theta +wheel-rake+))
                   (make-vector (- (cos theta)) 0 (sin theta))))
-   (wheel-center (make-point 0.42 0 0.58))
+   (wheel-center (make-point 0.42 0 0.44))
    ;; in-plane frame of the wheel: across, and up-forward
    (wheel-across (make-vector 0 1 0))
    (wheel-up (cross-vectors (the wheel-across) (the column-axis)))
    (wheel-radius 0.20)
    (shifter-pivot (add-vectors (the wheel-center)
-                               (scalar*vector -0.14 (the column-axis)))))
+                               (scalar*vector -0.14 (the column-axis))))
+
+   ;; The greenhouse: the wraparound panoramic windshield sweeps 130
+   ;; degrees between two arcs -- the cowl line and the header, the
+   ;; header pulled back and in so the glass rakes.  Arc azimuth runs
+   ;; from dead ahead, positive to port.
+   (cowl-center (make-point -0.46 -0.36 0.55))
+   (cowl-radius 1.49)
+   (header-center (make-point -0.52 -0.36 1.05))
+   (header-radius 1.41)
+   (greenhouse-span (deg->rad 57))
+   ;; the cab's inner walls, where the glass sweep lands
+   (port-wall 0.347)
+   (starboard-wall -1.067))
 
   :functions
   ((rim-point
@@ -45,7 +59,30 @@
     (add-vectors (the wheel-center)
                  (add-vectors
                   (scalar*vector (* (the wheel-radius) (cos alpha)) (the wheel-up))
-                  (scalar*vector (* (the wheel-radius) (sin alpha)) (the wheel-across))))))
+                  (scalar*vector (* (the wheel-radius) (sin alpha)) (the wheel-across)))))
+
+   (arc-point
+    (center radius theta)  ; azimuth from +x, in center's z plane
+    (make-point (+ (get-x center) (* radius (cos theta)))
+                (+ (get-y center) (* radius (sin theta)))
+                (get-z center)))
+
+   (cowl-point
+    (theta)
+    (the (arc-point (the cowl-center) (the cowl-radius) theta)))
+
+   (header-point
+    (theta)
+    (the (arc-point (the header-center) (the header-radius) theta)))
+
+   (span-theta
+    (i n)  ; the i-th of n stations across the sweep, port to starboard
+    (- (* 0.5 (the greenhouse-span))
+       (* (/ i n) (the greenhouse-span))))
+
+   (span-tangent
+    (theta)  ; horizontal tangent along the sweep
+    (make-vector (- (sin theta)) (cos theta) 0)))
 
   :objects
   (;; the shell of the room: floor, bench, instrument panel
@@ -56,71 +93,71 @@
 
    (bench-cushion :type 'box
                   :center (make-point -0.03 -0.36 -0.075)
-                  :width 0.55 :length 1.42 :height 0.15
+                  :width 0.55 :length 1.38 :height 0.15
                   :display-controls (list :color +leather+))
 
    (bench-back :type 'box
                :center (make-point -0.42 -0.36 0.22)
-               :width 0.12 :length 1.42 :height 0.60
+               :width 0.12 :length 1.38 :height 0.60
                :display-controls (list :color +leather+))
 
    (instrument-panel :type 'box
-                     :center (make-point 0.88 -0.36 0.70)
-                     :width 0.12 :length 1.42 :height 0.30
+                     :center (make-point 0.79 -0.36 0.415)
+                     :width 0.12 :length 1.38 :height 0.27
                      :display-controls (list :color +paint+))
 
    ;; the gauge cluster, chrome bezels proud of the panel face
    (speedo-bezel :type 'c-cylinder
-                 :start (make-point 0.812 0 0.71)
-                 :end (make-point 0.822 0 0.71)
+                 :start (make-point 0.722 0 0.46)
+                 :end (make-point 0.732 0 0.46)
                  :radius 0.085
                  :number-of-sections 24
                  :display-controls (list :color +chrome+))
    (speedo-face :type 'c-cylinder
-                :start (make-point 0.806 0 0.71)
-                :end (make-point 0.813 0 0.71)
+                :start (make-point 0.716 0 0.46)
+                :end (make-point 0.723 0 0.46)
                 :radius 0.075
                 :number-of-sections 24
                 :display-controls (list :color +gauge-face+))
    (speedo-needle :type 'c-cylinder
-                  :start (make-point 0.804 0 0.712)
-                  :end (make-point 0.804 -0.035 0.765)
+                  :start (make-point 0.714 0 0.462)
+                  :end (make-point 0.714 -0.035 0.515)
                   :radius 0.003
                   :display-controls (list :color +needle+))
 
    (port-gauge-bezel :type 'c-cylinder
-                     :start (make-point 0.812 0.19 0.70)
-                     :end (make-point 0.822 0.19 0.70)
+                     :start (make-point 0.722 0.19 0.45)
+                     :end (make-point 0.732 0.19 0.45)
                      :radius 0.055
                      :number-of-sections 24
                      :display-controls (list :color +chrome+))
    (port-gauge-face :type 'c-cylinder
-                    :start (make-point 0.807 0.19 0.70)
-                    :end (make-point 0.813 0.19 0.70)
+                    :start (make-point 0.717 0.19 0.45)
+                    :end (make-point 0.723 0.19 0.45)
                     :radius 0.047
                     :number-of-sections 24
                     :display-controls (list :color +gauge-face+))
    (port-gauge-needle :type 'c-cylinder
-                      :start (make-point 0.805 0.19 0.702)
-                      :end (make-point 0.805 0.162 0.736)
+                      :start (make-point 0.715 0.19 0.452)
+                      :end (make-point 0.715 0.162 0.486)
                       :radius 0.0025
                       :display-controls (list :color +needle+))
 
    (starboard-gauge-bezel :type 'c-cylinder
-                          :start (make-point 0.812 -0.19 0.70)
-                          :end (make-point 0.822 -0.19 0.70)
+                          :start (make-point 0.722 -0.19 0.45)
+                          :end (make-point 0.732 -0.19 0.45)
                           :radius 0.055
                      :number-of-sections 24
                           :display-controls (list :color +chrome+))
    (starboard-gauge-face :type 'c-cylinder
-                         :start (make-point 0.807 -0.19 0.70)
-                         :end (make-point 0.813 -0.19 0.70)
+                         :start (make-point 0.717 -0.19 0.45)
+                         :end (make-point 0.723 -0.19 0.45)
                          :radius 0.047
                     :number-of-sections 24
                          :display-controls (list :color +gauge-face+))
    (starboard-gauge-needle :type 'c-cylinder
-                           :start (make-point 0.805 -0.19 0.702)
-                           :end (make-point 0.805 -0.218 0.736)
+                           :start (make-point 0.715 -0.19 0.452)
+                           :end (make-point 0.715 -0.218 0.486)
                            :radius 0.0025
                            :display-controls (list :color +needle+))
 
@@ -134,25 +171,28 @@
               :number-of-transverse-sections 16
               :display-controls (list :color +rim-ivory+))
 
+   ;; the wheel is dished: the hub sits recessed down the column and
+   ;; the spokes climb out to the rim
    (wheel-hub :type 'c-cylinder
               :start (add-vectors (the wheel-center)
-                                  (scalar*vector -0.03 (the column-axis)))
+                                  (scalar*vector -0.075 (the column-axis)))
               :end (add-vectors (the wheel-center)
-                               (scalar*vector 0.03 (the column-axis)))
+                               (scalar*vector -0.015 (the column-axis)))
               :radius 0.04
               :number-of-sections 24
               :display-controls (list :color +chrome+))
 
    (horn-button :type 'sphere
                 :center (add-vectors (the wheel-center)
-                                     (scalar*vector 0.035 (the column-axis)))
+                                     (scalar*vector -0.008 (the column-axis)))
                 :radius 0.025
                 :display-controls (list :color +chrome+))
 
    ;; classic three-spoke: two high, one straight down
    (spokes :type 'c-cylinder
            :sequence (:size 3)
-           :start (the wheel-center)
+           :start (add-vectors (the wheel-center)
+                               (scalar*vector -0.055 (the column-axis)))
            :end (the (rim-point (ecase (the-child index)
                                   (0 (deg->rad 60))
                                   (1 (deg->rad -60))
@@ -162,7 +202,7 @@
 
    (column :type 'c-cylinder
            :start (add-vectors (the wheel-center)
-                               (scalar*vector -0.02 (the column-axis)))
+                               (scalar*vector -0.07 (the column-axis)))
            :end (add-vectors (the wheel-center)
                              (scalar*vector -0.60 (the column-axis)))
            :radius 0.024
@@ -206,7 +246,165 @@
                                     (0 0.22) (1 0.05) (2 -0.14))
                                   -0.35)
                  :radius 0.008
-                 :display-controls (list :color +chrome+))))
+                 :display-controls (list :color +chrome+))
+
+   ;; the greenhouse: cowl and header arcs as segmented rails
+   (cowl-rail :type 'c-cylinder
+              :sequence (:size 10)
+              :start (the (cowl-point (the (span-theta (the-child index) 10))))
+              :end (the (cowl-point (the (span-theta (1+ (the-child index)) 10))))
+              :radius 0.02
+              :display-controls (list :color +paint+))
+
+   (header-rail :type 'c-cylinder
+                :sequence (:size 10)
+                :start (the (header-point (the (span-theta (the-child index) 10))))
+                :end (the (header-point (the (span-theta (1+ (the-child index)) 10))))
+                :radius 0.02
+                :display-controls (list :color +paint+))
+
+   (a-pillars :type 'c-cylinder
+              :sequence (:size 2)
+              :start (the (cowl-point (* (ecase (the-child index) (0 1) (1 -1))
+                                         0.5 (the greenhouse-span))))
+              :end (the (header-point (* (ecase (the-child index) (0 1) (1 -1))
+                                         0.5 (the greenhouse-span))))
+              :radius 0.028
+              :display-controls (list :color +paint+))
+
+   ;; the glass itself, five raked chords along the sweep
+   (windshield-glass :type 'box
+                     :sequence (:size 5)
+                     :theta (the (span-theta (+ (the-child index) 0.5) 5))
+                     :sill (the (cowl-point (the-child theta)))
+                     :head (the (header-point (the-child theta)))
+                     :center (midpoint (the-child sill) (the-child head))
+                     :orientation (alignment
+                                   :top (unitize-vector
+                                         (subtract-vectors (the-child head)
+                                                           (the-child sill)))
+                                   :rear (the (span-tangent (the-child theta))))
+                     :height (3d-distance (the-child sill) (the-child head))
+                     :length 0.30
+                     :width 0.012
+                     :display-controls (list :color +glass+ :transparency 0.85))
+
+   ;; the cowl deck closes the gap between panel top and glass base
+   (cowl-deck :type 'box
+              :sequence (:size 5)
+              :theta (the (span-theta (+ (the-child index) 0.5) 5))
+              :center (let ((sill (the (cowl-point (the-child theta)))))
+                        (make-point (- (get-x sill) (* 0.085 (cos (the-child theta))))
+                                    (- (get-y sill) (* 0.085 (sin (the-child theta))))
+                                    0.545))
+              :orientation (alignment :rear (the (span-tangent (the-child theta))))
+              :width 0.17
+              :length 0.31
+              :height 0.025
+              :display-controls (list :color +paint+))
+
+   ;; the cab sides: beltline, side headers, rear posts, side glass
+   (beltline-rails :type 'c-cylinder
+                   :sequence (:size 2)
+                   :start (make-point 0.85
+                                      (ecase (the-child index)
+                                        (0 (the port-wall)) (1 (the starboard-wall)))
+                                      0.55)
+                   :end (make-point -0.68
+                                    (ecase (the-child index)
+                                      (0 (the port-wall)) (1 (the starboard-wall)))
+                                    0.55)
+                   :radius 0.02
+                   :display-controls (list :color +paint+))
+
+   (side-headers :type 'c-cylinder
+                 :sequence (:size 2)
+                 :start (the (header-point (* (ecase (the-child index) (0 1) (1 -1))
+                                              0.5 (the greenhouse-span))))
+                 :end (make-point -0.68
+                                  (ecase (the-child index)
+                                    (0 (the port-wall)) (1 (the starboard-wall)))
+                                  1.03)
+                 :radius 0.02
+                 :display-controls (list :color +paint+))
+
+   (rear-posts :type 'c-cylinder
+               :sequence (:size 2)
+               :start (make-point -0.68
+                                  (ecase (the-child index)
+                                    (0 (the port-wall)) (1 (the starboard-wall)))
+                                  0.55)
+               :end (make-point -0.68
+                                (ecase (the-child index)
+                                  (0 (the port-wall)) (1 (the starboard-wall)))
+                                1.03)
+               :radius 0.028
+               :display-controls (list :color +paint+))
+
+   (side-glass :type 'box
+               :sequence (:size 2)
+               :center (make-point 0.06
+                                   (ecase (the-child index) (0 0.345) (1 -1.065))
+                                   0.795)
+               :width 1.45
+               :length 0.012
+               :height 0.45
+               :display-controls (list :color +glass+ :transparency 0.85))
+
+   ;; the body below the beltline, so the glasshouse stands on
+   ;; something: door sides, the panel below the rear window, and
+   ;; the firewall the pedals hang before
+   (body-sides :type 'box
+               :sequence (:size 2)
+               :center (make-point 0.085
+                                   (ecase (the-child index) (0 0.3575) (1 -1.0775))
+                                   0.10)
+               :width 1.53
+               :length 0.025
+               :height 0.90
+               :display-controls (list :color +paint+))
+
+   (rear-body-panel :type 'box
+                    :center (make-point -0.6925 -0.36 0.10)
+                    :width 0.025
+                    :length 1.442
+                    :height 0.90
+                    :display-controls (list :color +paint+))
+
+   (firewall :type 'box
+             :center (make-point 0.95 -0.36 -0.035)
+             :width 0.025
+             :length 1.42
+             :height 0.63
+             :display-controls (list :color +paint+))
+
+   ;; the rear window: no truck bed back there -- the rest of him,
+   ;; one day, looming
+   (rear-sill :type 'c-cylinder
+              :start (make-point -0.68 (the starboard-wall) 0.55)
+              :end (make-point -0.68 (the port-wall) 0.55)
+              :radius 0.02
+              :display-controls (list :color +paint+))
+
+   (rear-header :type 'c-cylinder
+                :start (make-point -0.68 (the starboard-wall) 1.03)
+                :end (make-point -0.68 (the port-wall) 1.03)
+                :radius 0.02
+                :display-controls (list :color +paint+))
+
+   (rear-glass :type 'box
+               :center (make-point -0.675 -0.36 0.795)
+               :width 0.012
+               :length 1.30
+               :height 0.45
+               :display-controls (list :color +glass+ :transparency 0.85))
+
+   (roof-panel :type 'box
+               :center (make-point 0.08 -0.36 1.055)
+               :width 1.56
+               :length 1.5
+               :height 0.03
+               :display-controls (list :color +paint+))))
 
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
@@ -230,24 +428,35 @@
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
    (favicon-type "image/svg+xml")
-   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E"))
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
+
+   ;; which eye the page binds at load; x3dom binds the first in
+   ;; document order
+   (bound-eye :drivers-seat))
 
   :computed-slots
   ((viewpoints-x3d
-    (let ((up (make-vector 0 0 1)))
-      (string-append
-       (viewpoint-x3d "drivers-seat" "Driver's seat"
-                      (make-point -0.02 0 0.70)
-                      (make-vector 0.965 0 -0.263)
-                      "1.3" :z-near "0.05" :z-far "8000" :up up)
-       (viewpoint-x3d "jump-seat" "Jump seat"
-                      (make-point 0.05 -0.72 0.62)
-                      (unitize-vector (make-vector 0.37 0.72 -0.04))
-                      "1.2" :z-near "0.05" :z-far "8000" :up up)
-       (viewpoint-x3d "walkaround" "Walkaround"
-                      (make-point -1.5 1.1 1.2)
-                      (unitize-vector (make-vector 1.9 -1.3 -0.9))
-                      "1.0" :z-near "0.05" :z-far "8000" :up up))))
+    (let* ((up (make-vector 0 0 1))
+           (eyes
+            (list
+             (cons :drivers-seat
+                   (viewpoint-x3d "drivers-seat" "Driver's seat"
+                                  (make-point -0.02 0 0.78)
+                                  (make-vector 0.97 0 -0.24)
+                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
+             (cons :jump-seat
+                   (viewpoint-x3d "jump-seat" "Jump seat"
+                                  (make-point 0.05 -0.72 0.75)
+                                  (unitize-vector (make-vector 0.37 0.72 -0.04))
+                                  "1.2" :z-near "0.05" :z-far "8000" :up up))
+             (cons :walkaround
+                   (viewpoint-x3d "walkaround" "Walkaround"
+                                  (make-point -2.4 1.7 1.7)
+                                  (unitize-vector (make-vector 2.7 -2.06 -1.1))
+                                  "1.0" :z-near "0.05" :z-far "8000" :up up))))
+           (chosen (or (assoc (the bound-eye) eyes) (first eyes))))
+      (apply #'string-append
+             (mapcar #'cdr (cons chosen (remove chosen eyes))))))
 
    (body
     (with-lhtml-string ()
