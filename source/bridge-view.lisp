@@ -185,10 +185,21 @@ document order at load, so callers control binding by emission order."
           (htm
            (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
              (:div (fmt "course: ~a" (destination-label (the destination))))
-             (:div (fmt "burn one: ~,3f km/s" (the transfer first-burn-delta-v)))
-             (:div (fmt "burn two: ~,3f km/s" (the transfer second-burn-delta-v)))
-             (:div (fmt "delta-v total: ~,3f km/s" (the transfer total-delta-v)))
-             (:div (fmt "time of flight: ~,1f hours~@[ (~,1f days)~]"
+             (:div :style "font-size:11px;font-style:italic;color:#c9a227;"
+               (fmt "for the log: ~a" (destination-log-word (the destination))))
+             ;; each figure explains itself on hover
+             (:div :style "cursor:help;"
+               :title "speed added leaving the ship's ring — the push onto the transfer ellipse"
+               (fmt "burn one: ~,3f km/s" (the transfer first-burn-delta-v)))
+             (:div :style "cursor:help;"
+               :title "speed added on arrival — the push that settles onto the new ring"
+               (fmt "burn two: ~,3f km/s" (the transfer second-burn-delta-v)))
+             (:div :style "cursor:help;"
+               :title "the whole fuel bill, counted in speed — every burn added up"
+               (fmt "delta-v total: ~,3f km/s" (the transfer total-delta-v)))
+             (:div :style "cursor:help;"
+               :title "half a lap of the transfer ellipse, engines quiet the whole way"
+               (fmt "time of flight: ~,1f hours~@[ (~,1f days)~]"
                         (the transfer transfer-time-hours)
                         (let ((hours (the transfer transfer-time-hours)))
                           (when (> hours 48) (/ hours 24.0)))))

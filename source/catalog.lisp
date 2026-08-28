@@ -25,6 +25,9 @@
 (defun destination-radius (key)
   (third (destination-entry key)))
 
+(defun destination-log-word (key)
+  (fourth (destination-entry key)))
+
 (defun destination-choice-plist ()
   (append (list :none "— hold station —")
           (loop for (key label) in *destinations*
