@@ -471,6 +471,14 @@
 (defparameter +ring-radius+ 20742.0)    ; the ship's ring, same as the chart's
 (defparameter +ring-speed+ (sqrt (/ +mu+ +ring-radius+)))
 
+;; The berth keeps a tally of what the helms aboard actually do --
+;; the seed of the play-feeds-the-buildout channel.  One image, one
+;; table, every cockpit.
+(defvar *helm-tallies* (make-hash-table :test 'eq))
+
+(defun tally! (key)
+  (incf (gethash key *helm-tallies* 0)))
+
 ;; The planet as seen from the ship: drawn at a fixed scene distance
 ;; with the radius that subtends the true angle, so he grows as you
 ;; fall toward him and shrinks as you climb away.
@@ -596,6 +604,23 @@
    (radius (sqrt (+ (* (the pos-x) (the pos-x))
                     (* (the pos-y) (the pos-y)))))
    (altitude (- (the radius) +planet-radius+))
+
+   ;; the shape of the road she is on: vis-viva for the size,
+   ;; angular momentum for the roundness
+   (specific-h (- (* (the pos-x) (the vel-y))
+                  (* (the pos-y) (the vel-x))))
+   (semi-major (let ((inv (- (/ 2 (the radius))
+                             (/ (* (the speed) (the speed)) +mu+))))
+                 (when (plusp inv) (/ 1 inv))))
+   (eccentricity (when (the semi-major)
+                   (sqrt (max 0 (- 1 (/ (* (the specific-h) (the specific-h))
+                                        (* +mu+ (the semi-major))))))))
+   (apoapsis-alt (when (the semi-major)
+                   (- (* (the semi-major) (+ 1 (the eccentricity)))
+                      +planet-radius+)))
+   (periapsis-alt (when (the semi-major)
+                    (- (* (the semi-major) (- 1 (the eccentricity)))
+                       +planet-radius+)))
    ;; where the world stands off the nose
    (planet-bearing (- (atan (- (the pos-y)) (- (the pos-x)))
                       (deg->rad (the heading-deg))))
@@ -679,6 +704,17 @@
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
           (:div (fmt "speed: ~,2f km/s" (the speed)))
           (:div (fmt "altitude: ~,0f km" (the altitude)))
+          (if (the semi-major)
+              (htm
+               (:div (fmt "high point of the road: ~,0f km" (the apoapsis-alt)))
+               (if (< (the periapsis-alt) 100)
+                   (htm (:div :style "color:#e07050;"
+                          (fmt "low point: ~,0f km — this road meets the sky"
+                               (the periapsis-alt))))
+                   (htm (:div (fmt "low point of the road: ~,0f km"
+                                   (the periapsis-alt))))))
+              (htm (:div :style "color:#e07050;"
+                     "the road is unbound — the deep dark has you")))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note)))))
@@ -761,14 +797,25 @@ function bindEye (id) {
            (r (sqrt (+ (* (third state) (third state))
                        (* (fourth state) (fourth state)))))
            (crashed? (< r +sky-radius+))
+           ;; how the burn lay against the road: along it, against
+           ;; it, or a sideways shove
+           (v0 (sqrt (+ (* (the vel-x) (the vel-x))
+                        (* (the vel-y) (the vel-y)))))
+           (alignment (if (or (zerop dv) (< v0 0.1))
+                          0
+                          (/ (+ (* dv flip (cos rad) (the vel-x))
+                                (* dv flip (sin rad) (the vel-y)))
+                             (* dv v0))))
            (note (cond (crashed?
                         "the world came up to meet you -- back on the ring, falling clean")
                        ((eql pedal :brake)
                         "the brake presses beautifully and does nothing — space doesn't brake")
-                       ((and (eql pedal :gas) (eql gear :reverse))
-                        "retro burn — half a klick against the nose; less speed means a lower road")
+                       ((and (eql pedal :gas) (> alignment 0.5))
+                        "burn along the road — more speed, and the far side of the orbit rises")
+                       ((and (eql pedal :gas) (< alignment -0.5))
+                        "burn against the road — less speed, and the far side falls")
                        ((eql pedal :gas)
-                        "burn — half a klick along the nose; more speed means a higher road")
+                        "a sideways shove — the road tilts; speed hardly changes")
                        (t "coasting — falling around the world; that curve IS the orbit"))))
       (cond (crashed?
              (the (set-slot! :heading-deg 90))
@@ -786,4 +833,7 @@ function bindEye (id) {
                                        ((eql gear :reverse) :retro)
                                        (t :forward))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (set-slot! :last-move-note note))))))
+      (the (set-slot! :last-move-note note))
+      (tally! :moves)
+      (tally! (ecase pedal (:gas :burns) (:coast :coasts) (:brake :brakes)))
+      (when crashed? (tally! :crashes))))))
