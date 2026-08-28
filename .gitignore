@@ -1,2 +1,7 @@
 # quicklisp/cl-lite registration artifact
 system-index.txt
+
+# fasls from compile-file on the berth
+*.lx64fsl
+*.dx64fsl
+*.fasl
