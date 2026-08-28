@@ -40,18 +40,21 @@
    (shifter-pivot (add-vectors (the wheel-center)
                                (scalar*vector -0.14 (the column-axis))))
 
-   ;; The greenhouse: the wraparound panoramic windshield sweeps 130
-   ;; degrees between two arcs -- the cowl line and the header, the
-   ;; header pulled back and in so the glass rakes.  Arc azimuth runs
-   ;; from dead ahead, positive to port.
-   (cowl-center (make-point -0.46 -0.36 0.55))
-   (cowl-radius 1.49)
-   (header-center (make-point -0.52 -0.36 1.05))
-   (header-radius 1.41)
-   (greenhouse-span (deg->rad 57))
-   ;; the cab's inner walls, where the glass sweep lands
-   (port-wall 0.347)
-   (starboard-wall -1.067))
+   ;; The greenhouse: the wraparound panoramic windshield sweeps
+   ;; between two arcs -- the cowl line and the header, the header
+   ;; pulled back and in so the glass rakes.  Arc azimuth runs from
+   ;; dead ahead, positive to port.  The glass is DIRECT VIEW out of
+   ;; the hull; the basilisk's own two reptile eyes feed the
+   ;; flatscreens in the instrument panel instead.
+   (cowl-center (make-point -1.067 -0.36 0.55))
+   (cowl-radius 2.097)
+   (header-center (make-point -1.11 -0.36 1.05))
+   (header-radius 2.0)
+   (greenhouse-span (deg->rad 48))
+   ;; the cab's inner walls, where the glass sweep lands -- a roomy
+   ;; crew cab, bench behind bench
+   (port-wall 0.49)
+   (starboard-wall -1.21))
 
   :functions
   ((rim-point
@@ -87,23 +90,34 @@
   :objects
   (;; the shell of the room: floor, bench, instrument panel
    (floor-pan :type 'box
-              :center (make-point 0.30 -0.36 -0.37)
-              :width 1.6 :length 1.5 :height 0.04
+              :center (make-point -0.20 -0.36 -0.37)
+              :width 2.6 :length 1.80 :height 0.04
               :display-controls (list :color +rubber+))
 
    (bench-cushion :type 'box
                   :center (make-point -0.03 -0.36 -0.075)
-                  :width 0.55 :length 1.38 :height 0.15
+                  :width 0.55 :length 1.66 :height 0.15
                   :display-controls (list :color +leather+))
 
    (bench-back :type 'box
                :center (make-point -0.42 -0.36 0.22)
-               :width 0.12 :length 1.38 :height 0.60
+               :width 0.12 :length 1.66 :height 0.60
                :display-controls (list :color +leather+))
+
+   ;; the back seat: same stitched bench, a footwell behind the front
+   (rear-bench-cushion :type 'box
+                       :center (make-point -1.025 -0.36 -0.075)
+                       :width 0.55 :length 1.66 :height 0.15
+                       :display-controls (list :color +leather+))
+
+   (rear-bench-back :type 'box
+                    :center (make-point -1.42 -0.36 0.22)
+                    :width 0.12 :length 1.66 :height 0.60
+                    :display-controls (list :color +leather+))
 
    (instrument-panel :type 'box
                      :center (make-point 0.79 -0.36 0.415)
-                     :width 0.12 :length 1.38 :height 0.27
+                     :width 0.12 :length 1.66 :height 0.27
                      :display-controls (list :color +paint+))
 
    ;; the gauge cluster, chrome bezels proud of the panel face
@@ -160,6 +174,31 @@
                            :end (make-point 0.715 -0.218 0.486)
                            :radius 0.0025
                            :display-controls (list :color +needle+))
+
+   ;; the eye displays: two flatscreens in the instrument panel,
+   ;; fed by the basilisk's own port and starboard reptile eyes.
+   ;; Dark glass until the feeds are wired.
+   (eye-screen-bezels :type 'box
+                      :sequence (:size 2)
+                      :center (make-point 0.728
+                                          (ecase (the-child index)
+                                            (0 0.34) (1 -0.75))
+                                          0.42)
+                      :width 0.015
+                      :length 0.27
+                      :height 0.18
+                      :display-controls (list :color +chrome+))
+
+   (eye-screens :type 'box
+                :sequence (:size 2)
+                :center (make-point 0.719
+                                    (ecase (the-child index)
+                                      (0 0.34) (1 -0.75))
+                                    0.42)
+                :width 0.01
+                :length 0.24
+                :height 0.15
+                :display-controls (list :color +gauge-face+))
 
    ;; the HELM: big thin-rim wheel on a raked column
    (wheel-rim :type 'torus
@@ -285,7 +324,7 @@
                                                            (the-child sill)))
                                    :rear (the (span-tangent (the-child theta))))
                      :height (3d-distance (the-child sill) (the-child head))
-                     :length 0.30
+                     :length 0.34
                      :width 0.012
                      :display-controls (list :color +glass+ :transparency 0.85))
 
@@ -299,7 +338,7 @@
                                     0.545))
               :orientation (alignment :rear (the (span-tangent (the-child theta))))
               :width 0.17
-              :length 0.31
+              :length 0.36
               :height 0.025
               :display-controls (list :color +paint+))
 
@@ -310,7 +349,7 @@
                                       (ecase (the-child index)
                                         (0 (the port-wall)) (1 (the starboard-wall)))
                                       0.55)
-                   :end (make-point -0.68
+                   :end (make-point -1.65
                                     (ecase (the-child index)
                                       (0 (the port-wall)) (1 (the starboard-wall)))
                                     0.55)
@@ -321,7 +360,7 @@
                  :sequence (:size 2)
                  :start (the (header-point (* (ecase (the-child index) (0 1) (1 -1))
                                               0.5 (the greenhouse-span))))
-                 :end (make-point -0.68
+                 :end (make-point -1.65
                                   (ecase (the-child index)
                                     (0 (the port-wall)) (1 (the starboard-wall)))
                                   1.03)
@@ -330,11 +369,11 @@
 
    (rear-posts :type 'c-cylinder
                :sequence (:size 2)
-               :start (make-point -0.68
+               :start (make-point -1.65
                                   (ecase (the-child index)
                                     (0 (the port-wall)) (1 (the starboard-wall)))
                                   0.55)
-               :end (make-point -0.68
+               :end (make-point -1.65
                                 (ecase (the-child index)
                                   (0 (the port-wall)) (1 (the starboard-wall)))
                                 1.03)
@@ -343,10 +382,10 @@
 
    (side-glass :type 'box
                :sequence (:size 2)
-               :center (make-point 0.06
-                                   (ecase (the-child index) (0 0.345) (1 -1.065))
+               :center (make-point -0.415
+                                   (ecase (the-child index) (0 0.488) (1 -1.208))
                                    0.795)
-               :width 1.45
+               :width 2.48
                :length 0.012
                :height 0.45
                :display-controls (list :color +glass+ :transparency 0.85))
@@ -356,53 +395,53 @@
    ;; the firewall the pedals hang before
    (body-sides :type 'box
                :sequence (:size 2)
-               :center (make-point 0.085
-                                   (ecase (the-child index) (0 0.3575) (1 -1.0775))
+               :center (make-point -0.40
+                                   (ecase (the-child index) (0 0.5025) (1 -1.2225))
                                    0.10)
-               :width 1.53
+               :width 2.50
                :length 0.025
                :height 0.90
                :display-controls (list :color +paint+))
 
    (rear-body-panel :type 'box
-                    :center (make-point -0.6925 -0.36 0.10)
+                    :center (make-point -1.6625 -0.36 0.10)
                     :width 0.025
-                    :length 1.442
+                    :length 1.72
                     :height 0.90
                     :display-controls (list :color +paint+))
 
    (firewall :type 'box
              :center (make-point 0.95 -0.36 -0.035)
              :width 0.025
-             :length 1.42
+             :length 1.70
              :height 0.63
              :display-controls (list :color +paint+))
 
    ;; the rear window: no truck bed back there -- the rest of him,
    ;; one day, looming
    (rear-sill :type 'c-cylinder
-              :start (make-point -0.68 (the starboard-wall) 0.55)
-              :end (make-point -0.68 (the port-wall) 0.55)
+              :start (make-point -1.65 (the starboard-wall) 0.55)
+              :end (make-point -1.65 (the port-wall) 0.55)
               :radius 0.02
               :display-controls (list :color +paint+))
 
    (rear-header :type 'c-cylinder
-                :start (make-point -0.68 (the starboard-wall) 1.03)
-                :end (make-point -0.68 (the port-wall) 1.03)
+                :start (make-point -1.65 (the starboard-wall) 1.03)
+                :end (make-point -1.65 (the port-wall) 1.03)
                 :radius 0.02
                 :display-controls (list :color +paint+))
 
    (rear-glass :type 'box
-               :center (make-point -0.675 -0.36 0.795)
+               :center (make-point -1.645 -0.36 0.795)
                :width 0.012
-               :length 1.30
+               :length 1.58
                :height 0.45
                :display-controls (list :color +glass+ :transparency 0.85))
 
    (roof-panel :type 'box
-               :center (make-point 0.08 -0.36 1.055)
-               :width 1.56
-               :length 1.5
+               :center (make-point -0.44 -0.36 1.055)
+               :width 2.60
+               :length 1.80
                :height 0.03
                :display-controls (list :color +paint+))))
 
@@ -449,10 +488,15 @@
                                   (make-point 0.05 -0.72 0.75)
                                   (unitize-vector (make-vector 0.37 0.72 -0.04))
                                   "1.2" :z-near "0.05" :z-far "8000" :up up))
+             (cons :back-seat
+                   (viewpoint-x3d "back-seat" "Back seat"
+                                  (make-point -1.05 -0.36 0.78)
+                                  (unitize-vector (make-vector 1.0 0.18 -0.14))
+                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
              (cons :walkaround
                    (viewpoint-x3d "walkaround" "Walkaround"
-                                  (make-point -2.4 1.7 1.7)
-                                  (unitize-vector (make-vector 2.7 -2.06 -1.1))
+                                  (make-point -3.3 2.3 2.1)
+                                  (unitize-vector (make-vector 3.0 -2.66 -1.55))
                                   "1.0" :z-near "0.05" :z-far "8000" :up up))))
            (chosen (or (assoc (the bound-eye) eyes) (first eyes))))
       (apply #'string-append
@@ -473,6 +517,8 @@
           :style (the eye-button-style) "driver's seat")
         (:button :id "jump-seat-btn" :type "button" :onclick "bindEye('jump-seat')"
           :style (the eye-button-style) "jump seat")
+        (:button :id "back-seat-btn" :type "button" :onclick "bindEye('back-seat')"
+          :style (the eye-button-style) "back seat")
         (:button :id "walkaround-btn" :type "button" :onclick "bindEye('walkaround')"
           :style (the eye-button-style) "walkaround"))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
