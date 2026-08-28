@@ -200,6 +200,59 @@
                 :height 0.15
                 :display-controls (list :color +gauge-face+))
 
+   ;; the rear-view mirror, hung from the header at the cab's
+   ;; centerline
+   (mirror-stem :type 'c-cylinder
+                :start (make-point 0.86 -0.36 1.03)
+                :end (make-point 0.78 -0.36 0.98)
+                :radius 0.008
+                :display-controls (list :color +chrome+))
+
+   (mirror-back :type 'box
+                :center (make-point 0.775 -0.36 0.955)
+                :width 0.02
+                :length 0.28
+                :height 0.09
+                :display-controls (list :color +chrome+))
+
+   (mirror-glass :type 'box
+                 :center (make-point 0.763 -0.36 0.955)
+                 :width 0.006
+                 :length 0.26
+                 :height 0.08
+                 :display-controls (list :color +gauge-face+))
+
+   ;; the cosmic dice, hanging from the mirror on their cords.  They
+   ;; are the ship's free inertial indicator: under thrust they lean
+   ;; away from it, and right now they hang perfectly still, plumb to
+   ;; the cab -- which is the dice telling you the ship is coasting.
+   (dice-cords :type 'c-cylinder
+               :sequence (:size 2)
+               :start (make-point 0.77
+                                  (ecase (the-child index) (0 -0.325) (1 -0.395))
+                                  0.91)
+               :end (make-point 0.77
+                                (ecase (the-child index) (0 -0.325) (1 -0.395))
+                                0.85)
+               :radius 0.0018
+               :display-controls (list :color +chrome+))
+
+   (cosmic-dice :type 'box
+                :sequence (:size 2)
+                :center (make-point 0.77
+                                    (ecase (the-child index) (0 -0.325) (1 -0.395))
+                                    0.827)
+                :orientation (ecase (the-child index)
+                               (0 nil)
+                               (1 (alignment :rear (rotate-vector-d
+                                                    (make-vector 0 1 0)
+                                                    35
+                                                    (make-vector 0 0 1)))))
+                :width 0.045
+                :length 0.045
+                :height 0.045
+                :display-controls (list :color "#b04040"))
+
    ;; the HELM: big thin-rim wheel on a raked column
    (wheel-rim :type 'torus
               :center (the wheel-center)
@@ -520,7 +573,10 @@
         (:button :id "back-seat-btn" :type "button" :onclick "bindEye('back-seat')"
           :style (the eye-button-style) "back seat")
         (:button :id "walkaround-btn" :type "button" :onclick "bindEye('walkaround')"
-          :style (the eye-button-style) "walkaround"))
+          :style (the eye-button-style) "walkaround")
+        (:a :href "/" :style (string-append (the eye-button-style)
+                                            "text-decoration:none;display:inline-block;")
+          "⊙ to the bridge"))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit (first fitting-out)")
       (:script (str "

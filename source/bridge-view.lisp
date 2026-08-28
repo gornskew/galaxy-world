@@ -202,7 +202,10 @@ are parallel -- don't point this straight up or down."
         (:button :id "starboard-eye-btn" :type "button" :onclick "bindEye('starboard-eye')"
           :style (the eye-button-style) "starboard eye ◑")
         (:button :id "chart-eye-btn" :type "button" :onclick "bindEye('chart-eye')"
-          :style (the eye-button-style) "⊙ chart view"))
+          :style (the eye-button-style) "⊙ chart view")
+        (:a :href "/cockpit" :style (string-append (the eye-button-style)
+                                                   "text-decoration:none;display:inline-block;")
+          "to the cockpit"))
       ;; the chart table
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.88);border:1px solid #e8c839;border-radius:10px;padding:12px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:230px;"
         (:div :style "font-size:14px;margin-bottom:8px;letter-spacing:0.06em;" "CHART TABLE")
