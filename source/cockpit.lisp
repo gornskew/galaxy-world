@@ -503,10 +503,10 @@
 ;; the glass and the orbit FEELS like an orbit.  The sphere's poles
 ;; lie on its local y, so the inner rotation stands them up along
 ;; the scene's z before the spin.  The spin is NEGATIVE about the
-;; pole: on a prograde ring with the world abeam to port the orbit
-;; runs counterclockwise seen from +z, so the near face scrolls
-;; bow-to-stern past the glass -- and the sky (below) wheels the
-;; opposite way, clockwise.
+;; pole: the ring runs counterclockwise seen from +z and the ship
+;; rides it nose-in, so in her frame the world turns clockwise --
+;; the near face scrolls starboard-to-port across the windshield --
+;; and the sky (below) wheels clockwise with it.
 (defun planet-x3d (bearing-rad distance-km)
   (let* ((scene-d 3000.0)
          (half-angle (asin (min 0.999 (/ +planet-radius+ (max distance-km 1.0)))))
@@ -712,23 +712,25 @@
    (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
 
    ;; which eye the page binds at load; x3dom binds the first in
-   ;; document order.  You land looking out the port glass, where
-   ;; the world is.
-   (bound-eye :port-lookout))
+   ;; document order.  Nose-in, the world fills the windshield, so
+   ;; you land in the driver's seat looking straight down at him.
+   (bound-eye :drivers-seat))
 
   :computed-slots
   (;; The ship's state, held per session: where the nose points,
    ;; how fast and which way she falls.  Space Travel's plane, one
    ;; move per form post.  She starts on the ring, circular and
-   ;; prograde, the world abeam to port.
-   (heading-deg 90 :settable)
+   ;; prograde, riding NOSE-IN: the nose held on the planet's
+   ;; center, the world square in the windshield, the ring flown
+   ;; sideways.
+   (heading-deg 180 :settable)
    (vel-x 0 :settable)
    (vel-y +ring-speed+ :settable)
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
    (last-burn :none :settable)
-   (last-move-note "riding the ring prograde, the world abeam to port -- coast, and watch the continents go by"
+   (last-move-note "nose-in on the world, falling sideways past him -- coast, and watch the continents slide by"
                    :settable)
 
    (dice-lean (ecase (the last-burn)
@@ -1122,7 +1124,7 @@ function toggleHelm () {
                         "a sideways shove — the road tilts; speed hardly changes")
                        (t "coasting — falling around the world; that curve IS the orbit"))))
       (cond (crashed?
-             (the (set-slot! :heading-deg 90))
+             (the (set-slot! :heading-deg 180))
              (the (set-slot! :vel-x 0))
              (the (set-slot! :vel-y +ring-speed+))
              (the (set-slot! :pos-x +ring-radius+))
