@@ -919,9 +919,13 @@ pole-spin clock."
           (multiple-value-bind (mtx mty msc)
               (scene-body-frame (the moon-bearing) (the moon-distance)
                                 +moon-radius+)
+            ;; the one-shot key carries the SESSION's identity: a
+            ;; bare moves-count key collides across sessions in one
+            ;; browser tab -- every fresh session's first voyage
+            ;; would read as already-played and snap to arrival
             (format nil "
 (function () {
-  var key = 'gw-voyage-~d', played = false;
+  var key = 'gw-voyage-~a-~d', played = false;
   try { played = !!sessionStorage.getItem(key); } catch (e) {}
   if (played) {
     var fin = [['planet-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f'],
@@ -946,7 +950,7 @@ pole-spin clock."
     });
   }
 })();"
-                    (the moves-count)
+                    (or (the instance-id) "local") (the moves-count)
                     ptx pty psc psc psc
                     mtx mty msc msc msc
                     (- (deg->rad (the heading-deg))))))
