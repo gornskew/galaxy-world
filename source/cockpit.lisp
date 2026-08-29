@@ -486,6 +486,14 @@
 (defparameter +ring-radius+ 20742.0)    ; the ship's ring, same as the chart's
 (defparameter +ring-speed+ (sqrt (/ +mu+ +ring-radius+)))
 
+;; The moon: he rides the moon-road (the same ring the bridge chart
+;; draws), and for now he stands at its far node, a stand-off
+;; outboard of the arrival point -- so a ship taking the road takes
+;; it with him close aboard to starboard.
+(defparameter +moon-radius+ 1737.0)
+(defparameter +moon-road-radius+ 384400.0)
+(defparameter +moon-x+ -396400.0)
+
 ;; The berth keeps a tally of what the helms aboard actually do --
 ;; the seed of the play-feeds-the-buildout channel.  One image, one
 ;; table, every cockpit.
@@ -494,27 +502,84 @@
 (defun tally! (key)
   (incf (gethash key *helm-tallies* 0)))
 
-;; The planet as seen from the ship: drawn at a fixed scene distance
-;; with the radius that subtends the true angle, so he grows as you
-;; fall toward him and shrinks as you climb away.  He wears his face
-;; now -- an ImageTexture the page paints onto a canvas client-side
-;; (see the texture script in cockpit-view) -- and he turns: a
-;; TimeSensor spins him about his pole, so the continents file past
-;; the glass and the orbit FEELS like an orbit.  The sphere's poles
-;; lie on its local y, so the inner rotation stands them up along
-;; the scene's z before the spin.  The spin is NEGATIVE about the
-;; pole: the ring runs counterclockwise seen from +z and the ship
-;; rides it nose-in, so in her frame the world turns clockwise --
-;; the near face scrolls starboard-to-port across the windshield --
-;; and the sky (below) wheels clockwise with it.
-(defun planet-x3d (bearing-rad distance-km)
+;; The heavenly bodies as seen from the ship: each drawn at a fixed
+;; scene distance with the scale that subtends its true angle, so he
+;; grows as you fall toward him and shrinks as you climb away.  The
+;; faces are ImageTextures the page paints onto canvases client-side
+;; (see the texture script in cockpit-view).  The world also turns:
+;; a TimeSensor spins him about his pole, so the continents file
+;; past the glass and the orbit FEELS like an orbit.  Sphere poles
+;; lie on local y, so an inner rotation stands them up along the
+;; scene's z before the spin.  The spin is NEGATIVE about the pole:
+;; the ring runs counterclockwise seen from +z and the ship rides
+;; it nose-in, so in her frame the world turns clockwise -- the
+;; near face scrolls starboard-to-port across the windshield -- and
+;; the sky wheels clockwise with it.
+
+(defun scene-body-frame (bearing-rad distance-km body-radius-km)
+  "Scene translation (two values) and uniform scale for a body at
+the fixed scene distance, subtending its true angle."
   (let* ((scene-d 3000.0)
-         (half-angle (asin (min 0.999 (/ +planet-radius+ (max distance-km 1.0)))))
-         (scene-r (* scene-d (tan half-angle))))
-    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"planet-spin\"><Shape><Appearance><ImageTexture id=\"earth-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.05 0.07 0.12\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform></Transform></Transform><TimeSensor DEF=\"planet-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"planet-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"planet-clock\" fromField=\"fraction_changed\" toNode=\"planet-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"planet-swing\" fromField=\"value_changed\" toNode=\"planet-spin\" toField=\"set_rotation\"></ROUTE>"
-            (* scene-d (cos bearing-rad))
+         (scene-r (* scene-d (tan (asin (min 0.999 (/ body-radius-km
+                                                      (max distance-km 1.0))))))))
+    (values (* scene-d (cos bearing-rad))
             (* scene-d (sin bearing-rad))
             scene-r)))
+
+(defun bearing-to (px py heading-rad tx ty)
+  "Bearing of the point TX TY off the nose of a ship at PX PY with
+the given heading; positive to port."
+  (- (atan (- ty py) (- tx px)) heading-rad))
+
+(defun dist-to (px py tx ty)
+  (sqrt (+ (expt (- tx px) 2) (expt (- ty py) 2))))
+
+(defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
+                 &key spin? diffuse emissive)
+  "One body: a unit sphere under a DEF'd frame transform carrying
+translation and scale, so a voyage can fly both.  SPIN? adds the
+pole-spin clock."
+  (multiple-value-bind (tx ty s)
+      (scene-body-frame bearing-rad distance-km body-radius-km)
+    (string-append
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform></Transform>"
+             prefix prefix tx ty s s s prefix texture-id diffuse emissive)
+     (if spin?
+         (format nil "<TimeSensor DEF=\"~a-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"~a-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"~a-clock\" fromField=\"fraction_changed\" toNode=\"~a-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-swing\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
+                 prefix prefix prefix prefix prefix prefix)
+         ""))))
+
+;; The voyage, flown by the scene: the sampled road becomes
+;; interpolator tracks -- both bodies' frames and the sky's heading
+;; -- driven by one one-shot clock.  SAMPLES is a list of
+;; (key heading-rad pos-x pos-y).
+(defun transit-anim-x3d (samples &key (duration 90))
+  (let ((keys (make-string-output-stream))
+        (ppos (make-string-output-stream)) (pscl (make-string-output-stream))
+        (mpos (make-string-output-stream)) (mscl (make-string-output-stream))
+        (nose (make-string-output-stream)))
+    (dolist (s samples)
+      (destructuring-bind (key h px py) s
+        (format keys "~,4f " key)
+        (multiple-value-bind (tx ty sc)
+            (scene-body-frame (bearing-to px py h 0 0) (dist-to px py 0 0)
+                              +planet-radius+)
+          (format ppos "~,1f ~,1f 0 " tx ty)
+          (format pscl "~,2f ~,2f ~,2f " sc sc sc))
+        (multiple-value-bind (tx ty sc)
+            (scene-body-frame (bearing-to px py h +moon-x+ 0)
+                              (dist-to px py +moon-x+ 0) +moon-radius+)
+          (format mpos "~,1f ~,1f 0 " tx ty)
+          (format mscl "~,2f ~,2f ~,2f " sc sc sc))
+        (format nose "0 0 1 ~,5f " (- h))))
+    (let ((k (get-output-stream-string keys)))
+      (format nil "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"></TimeSensor><PositionInterpolator DEF=\"vy-ppos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-pscl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-mpos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-mscl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"vy-nose\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-ppos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-pscl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-mpos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-mscl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-nose\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-ppos\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-pscl\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_scale\"></ROUTE><ROUTE fromNode=\"vy-mpos\" fromField=\"value_changed\" toNode=\"moon-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-mscl\" fromField=\"value_changed\" toNode=\"moon-frame\" toField=\"set_scale\"></ROUTE><ROUTE fromNode=\"vy-nose\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE>"
+              duration
+              k (get-output-stream-string ppos)
+              k (get-output-stream-string pscl)
+              k (get-output-stream-string mpos)
+              k (get-output-stream-string mscl)
+              k (get-output-stream-string nose)))))
 
 ;; The night itself drifts: the whole starfield swings slowly about
 ;; the scene's zenith, the way the sky wheels past a ship falling
@@ -761,12 +826,90 @@
    ;; where the world stands off the nose
    (planet-bearing (- (atan (- (the pos-y)) (- (the pos-x)))
                       (deg->rad (the heading-deg))))
+   ;; and the moon
+   (moon-bearing (bearing-to (the pos-x) (the pos-y)
+                             (deg->rad (the heading-deg)) +moon-x+ 0))
+   (moon-distance (dist-to (the pos-x) (the pos-y) +moon-x+ 0))
+
+   ;; the sampled road of a just-flown programmed voyage, or nil.
+   ;; Set by fly-programmed-road!, cleared by the next hand-flown
+   ;; move; while set, the page carries the voyage animation.
+   (transit-samples nil :settable)
+
+   ;; the sky's authored heading: mid-voyage pages author the scene
+   ;; at the road's start and let the clock fly it forward
+   (sky-authored-heading-rad (if (the transit-samples)
+                                 (second (first (the transit-samples)))
+                                 (deg->rad (the heading-deg))))
+
+   (bodies-x3d
+    (let ((samples (the transit-samples)))
+      (if samples
+          (destructuring-bind (key0 h0 px0 py0) (first samples)
+            (declare (ignore key0))
+            (string-append
+             (body-x3d "planet" "earth-tex"
+                       (bearing-to px0 py0 h0 0 0) (dist-to px0 py0 0 0)
+                       +planet-radius+
+                       :spin? t :diffuse "0.10 0.18 0.85"
+                       :emissive "0.05 0.07 0.12")
+             (body-x3d "moon" "moon-tex"
+                       (bearing-to px0 py0 h0 +moon-x+ 0)
+                       (dist-to px0 py0 +moon-x+ 0) +moon-radius+
+                       :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+             (transit-anim-x3d samples)))
+          (string-append
+           (body-x3d "planet" "earth-tex"
+                     (the planet-bearing) (the radius) +planet-radius+
+                     :spin? t :diffuse "0.10 0.18 0.85"
+                     :emissive "0.05 0.07 0.12")
+           (body-x3d "moon" "moon-tex"
+                     (the moon-bearing) (the moon-distance) +moon-radius+
+                     :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")))))
+
+   ;; the voyage's page script: first load arms the one-shot clock;
+   ;; a reload of the same arrival fast-forwards the scene to the
+   ;; road's end instead of replaying five days
+   (voyage-script-js
+    (if (the transit-samples)
+        (multiple-value-bind (ptx pty psc)
+            (scene-body-frame (the planet-bearing) (the radius) +planet-radius+)
+          (multiple-value-bind (mtx mty msc)
+              (scene-body-frame (the moon-bearing) (the moon-distance)
+                                +moon-radius+)
+            (format nil "
+(function () {
+  var key = 'gw-voyage-~d', played = false;
+  try { played = !!sessionStorage.getItem(key); } catch (e) {}
+  if (played) {
+    var fin = [['planet-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f'],
+               ['moon-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f']];
+    fin.forEach(function (f) {
+      var el = document.getElementById(f[0]);
+      if (el) { el.setAttribute('translation', f[1]); el.setAttribute('scale', f[2]); }
+    });
+    var sky = document.getElementById('sky-heading');
+    if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
+  } else {
+    try { sessionStorage.setItem(key, '1'); } catch (e) {}
+    window.addEventListener('load', function () {
+      var ts = document.getElementById('voyage-clock');
+      if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
+    });
+  }
+})();"
+                    (the moves-count)
+                    ptx pty psc psc psc
+                    mtx mty msc msc msc
+                    (- (deg->rad (the heading-deg))))))
+        ""))
    ;; the speedo sweeps 8 o'clock to 4 o'clock, full scale 8 km/s
    (speedo-phi (+ -120 (* 240 (min 1 (/ (the speed) 8.0)))))
 
    (helm-form-html
     (with-form-string ()
       (:div :style "display:flex;flex-direction:column;gap:4px;"
+        (:div (str (the voyage-control html-string)))
         (:div (str (the wheel-control html-string)))
         (:div (str (the gear-control html-string)))
         (:div (str (the pedal-control html-string))))
@@ -820,12 +963,13 @@
             ;; the universe turns around the ship, never the ship
             ;; around the universe -- and inside the heading, the
             ;; night drifts on its own clock
-            (:|Transform| :rotation (format nil "0 0 1 ~,5f"
-                                            (- (deg->rad (the heading-deg))))
+            (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
+              :rotation (format nil "0 0 1 ~,5f"
+                                (- (the sky-authored-heading-rad)))
               (:|Transform| :|DEF| "sky-drift"
                 (str (starfield-x3d :radius 5000.0d0))))
             (str *sky-drift-x3d*)
-            (str (planet-x3d (the planet-bearing) (the radius)))
+            (str (the bodies-x3d))
             (str (cockpit-x3d))
             (str (dice-x3d (the dice-lean)))
             (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
@@ -972,6 +1116,21 @@ function toggleHelm () {
     }
     g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
   });
+  tex(['moon-tex'], 512, 256, function (g, w, h) {
+    g.fillStyle = '#b6b2a8'; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 9; i++) {
+      var x = rnd(i + 20) * w, y = (0.2 + 0.6 * rnd(i + 60)) * h, r = 20 + 55 * rnd(i + 100);
+      g.fillStyle = 'rgba(90,88,82,0.35)';
+      g.beginPath(); g.ellipse(x, y, r, r * 0.7, rnd(i) * 3, 0, 6.2832); g.fill();
+    }
+    for (var j = 0; j < 90; j++) {
+      var x = rnd(j + 200) * w, y = rnd(j + 300) * h, r = 1.5 + 7 * rnd(j + 400);
+      g.fillStyle = 'rgba(70,68,62,0.5)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+      g.strokeStyle = 'rgba(235,232,225,0.55)'; g.lineWidth = 1;
+      g.beginPath(); g.arc(x - r * 0.15, y - r * 0.15, r * 0.8, 0, 6.2832); g.stroke();
+    }
+  });
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
     var pips = [[[0.5,0.5]],
@@ -1025,13 +1184,25 @@ function toggleHelm () {
       });
     });
   });
-})();"))))
+})();")
+        (str (the voyage-script-js)))))
 
    (eye-button-style
     "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;"))
 
   :objects
   (;; size 1 = popup menus, not open list boxes
+   ;; the road: a fresh session comes with the trip to the moon
+   ;; already programmed, so the FIRST move flies it -- then the
+   ;; helm is yours, and the astrodynamics lessons start from the
+   ;; moon's road
+   (voyage-control :type 'gwl:menu-form-control
+                   :prompt "the road: "
+                   :size 1
+                   :default :moon
+                   :choice-plist (list :hand "fly her by hand"
+                                       :moon "the programmed road to the moon"))
+
    (wheel-control :type 'gwl:menu-form-control
                   :prompt "wheel: "
                   :size 1
@@ -1080,13 +1251,73 @@ function toggleHelm () {
         (list vx vy px py))))
 
    ;; One move of the game, folded into the ship's state when the
-   ;; helm form posts.  Turn the wheel, then burn (or don't), then
-   ;; FALL as long as the gear holds the clutch out -- a minute in
-   ;; first, ten in second, an hour in third.  The brake is heard
+   ;; helm form posts.  With the programmed road selected, the move
+   ;; IS the voyage; otherwise turn the wheel, then burn (or don't),
+   ;; then FALL as long as the gear holds the clutch out -- a minute
+   ;; in first, ten in second, an hour in third.  The brake is heard
    ;; and changes nothing.  Meet the sky of the world and you are
    ;; set back on the ring.
    (after-set!
     ()
+    (if (eql (the voyage-control value) :moon)
+        (the fly-programmed-road!)
+        (the make-helm-move!)))
+
+   ;; The programmed road to the moon: the least-fuel two-burn
+   ;; Hohmann from the home ring to the moon-road.  The ship's state
+   ;; jumps to the arrival ring; the SCENE flies the whole road --
+   ;; the sampled transfer becomes the page's voyage animation, the
+   ;; nose swinging from nose-in to prograde at the first kick and
+   ;; tracking the direction of travel the rest of the way.  Samples
+   ;; run uniform in eccentric anomaly; the first key holds the
+   ;; pre-burn nose-in pose so the swing reads as its own beat.
+   (fly-programmed-road!
+    ()
+    (let* ((r1 +ring-radius+) (r2 +moon-road-radius+)
+           (a (* 0.5 (+ r1 r2)))
+           (e (/ (- r2 r1) (+ r2 r1)))
+           (p (* a (- 1 (* e e))))
+           (vc2 (sqrt (/ +mu+ r2)))
+           (dv1 (- (sqrt (* +mu+ (- (/ 2 r1) (/ 1 a)))) (sqrt (/ +mu+ r1))))
+           (dv2 (- vc2 (sqrt (* +mu+ (- (/ 2 r2) (/ 1 a))))))
+           (tof-days (/ (* pi (sqrt (/ (* a a a) +mu+))) 86400))
+           (vcoeff (sqrt (/ +mu+ p)))
+           (n 32)
+           (samples (list (list 0.0 pi r1 0)))  ; pre-burn, nose-in
+           (prev-h nil))
+      (dotimes (i (1+ n))
+        (let* ((ecc-anom (* pi (/ i n)))
+               (r (* a (- 1 (* e (cos ecc-anom)))))
+               (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
+                            (- (cos ecc-anom) e)))
+               (h (atan (* vcoeff (+ e (cos theta)))
+                        (* vcoeff (- (sin theta))))))
+          ;; unwrap the heading so the nose track never jumps a lap
+          (when prev-h
+            (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
+            (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
+          (setq prev-h h)
+          (push (list (+ 0.07 (* 0.93 (/ i n))) h
+                      (* r (cos theta)) (* r (sin theta)))
+                samples)))
+      (the (set-slot! :heading-deg 270))
+      (the (set-slot! :vel-x 0))
+      (the (set-slot! :vel-y (- vc2)))
+      (the (set-slot! :pos-x (- r2)))
+      (the (set-slot! :pos-y 0))
+      (the (set-slot! :last-burn :none))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :transit-samples (nreverse samples)))
+      (the (set-slot! :last-move-note
+                      (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and the moon's road is yours.  Now fly her by hand."
+                              dv1 tof-days dv2)))
+      (the voyage-control (set-slot! :value :hand))
+      (tally! :moves)
+      (tally! :voyages)))
+
+   (make-helm-move!
+    ()
+    (the (set-slot! :transit-samples nil))
     (let* ((turn (ecase (the wheel-control value)
                    (:hard-port 30) (:easy-port 10) (:amidships 0)
                    (:easy-starboard -10) (:hard-starboard -30)))
