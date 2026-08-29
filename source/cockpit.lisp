@@ -502,12 +502,16 @@
 ;; TimeSensor spins him about his pole, so the continents file past
 ;; the glass and the orbit FEELS like an orbit.  The sphere's poles
 ;; lie on its local y, so the inner rotation stands them up along
-;; the scene's z before the spin.
+;; the scene's z before the spin.  The spin is NEGATIVE about the
+;; pole: on a prograde ring with the world abeam to port the orbit
+;; runs counterclockwise seen from +z, so the near face scrolls
+;; bow-to-stern past the glass -- and the sky (below) wheels the
+;; opposite way, clockwise.
 (defun planet-x3d (bearing-rad distance-km)
   (let* ((scene-d 3000.0)
          (half-angle (asin (min 0.999 (/ +planet-radius+ (max distance-km 1.0)))))
          (scene-r (* scene-d (tan half-angle))))
-    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"planet-spin\"><Shape><Appearance><ImageTexture id=\"earth-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.05 0.07 0.12\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform></Transform></Transform><TimeSensor DEF=\"planet-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"planet-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 1 0 0 0 1 0 1.5708 0 1 0 3.14159 0 1 0 4.71239 0 1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"planet-clock\" fromField=\"fraction_changed\" toNode=\"planet-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"planet-swing\" fromField=\"value_changed\" toNode=\"planet-spin\" toField=\"set_rotation\"></ROUTE>"
+    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"planet-spin\"><Shape><Appearance><ImageTexture id=\"earth-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.05 0.07 0.12\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform></Transform></Transform><TimeSensor DEF=\"planet-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"planet-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"planet-clock\" fromField=\"fraction_changed\" toNode=\"planet-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"planet-swing\" fromField=\"value_changed\" toNode=\"planet-spin\" toField=\"set_rotation\"></ROUTE>"
             (* scene-d (cos bearing-rad))
             (* scene-d (sin bearing-rad))
             scene-r)))
@@ -517,7 +521,7 @@
 ;; around a world.  One revolution in twenty minutes -- game time
 ;; runs generous.
 (defparameter *sky-drift-x3d*
-  "<TimeSensor DEF=\"sky-clock\" cycleInterval=\"1200\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"sky-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 0 1 0 0 0 1 1.5708 0 0 1 3.14159 0 0 1 4.71239 0 0 1 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"sky-clock\" fromField=\"fraction_changed\" toNode=\"sky-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"sky-swing\" fromField=\"value_changed\" toNode=\"sky-drift\" toField=\"set_rotation\"></ROUTE>")
+  "<TimeSensor DEF=\"sky-clock\" cycleInterval=\"1200\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"sky-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 0 -1 0 0 0 -1 1.5708 0 0 -1 3.14159 0 0 -1 4.71239 0 0 -1 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"sky-clock\" fromField=\"fraction_changed\" toNode=\"sky-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"sky-swing\" fromField=\"value_changed\" toNode=\"sky-drift\" toField=\"set_rotation\"></ROUTE>")
 
 ;; A torus as one smooth-shaded IndexedFaceSet in world coordinates.
 ;; The stock torus primitive facets visibly at the rim; this mesh
@@ -591,35 +595,61 @@
             (get-output-stream-string idx)
             (get-output-stream-string points))))
 
+;; One die about the origin: a cube reading its six faces off the
+;; dice-tex atlas the page paints client-side -- black pips on
+;; white, opposite faces summing to seven, 1 up, 6 down, 2 forward.
+;; N tells the two dice apart so each ImageTexture keeps its own id.
+(defun die-x3d (n)
+  (let ((h 0.0225)
+        ;; atlas cells (col row) in face-emission order:
+        ;; top 1, bottom 6, fore 2, aft 5, port 3, starboard 4
+        (cells '((0 0) (2 1) (1 0) (1 1) (2 0) (0 1))))
+    (format nil "<Shape><Appearance><ImageTexture id=\"dice-tex-~d\" url=\"\"></ImageTexture><Material diffuseColor=\"0.93 0.91 0.86\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"4 5 6 7 -1 1 0 3 2 -1 5 1 2 6 -1 0 4 7 3 -1 6 2 3 7 -1 0 1 5 4 -1\" texCoordIndex=\"~{~a -1 ~}\"><Coordinate point=\"~{~{~,4f~^ ~}~^, ~}\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
+            n
+            (loop for f below 6
+                  collect (format nil "~d ~d ~d ~d"
+                                  (* f 4) (+ 1 (* f 4)) (+ 2 (* f 4)) (+ 3 (* f 4))))
+            (list (list (- h) (- h) (- h)) (list h (- h) (- h))
+                  (list h h (- h)) (list (- h) h (- h))
+                  (list (- h) (- h) h) (list h (- h) h)
+                  (list h h h) (list (- h) h h))
+            (with-output-to-string (ts)
+              (dolist (cell cells)
+                (let* ((u0 (/ (first cell) 3.0)) (u1 (/ (1+ (first cell)) 3.0))
+                       (v1 (- 1.0 (/ (second cell) 2.0)))
+                       (v0 (- 1.0 (/ (1+ (second cell)) 2.0))))
+                  (format ts "~,4f ~,4f, ~,4f ~,4f, ~,4f ~,4f, ~,4f ~,4f, "
+                          u0 v0 u1 v0 u1 v1 u0 v1)))))))
+
 ;; The cosmic dice, hanging from the mirror on their cords -- the
 ;; ship's free inertial indicator.  Under thrust they lean away from
 ;; it: aft on a burn, forward on a retro burn, plumb on a coast.
+;; The lean is a rotation about y (the swing lies in the x-z plane),
+;; and the second die wears a 35-degree twist about its own pole so
+;; the pair doesn't hang in lockstep.
 (defun dice-x3d (lean-deg)
   (let* ((lam (deg->rad lean-deg))
-         (dir (make-vector (- (sin lam)) 0 (- (cos lam))))
-         (up (make-vector (sin lam) 0 (cos lam))))
+         (dir (make-vector (- (sin lam)) 0 (- (cos lam)))))
     (with-output-to-string (s)
-      (with-format (geom-base::x3d s)
+      (let ((i -1))
         (dolist (y '(-0.325 -0.395))
+          (incf i)
           (let* ((pivot (make-point 0.77 y 0.91))
-                 (cord (make-object 'c-cylinder
-                                    :start pivot
-                                    :end (add-vectors pivot (scalar*vector 0.06 dir))
-                                    :radius 0.0018
-                                    :display-controls (list :color +chrome+)))
-                 (die (make-object 'box
-                                   :center (add-vectors pivot (scalar*vector 0.083 dir))
-                                   :orientation
-                                   (if (= y -0.395)
-                                       (alignment :top up
-                                                  :rear (rotate-vector-d
-                                                         (make-vector 0 1 0) 35
-                                                         (make-vector 0 0 1)))
-                                       (alignment :top up))
-                                   :width 0.045 :length 0.045 :height 0.045
-                                   :display-controls (list :color "#b04040"))))
-            (write-the-object cord (cad-output))
-            (write-the-object die (cad-output))))))))
+                 (center (add-vectors pivot (scalar*vector 0.083 dir))))
+            (with-format (geom-base::x3d s)
+              (write-the-object
+               (make-object 'c-cylinder
+                            :start pivot
+                            :end (add-vectors pivot (scalar*vector 0.06 dir))
+                            :radius 0.0018
+                            :display-controls (list :color +chrome+))
+               (cad-output)))
+            (format s "<Transform translation=\"~,4f ~,4f ~,4f\"><Transform rotation=\"0 1 0 ~,5f\">~a~a~a</Transform></Transform>"
+                    (get-x center) (get-y center) (get-z center)
+                    lam
+                    (if (= i 1) "<Transform rotation=\"0 0 1 0.61087\">" "")
+                    (die-x3d i)
+                    (if (= i 1) "</Transform>" ""))))))))
 
 ;; A gauge needle, cut per render: hub on the panel face, tip swung
 ;; PHI degrees clockwise from straight up as the driver sees it.
@@ -682,8 +712,9 @@
    (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
 
    ;; which eye the page binds at load; x3dom binds the first in
-   ;; document order
-   (bound-eye :drivers-seat))
+   ;; document order.  You land looking out the port glass, where
+   ;; the world is.
+   (bound-eye :port-lookout))
 
   :computed-slots
   (;; The ship's state, held per session: where the nose points,
@@ -744,6 +775,14 @@
     (let* ((up (make-vector 0 0 1))
            (eyes
             (list
+             ;; the landing view: same seat, head turned to port,
+             ;; the world in the side glass with the A-pillar and
+             ;; cowl framing it
+             (cons :port-lookout
+                   (viewpoint-x3d "port-lookout" "Port lookout"
+                                  (make-point -0.02 0 0.78)
+                                  (unitize-vector (make-vector 0.26 0.97 0))
+                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
              (cons :drivers-seat
                    (viewpoint-x3d "drivers-seat" "Driver's seat"
                                   (make-point -0.02 0 0.78)
@@ -792,6 +831,8 @@
             (str (port-eye-feed-x3d))
             (str (starboard-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
+        (:button :id "port-lookout-btn" :type "button" :onclick "bindEye('port-lookout')"
+          :style (the eye-button-style) "◐ port lookout")
         (:button :id "drivers-seat-btn" :type "button" :onclick "bindEye('drivers-seat')"
           :style (the eye-button-style) "driver's seat")
         (:button :id "jump-seat-btn" :type "button" :onclick "bindEye('jump-seat')"
@@ -839,14 +880,16 @@ function bindEye (id) {
 }
 (function () {
   function rnd (n) { var x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
-  function tex (id, w, h, draw) {
-    var el = document.getElementById(id);
-    if (!el) return;
+  function tex (ids, w, h, draw) {
     var c = document.createElement('canvas'); c.width = w; c.height = h;
     draw(c.getContext('2d'), w, h);
-    el.setAttribute('url', c.toDataURL());
+    var u = c.toDataURL();
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.setAttribute('url', u);
+    });
   }
-  tex('earth-tex', 1024, 512, function (g, w, h) {
+  tex(['earth-tex'], 1024, 512, function (g, w, h) {
     var sea = g.createLinearGradient(0, 0, 0, h);
     sea.addColorStop(0, '#16305a'); sea.addColorStop(0.5, '#1d4f8a'); sea.addColorStop(1, '#16305a');
     g.fillStyle = sea; g.fillRect(0, 0, w, h);
@@ -873,7 +916,7 @@ function bindEye (id) {
       g.beginPath(); g.ellipse(cx, cy, rx, rx * 0.28, 0, 0, 6.2832); g.fill();
     }
   });
-  tex('leather-tex', 256, 256, function (g, w, h) {
+  tex(['leather-tex'], 256, 256, function (g, w, h) {
     g.fillStyle = '#6b4423'; g.fillRect(0, 0, w, h);
     for (var i = 0; i < 2200; i++) {
       var x = rnd(i) * w, y = rnd(i + 9000) * h, r = 0.6 + 1.8 * rnd(i + 5000);
@@ -886,7 +929,7 @@ function bindEye (id) {
       g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * l, y0 + Math.sin(a) * l); g.stroke();
     }
   });
-  tex('wood-tex', 512, 128, function (g, w, h) {
+  tex(['wood-tex'], 512, 128, function (g, w, h) {
     g.fillStyle = '#7a4f28'; g.fillRect(0, 0, w, h);
     for (var y = 0; y < h; y++) {
       var t = 0.5 + 0.5 * Math.sin(y * 0.55 + 3.5 * Math.sin(y * 0.061));
@@ -902,6 +945,59 @@ function bindEye (id) {
       g.stroke();
     }
     g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
+  });
+  tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
+    g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
+    var pips = [[[0.5,0.5]],
+                [[0.28,0.28],[0.72,0.72]],
+                [[0.28,0.28],[0.5,0.5],[0.72,0.72]],
+                [[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]],
+                [[0.28,0.28],[0.72,0.28],[0.5,0.5],[0.28,0.72],[0.72,0.72]],
+                [[0.28,0.25],[0.28,0.5],[0.28,0.75],[0.72,0.25],[0.72,0.5],[0.72,0.75]]];
+    g.fillStyle = '#151515';
+    for (var n = 0; n < 6; n++) {
+      var x0 = (n % 3) * 64, y0 = Math.floor(n / 3) * 64;
+      pips[n].forEach(function (p) {
+        g.beginPath(); g.arc(x0 + p[0] * 64, y0 + p[1] * 64, 6, 0, 6.2832); g.fill();
+      });
+    }
+  });
+})();
+// The view keeper: mouse navigation saves the camera pose, and any
+// reload of the page -- including the full re-render after a helm
+// move -- puts you back where you left it, by injecting the saved
+// pose as the first viewpoint in the scene before x3dom binds one.
+(function () {
+  try {
+    var saved = sessionStorage.getItem('gw-cockpit-view');
+    if (saved) {
+      var v = JSON.parse(saved);
+      var scene = document.querySelector('#cockpit-x3d scene');
+      if (scene && v.p && v.o) {
+        var vp = document.createElement('viewpoint');
+        vp.setAttribute('id', 'restored-view');
+        vp.setAttribute('description', 'Where you left it');
+        vp.setAttribute('position', v.p);
+        vp.setAttribute('orientation', v.o);
+        vp.setAttribute('fieldOfView', '1.15');
+        vp.setAttribute('zNear', '0.05');
+        vp.setAttribute('zFar', '8000');
+        scene.insertBefore(vp, scene.firstChild);
+      }
+    }
+  } catch (e) {}
+  window.addEventListener('load', function () {
+    document.querySelectorAll('#cockpit-x3d viewpoint').forEach(function (vp) {
+      vp.addEventListener('viewpointChanged', function (e) {
+        try {
+          var p = e.detail.position, o = e.detail.orientation;
+          sessionStorage.setItem('gw-cockpit-view', JSON.stringify({
+            p: p.x + ' ' + p.y + ' ' + p.z,
+            o: o[0].x + ' ' + o[0].y + ' ' + o[0].z + ' ' + o[1]
+          }));
+        } catch (err) {}
+      });
+    });
   });
 })();"))))
 
