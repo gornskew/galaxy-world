@@ -549,6 +549,29 @@ pole-spin clock."
                  prefix prefix prefix prefix prefix prefix)
          ""))))
 
+;; The parked orbit: once she has taken the moon's ring she rides
+;; it nose-prograde, and the scene loops the ride -- the moon holds
+;; steady abeam while his face slowly turns, and home and the whole
+;; sky wheel once around per orbit (the ship's frame turns with her
+;; ring; everything far away appears to turn the other way).  One
+;; looping clock, three tracks.  ENABLED? nil parks the clock so a
+;; voyage can finish first; the page's script throws the switch.
+(defun moon-ambient-x3d (home-bearing sky-angle &key (period 240) enabled?)
+  (let ((homes (make-string-output-stream))
+        (skys (make-string-output-stream))
+        (spins (make-string-output-stream)))
+    (dotimes (k 9)
+      (let ((b (- home-bearing (* k (/ pi 4)))))
+        (format homes "~,1f ~,1f 0 " (* 3000 (cos b)) (* 3000 (sin b)))))
+    (dotimes (k 5)
+      (format skys "0 0 1 ~,5f " (- sky-angle (* k (/ pi 2))))
+      (format spins "0 -1 0 ~,5f " (* k (/ pi 2))))
+    (format nil "<TimeSensor DEF=\"ambient-clock\" id=\"ambient-clock\" cycleInterval=\"~d\" loop=\"true\" enabled=\"~a\"></TimeSensor><PositionInterpolator DEF=\"amb-home\" key=\"0 0.125 0.25 0.375 0.5 0.625 0.75 0.875 1\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"amb-sky\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><OrientationInterpolator DEF=\"amb-moonspin\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-home\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-sky\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-moonspin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"amb-home\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"amb-sky\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE><ROUTE fromNode=\"amb-moonspin\" fromField=\"value_changed\" toNode=\"moon-spin\" toField=\"set_rotation\"></ROUTE>"
+            period (if enabled? "true" "false")
+            (get-output-stream-string homes)
+            (get-output-stream-string skys)
+            (get-output-stream-string spins))))
+
 ;; The voyage, flown by the scene: the sampled road becomes
 ;; interpolator tracks -- both bodies' frames and the sky's heading
 ;; -- driven by one one-shot clock.  SAMPLES is a list of
@@ -841,6 +864,11 @@ pole-spin clock."
    ;; move; while set, the page carries the voyage animation.
    (transit-samples nil :settable)
 
+   ;; she stands the moon watch: set on arrival, cleared by the
+   ;; next hand-flown move; while set, the scene loops the parked
+   ;; orbit around the moon
+   (moon-orbit? nil :settable)
+
    ;; the sky's authored heading: mid-voyage pages author the scene
    ;; at the road's start and let the clock fly it forward
    (sky-authored-heading-rad (if (the transit-samples)
@@ -862,7 +890,11 @@ pole-spin clock."
                        (bearing-to px0 py0 h0 +moon-x+ 0)
                        (dist-to px0 py0 +moon-x+ 0) +moon-radius+
                        :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
-             (transit-anim-x3d samples)))
+             (transit-anim-x3d samples)
+             ;; the watch waits, parked, for the voyage to land
+             (moon-ambient-x3d (the planet-bearing)
+                               (- (deg->rad (the heading-deg)))
+                               :enabled? nil)))
           (string-append
            (body-x3d "planet" "earth-tex"
                      (the planet-bearing) (the radius) +planet-radius+
@@ -870,7 +902,12 @@ pole-spin clock."
                      :emissive "0.05 0.07 0.12")
            (body-x3d "moon" "moon-tex"
                      (the moon-bearing) (the moon-distance) +moon-radius+
-                     :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")))))
+                     :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+           (if (the moon-orbit?)
+               (moon-ambient-x3d (the planet-bearing)
+                                 (- (deg->rad (the heading-deg)))
+                                 :enabled? t)
+               "")))))
 
    ;; the voyage's page script: first load arms the one-shot clock;
    ;; a reload of the same arrival fast-forwards the scene to the
@@ -895,11 +932,17 @@ pole-spin clock."
     });
     var sky = document.getElementById('sky-heading');
     if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
+    var amb = document.getElementById('ambient-clock');
+    if (amb) amb.setAttribute('enabled', 'true');
   } else {
     try { sessionStorage.setItem(key, '1'); } catch (e) {}
     window.addEventListener('load', function () {
       var ts = document.getElementById('voyage-clock');
       if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
+      setTimeout(function () {
+        var amb = document.getElementById('ambient-clock');
+        if (amb) amb.setAttribute('enabled', 'true');
+      }, 92000);
     });
   }
 })();"
@@ -1313,8 +1356,9 @@ function toggleHelm () {
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (the (set-slot! :transit-samples (nreverse samples)))
+      (the (set-slot! :moon-orbit? t))
       (the (set-slot! :last-move-note
-                      (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and the moon's road is yours.  Now fly her by hand."
+                      (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and she settles into the watch around the moon.  The helm is yours."
                               dv1 tof-days dv2)))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
@@ -1323,6 +1367,7 @@ function toggleHelm () {
    (make-helm-move!
     ()
     (the (set-slot! :transit-samples nil))
+    (the (set-slot! :moon-orbit? nil))
     (let* ((turn (ecase (the wheel-control value)
                    (:hard-port 30) (:easy-port 10) (:amidships 0)
                    (:easy-starboard -10) (:hard-starboard -30)))
