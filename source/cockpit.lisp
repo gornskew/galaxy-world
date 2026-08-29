@@ -535,12 +535,15 @@ the given heading; positive to port."
   (sqrt (+ (expt (- tx px) 2) (expt (- ty py) 2))))
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
-                 &key spin? diffuse emissive)
+                 &key spin? diffuse emissive scale-override)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  SPIN? adds the
-pole-spin clock."
+pole-spin clock.  SCALE-OVERRIDE authors a different scale than the
+subtended one -- a voyage page hides a body until its clock's first
+key sets the true size."
   (multiple-value-bind (tx ty s)
       (scene-body-frame bearing-rad distance-km body-radius-km)
+    (when scale-override (setq s scale-override))
     (string-append
      (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform></Transform>"
              prefix prefix tx ty s s s prefix texture-id diffuse emissive)
@@ -550,12 +553,14 @@ pole-spin clock."
          ""))))
 
 ;; The parked orbit: once she has taken the moon's ring she rides
-;; it nose-prograde, and the scene loops the ride -- the moon holds
-;; steady abeam while his face slowly turns, and home and the whole
-;; sky wheel once around per orbit (the ship's frame turns with her
+;; it NOSE-IN, the way she rode at home -- the moon square in the
+;; windshield while his face slowly turns, home and the whole sky
+;; wheeling once around per orbit (the ship's frame turns with her
 ;; ring; everything far away appears to turn the other way).  One
 ;; looping clock, three tracks.  ENABLED? nil parks the clock so a
-;; voyage can finish first; the page's script throws the switch.
+;; voyage can finish first -- parked BOTH ways (enabled=false AND a
+;; far-future startTime), so the watch stays down even where one
+;; guard is ignored; the page's script throws both switches.
 (defun moon-ambient-x3d (home-bearing sky-angle &key (period 240) enabled?)
   (let ((homes (make-string-output-stream))
         (skys (make-string-output-stream))
@@ -566,8 +571,8 @@ pole-spin clock."
     (dotimes (k 5)
       (format skys "0 0 1 ~,5f " (- sky-angle (* k (/ pi 2))))
       (format spins "0 -1 0 ~,5f " (* k (/ pi 2))))
-    (format nil "<TimeSensor DEF=\"ambient-clock\" id=\"ambient-clock\" cycleInterval=\"~d\" loop=\"true\" enabled=\"~a\"></TimeSensor><PositionInterpolator DEF=\"amb-home\" key=\"0 0.125 0.25 0.375 0.5 0.625 0.75 0.875 1\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"amb-sky\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><OrientationInterpolator DEF=\"amb-moonspin\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-home\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-sky\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-moonspin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"amb-home\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"amb-sky\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE><ROUTE fromNode=\"amb-moonspin\" fromField=\"value_changed\" toNode=\"moon-spin\" toField=\"set_rotation\"></ROUTE>"
-            period (if enabled? "true" "false")
+    (format nil "<TimeSensor DEF=\"ambient-clock\" id=\"ambient-clock\" cycleInterval=\"~d\" loop=\"true\" enabled=\"~a\"~:[ startTime=\"8000000000\"~;~]></TimeSensor><PositionInterpolator DEF=\"amb-home\" key=\"0 0.125 0.25 0.375 0.5 0.625 0.75 0.875 1\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"amb-sky\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><OrientationInterpolator DEF=\"amb-moonspin\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-home\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-sky\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-moonspin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"amb-home\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"amb-sky\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE><ROUTE fromNode=\"amb-moonspin\" fromField=\"value_changed\" toNode=\"moon-spin\" toField=\"set_rotation\"></ROUTE>"
+            period (if enabled? "true" "false") enabled?
             (get-output-stream-string homes)
             (get-output-stream-string skys)
             (get-output-stream-string spins))))
@@ -886,10 +891,16 @@ pole-spin clock."
                        +planet-radius+
                        :spin? t :diffuse "0.10 0.18 0.85"
                        :emissive "0.05 0.07 0.12")
+             ;; the moon authors HIDDEN on a voyage page: he and home
+             ;; share the same spot at departure, and if home's big
+             ;; texture is still decoding at first paint the moon dot
+             ;; peeks through -- the clock's first key restores his
+             ;; true size the moment the road starts
              (body-x3d "moon" "moon-tex"
                        (bearing-to px0 py0 h0 +moon-x+ 0)
                        (dist-to px0 py0 +moon-x+ 0) +moon-radius+
-                       :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+                       :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
+                       :scale-override 0.001)
              (transit-anim-x3d samples)
              ;; the watch waits, parked, for the voyage to land
              (moon-ambient-x3d (the planet-bearing)
@@ -937,7 +948,10 @@ pole-spin clock."
     var sky = document.getElementById('sky-heading');
     if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
     var amb = document.getElementById('ambient-clock');
-    if (amb) amb.setAttribute('enabled', 'true');
+    if (amb) {
+      amb.setAttribute('startTime', '' + (Date.now() / 1000));
+      amb.setAttribute('enabled', 'true');
+    }
   } else {
     try { sessionStorage.setItem(key, '1'); } catch (e) {}
     window.addEventListener('load', function () {
@@ -945,7 +959,10 @@ pole-spin clock."
       if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
       setTimeout(function () {
         var amb = document.getElementById('ambient-clock');
-        if (amb) amb.setAttribute('enabled', 'true');
+        if (amb) {
+          amb.setAttribute('startTime', '' + (Date.now() / 1000));
+          amb.setAttribute('enabled', 'true');
+        }
       }, 92000);
     });
   }
@@ -1322,7 +1339,10 @@ function toggleHelm () {
    ;; nose swinging from nose-in to prograde at the first kick and
    ;; tracking the direction of travel the rest of the way.  Samples
    ;; run uniform in eccentric anomaly; the first key holds the
-   ;; pre-burn nose-in pose so the swing reads as its own beat.
+   ;; pre-burn nose-in pose so the swing reads as its own beat, and
+   ;; the last key swings the nose BACK to nose-in on the moon --
+   ;; the arrival mirrors the departure, the new world square in
+   ;; the windshield.
    (fly-programmed-road!
     ()
     (let* ((r1 +ring-radius+) (r2 +moon-road-radius+)
@@ -1349,10 +1369,12 @@ function toggleHelm () {
             (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
             (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
           (setq prev-h h)
-          (push (list (+ 0.07 (* 0.93 (/ i n))) h
+          (push (list (+ 0.07 (* 0.86 (/ i n))) h
                       (* r (cos theta)) (* r (sin theta)))
                 samples)))
-      (the (set-slot! :heading-deg 270))
+      ;; the closing beat: nose-in on the moon
+      (push (list 1.0 pi (- r2) 0) samples)
+      (the (set-slot! :heading-deg 180))
       (the (set-slot! :vel-x 0))
       (the (set-slot! :vel-y (- vc2)))
       (the (set-slot! :pos-x (- r2)))
