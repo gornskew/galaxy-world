@@ -267,6 +267,7 @@ function bindEye (id) {
 
    (destination-choice :type 'gwl:menu-form-control
                        :prompt "destination: "
+                       :size 1
                        :default (the destination-default)
                        :choice-plist (destination-choice-plist))
 

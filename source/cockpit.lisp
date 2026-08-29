@@ -844,9 +844,18 @@
         (:a :href "/bridge" :style (string-append (the eye-button-style)
                                                   "text-decoration:none;display:inline-block;")
           "⊙ to the bridge"))
-      ;; the helm card: the controls, and what the ship is doing
-      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.88);border:1px solid #e8c839;border-radius:10px;padding:12px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;"
-        (:div :style "font-size:14px;margin-bottom:8px;letter-spacing:0.06em;" "THE HELM")
+      ;; the helm card: the controls, and what the ship is doing.
+      ;; Glassy, and the title bar folds it away; the fold survives
+      ;; the re-render a move posts (sessionStorage, like the view).
+      (:style (str "
+#helm-body select { background:rgba(16,16,16,0.6); color:#e8c839; border:1px solid #7a6a1f; border-radius:6px; padding:2px 4px; font-size:12px; }
+#helm-body select option { background:#1a1a1a; color:#e8c839; }"))
+      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;"
+        (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleHelm()"
+          (:span "THE HELM")
+          (:span :id "helm-caret" "▾"))
+        (:div :id "helm-body" :style "margin-top:8px;"
         (str (the helm-form-html))
         (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
@@ -865,7 +874,7 @@
                      "the road is unbound — the deep dark has you")))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
-            (str (the last-move-note)))))
+            (str (the last-move-note))))))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit")
       ;; the paint shop: the world's face, the leather, and the wood
@@ -878,6 +887,21 @@
 function bindEye (id) {
   document.getElementById(id).setAttribute('set_bind','true');
 }
+function toggleHelm () {
+  var b = document.getElementById('helm-body');
+  var collapsed = b.style.display === 'none';
+  b.style.display = collapsed ? '' : 'none';
+  document.getElementById('helm-caret').textContent = collapsed ? '\\u25be' : '\\u25b8';
+  try { sessionStorage.setItem('gw-helm-collapsed', collapsed ? '0' : '1'); } catch (e) {}
+}
+(function () {
+  try {
+    if (sessionStorage.getItem('gw-helm-collapsed') === '1') {
+      document.getElementById('helm-body').style.display = 'none';
+      document.getElementById('helm-caret').textContent = '\\u25b8';
+    }
+  } catch (e) {}
+})();
 (function () {
   function rnd (n) { var x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
   function tex (ids, w, h, draw) {
@@ -1005,8 +1029,10 @@ function bindEye (id) {
     "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;"))
 
   :objects
-  ((wheel-control :type 'gwl:menu-form-control
+  (;; size 1 = popup menus, not open list boxes
+   (wheel-control :type 'gwl:menu-form-control
                   :prompt "wheel: "
+                  :size 1
                   :default :amidships
                   :choice-plist (list :hard-port "hard over, to port"
                                       :easy-port "easy, to port"
@@ -1016,6 +1042,7 @@ function bindEye (id) {
 
    (gear-control :type 'gwl:menu-form-control
                  :prompt "gear: "
+                 :size 1
                  :default :first
                  :choice-plist (list :first "first — close work"
                                      :second "second — approach"
@@ -1024,6 +1051,7 @@ function bindEye (id) {
 
    (pedal-control :type 'gwl:menu-form-control
                   :prompt "pedal: "
+                  :size 1
                   :default :coast
                   :choice-plist (list :coast "clutch in — coast"
                                       :gas "gas — burn"
