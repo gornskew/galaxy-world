@@ -731,22 +731,27 @@ pole-spin clock."
       (with-format (geom-base::x3d s)
         (write-the-object needle (geom-base::cad-output))))))
 
-;; The port eye's feed: a live scene-to-texture render on the port
-;; flatscreen.  The camera rides outside the cab to port, looking
-;; along the ship's own flank -- so the screen shows you your own
-;; hull against the stars, the way a hull eye would.  The quad sits
-;; just proud of the dark glass; solid=false spares us the winding
-;; argument.
+;; The eye feeds: live scene-to-texture renders on the two
+;; flatscreens.  Each camera stands off outboard of the cab and
+;; gazes dead abeam AWAY from the ship, so the frustum holds only
+;; sky -- and whatever rides it: the port eye catches the home
+;; world when he stands abeam to port, the starboard eye frames the
+;; moon close aboard on arrival.  The quad sits just proud of the
+;; dark glass; solid=false spares us the winding argument.
 (defun eye-feed-x3d (camera-position orientation y-left y-right)
   (format nil
    "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"512 512 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
    camera-position orientation y-left y-right y-right y-left))
 
 (defun port-eye-feed-x3d ()
-  (eye-feed-x3d "-2.0 2.0 0.9" "0.24354 -0.62610 -0.74074 2.58052" 0.46 0.22))
+  (eye-feed-x3d "0.0 2.0 0.8"
+                (look-at-orientation (make-vector 0 1 0) (make-vector 0 0 1))
+                0.46 0.22))
 
 (defun starboard-eye-feed-x3d ()
-  (eye-feed-x3d "-2.0 -2.72 0.9" "0.85652 -0.33317 -0.39418 1.55754" -0.63 -0.87))
+  (eye-feed-x3d "0.0 -2.8 0.8"
+                (look-at-orientation (make-vector 0 -1 0) (make-vector 0 0 1))
+                -0.63 -0.87))
 
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
