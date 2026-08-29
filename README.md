@@ -16,11 +16,14 @@ story.
 
 ## First light (under construction)
 
-Landing at galaxyworld.space puts you on the bridge: the view out
-your basilisk's two side eyes — each yellow eye a camera — and a
-chart table for plotting a course to a star or planet, worked by the
-ship's own chartroom and rendered so you can see the road you would
-sail. View and plot; the helm answers to no one ashore.
+Landing at galaxyworld.space puts you in the cockpit, hands on the
+wheel: home in orbit abeam to port, continents filing past the
+glass, stars wheeling past the bubble roof. One deck up, the bridge:
+the view out your basilisk's two side eyes — each yellow eye a
+camera — and a chart table for plotting a course to a star or
+planet, worked by the ship's own chartroom and rendered so you can
+see the road you would sail. View, plot, and drive; the helm answers
+to no one ashore.
 
 ## Some Foundations
 

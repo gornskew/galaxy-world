@@ -17,7 +17,6 @@
 ;; The cab's paint and brightwork.
 (defparameter +paint+ "#4c8c8c")        ; painted metal, sea-green
 (defparameter +chrome+ "#d9dde1")
-(defparameter +rim-ivory+ "#f2ead3")    ; the thin-rim wheel
 (defparameter +leather+ "#8a5a33")      ; saddle bench
 (defparameter +rubber+ "#202020")
 (defparameter +gauge-face+ "#101418")
@@ -85,7 +84,20 @@
 
    (span-tangent
     (theta)  ; horizontal tangent along the sweep
-    (make-vector (- (sin theta)) (cos theta) 0)))
+    (make-vector (- (sin theta)) (cos theta) 0))
+
+   ;; the leather-wrapped rim: cut as a fine smooth-shaded mesh
+   ;; rather than the stock faceted torus, so the wrap can carry a
+   ;; grain and the silhouette stays round
+   (wheel-rim-x3d
+    ()
+    (torus-x3d :center (the wheel-center)
+               :axis (the column-axis)
+               :across (the wheel-across)
+               :major-radius (the wheel-radius)
+               :minor-radius 0.013
+               :texture-id "leather-tex"
+               :fallback-color "0.42 0.27 0.14")))
 
   :objects
   (;; the shell of the room: floor, bench, instrument panel
@@ -115,10 +127,9 @@
                     :width 0.12 :length 1.66 :height 0.60
                     :display-controls (list :color +leather+))
 
-   (instrument-panel :type 'box
-                     :center (make-point 0.79 -0.36 0.415)
-                     :width 0.12 :length 1.66 :height 0.27
-                     :display-controls (list :color +paint+))
+   ;; the instrument panel itself is NOT here: it wears wood veneer,
+   ;; so it renders as a textured shape alongside the cab -- see
+   ;; wood-panel-x3d
 
    ;; the gauge cluster, chrome bezels proud of the panel face
    (speedo-bezel :type 'c-cylinder
@@ -218,15 +229,9 @@
    ;; the cosmic dice are NOT here: they answer the last burn, so
    ;; like the needles they render per cockpit, not in the shared cab
 
-   ;; the HELM: big thin-rim wheel on a raked column
-   (wheel-rim :type 'torus
-              :center (the wheel-center)
-              :orientation (alignment :top (the column-axis))
-              :major-radius (the wheel-radius)
-              :minor-radius 0.011
-              :number-of-longitudinal-sections 48
-              :number-of-transverse-sections 16
-              :display-controls (list :color +rim-ivory+))
+   ;; the HELM's rim is NOT here either: it is wrapped in leather,
+   ;; cut as a smooth-shaded mesh by (the wheel-rim-x3d) -- see
+   ;; cockpit-x3d, which appends it to the cab
 
    ;; the wheel is dished: the hub sits recessed down the column and
    ;; the spokes climb out to the rim
@@ -456,12 +461,22 @@
                :height 0.45
                :display-controls (list :color +glass+ :transparency 0.85))
 
-   (roof-panel :type 'box
-               :center (make-point -0.44 -0.36 1.055)
-               :width 2.60
-               :length 1.80
-               :height 0.03
-               :display-controls (list :color +paint+))))
+   ;; the roof is OPEN: a painted rim around the edge, and over the
+   ;; opening the glass bubble star-roof (see star-dome-x3d).  Strips
+   ;; run front, rear, port, starboard, leaving the center to the sky.
+   (roof-rims :type 'box
+              :sequence (:size 4)
+              :center (ecase (the-child index)
+                        (0 (make-point 0.73 -0.36 1.055))    ; front
+                        (1 (make-point -1.62 -0.36 1.055))   ; rear
+                        (2 (make-point -0.45 0.435 1.055))   ; port
+                        (3 (make-point -0.45 -1.155 1.055))) ; starboard
+              :width (ecase (the-child index)
+                       (0 0.26) (1 0.24) (2 2.10) (3 2.10))
+              :length (ecase (the-child index)
+                        (0 1.80) (1 1.80) (2 0.21) (3 0.21))
+              :height 0.03
+              :display-controls (list :color +paint+))))
 
 ;; The world the cockpit falls around: the home planet, at the
 ;; origin of the plane.  Real figures -- km, km/s, km^3/s^2.
@@ -481,15 +496,100 @@
 
 ;; The planet as seen from the ship: drawn at a fixed scene distance
 ;; with the radius that subtends the true angle, so he grows as you
-;; fall toward him and shrinks as you climb away.
+;; fall toward him and shrinks as you climb away.  He wears his face
+;; now -- an ImageTexture the page paints onto a canvas client-side
+;; (see the texture script in cockpit-view) -- and he turns: a
+;; TimeSensor spins him about his pole, so the continents file past
+;; the glass and the orbit FEELS like an orbit.  The sphere's poles
+;; lie on its local y, so the inner rotation stands them up along
+;; the scene's z before the spin.
 (defun planet-x3d (bearing-rad distance-km)
   (let* ((scene-d 3000.0)
          (half-angle (asin (min 0.999 (/ +planet-radius+ (max distance-km 1.0)))))
          (scene-r (* scene-d (tan half-angle))))
-    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Shape><Appearance><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.03 0.06 0.30\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform>"
+    (format nil "<Transform translation=\"~,1f ~,1f 0\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"planet-spin\"><Shape><Appearance><ImageTexture id=\"earth-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.10 0.18 0.85\" emissiveColor=\"0.05 0.07 0.12\"></Material></Appearance><Sphere radius=\"~,1f\"></Sphere></Shape></Transform></Transform></Transform><TimeSensor DEF=\"planet-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"planet-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 1 0 0 0 1 0 1.5708 0 1 0 3.14159 0 1 0 4.71239 0 1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"planet-clock\" fromField=\"fraction_changed\" toNode=\"planet-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"planet-swing\" fromField=\"value_changed\" toNode=\"planet-spin\" toField=\"set_rotation\"></ROUTE>"
             (* scene-d (cos bearing-rad))
             (* scene-d (sin bearing-rad))
             scene-r)))
+
+;; The night itself drifts: the whole starfield swings slowly about
+;; the scene's zenith, the way the sky wheels past a ship falling
+;; around a world.  One revolution in twenty minutes -- game time
+;; runs generous.
+(defparameter *sky-drift-x3d*
+  "<TimeSensor DEF=\"sky-clock\" cycleInterval=\"1200\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"sky-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 0 1 0 0 0 1 1.5708 0 0 1 3.14159 0 0 1 4.71239 0 0 1 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"sky-clock\" fromField=\"fraction_changed\" toNode=\"sky-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"sky-swing\" fromField=\"value_changed\" toNode=\"sky-drift\" toField=\"set_rotation\"></ROUTE>")
+
+;; A torus as one smooth-shaded IndexedFaceSet in world coordinates.
+;; The stock torus primitive facets visibly at the rim; this mesh
+;; carries a large creaseAngle so the shading rounds over, and
+;; texture coordinates so a grain can wrap the tube -- U-REPEATS
+;; turns of the texture around the ring keep the texel density even.
+(defun torus-x3d (&key center axis across major-radius minor-radius
+                       (major-sections 96) (minor-sections 20)
+                       (u-repeats 8) texture-id
+                       (fallback-color "0.8 0.8 0.8"))
+  (let* ((a (unitize-vector axis))
+         (u (unitize-vector across))
+         (v (cross-vectors u a))
+         (n major-sections) (m minor-sections)
+         (points (make-string-output-stream))
+         (texs (make-string-output-stream))
+         (idx (make-string-output-stream)))
+    (dotimes (i (1+ n))
+      (let* ((alpha (* 2 pi (/ i n)))
+             (ring (add-vectors (scalar*vector (cos alpha) v)
+                                (scalar*vector (sin alpha) u))))
+        (dotimes (j (1+ m))
+          (let* ((phi (* 2 pi (/ j m)))
+                 (p (add-vectors
+                     center
+                     (add-vectors
+                      (scalar*vector (+ major-radius (* minor-radius (cos phi)))
+                                     ring)
+                      (scalar*vector (* minor-radius (sin phi)) a)))))
+            (format points "~,4f ~,4f ~,4f, " (get-x p) (get-y p) (get-z p))
+            (format texs "~,3f ~,3f, " (* u-repeats (/ i n)) (/ j m))))))
+    (dotimes (i n)
+      (dotimes (j m)
+        (let ((p00 (+ (* i (1+ m)) j)))
+          (format idx "~d ~d ~d ~d -1 " p00 (+ p00 m 1) (+ p00 m 2) (1+ p00)))))
+    (format nil "<Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\"></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
+            texture-id fallback-color
+            (get-output-stream-string idx)
+            (get-output-stream-string points)
+            (get-output-stream-string texs))))
+
+;; The instrument panel, in wood veneer: same box the cab used to
+;; carry in paint, now wearing the grain the page paints client-side.
+(defun wood-panel-x3d ()
+  "<Transform translation=\"0.79 -0.36 0.415\"><Shape><Appearance><ImageTexture id=\"wood-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.48 0.31 0.16\"></Material></Appearance><Box size=\"0.12 1.66 0.27\"></Box></Shape></Transform>")
+
+;; The star-roof: a glass bubble over the open center of the roof,
+;; an ellipsoidal dome meshed band by band, its rim landing on the
+;; painted roof strips.  solid=false so the glass reads from the
+;; bench seats below it, which is the whole point.
+(defun star-dome-x3d (&key (center (make-point -0.45 -0.36 1.05))
+                           (rx 1.10) (ry 0.72) (rz 0.48)
+                           (bands 8) (sectors 28))
+  (let ((points (make-string-output-stream))
+        (idx (make-string-output-stream)))
+    (dotimes (b (1+ bands))
+      (let* ((lam (* (/ pi 2) (/ b bands)))
+             (cl (cos lam)) (sl (sin lam)))
+        (dotimes (s (1+ sectors))
+          (let ((th (* 2 pi (/ s sectors))))
+            (format points "~,4f ~,4f ~,4f, "
+                    (+ (get-x center) (* rx cl (cos th)))
+                    (+ (get-y center) (* ry cl (sin th)))
+                    (+ (get-z center) (* rz sl)))))))
+    (dotimes (b bands)
+      (dotimes (s sectors)
+        (let ((p00 (+ (* b (1+ sectors)) s)))
+          (format idx "~d ~d ~d ~d -1 "
+                  p00 (1+ p00) (+ p00 sectors 2) (+ p00 sectors 1)))))
+    (format nil "<Shape><Appearance><Material diffuseColor=\"0.67 0.77 0.82\" specularColor=\"0.5 0.55 0.6\" shininess=\"0.6\" transparency=\"0.88\"></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate></IndexedFaceSet></Shape>"
+            (get-output-stream-string idx)
+            (get-output-stream-string points))))
 
 ;; The cosmic dice, hanging from the mirror on their cords -- the
 ;; ship's free inertial indicator.  Under thrust they lean away from
@@ -560,10 +660,14 @@
 (defun cockpit-x3d ()
   (or *cockpit-x3d-cache*
       (setf *cockpit-x3d-cache*
-            (with-output-to-string (s)
-              (with-format (geom-base::x3d s)
-                (write-the-object (make-object 'cockpit)
-                                  (geom-base::cad-output-tree)))))))
+            (let ((cab (make-object 'cockpit)))
+              (string-append
+               (with-output-to-string (s)
+                 (with-format (geom-base::x3d s)
+                   (write-the-object cab (geom-base::cad-output-tree))))
+               (the-object cab wheel-rim-x3d)
+               (wood-panel-x3d)
+               (star-dome-x3d))))))
 
 ;; The page: the view from the driver's seat, the galaxy out past
 ;; where the glass will go.
@@ -586,14 +690,14 @@
    ;; how fast and which way she falls.  Space Travel's plane, one
    ;; move per form post.  She starts on the ring, circular and
    ;; prograde, the world abeam to port.
-   (heading-deg 180 :settable)
+   (heading-deg 90 :settable)
    (vel-x 0 :settable)
    (vel-y +ring-speed+ :settable)
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
    (last-burn :none :settable)
-   (last-move-note "nose on the world and falling sideways past him -- coast, and see: an orbit never arrives"
+   (last-move-note "riding the ring prograde, the world abeam to port -- coast, and watch the continents go by"
                    :settable)
 
    (dice-lean (ecase (the last-burn)
@@ -673,10 +777,13 @@
             (:|Background| :|skyColor| "0 0 0.012")
             (str (the viewpoints-x3d))
             ;; the universe turns around the ship, never the ship
-            ;; around the universe
+            ;; around the universe -- and inside the heading, the
+            ;; night drifts on its own clock
             (:|Transform| :rotation (format nil "0 0 1 ~,5f"
                                             (- (deg->rad (the heading-deg))))
-              (str (starfield-x3d :radius 5000.0d0)))
+              (:|Transform| :|DEF| "sky-drift"
+                (str (starfield-x3d :radius 5000.0d0))))
+            (str *sky-drift-x3d*)
             (str (planet-x3d (the planet-bearing) (the radius)))
             (str (cockpit-x3d))
             (str (dice-x3d (the dice-lean)))
@@ -693,8 +800,8 @@
           :style (the eye-button-style) "back seat")
         (:button :id "walkaround-btn" :type "button" :onclick "bindEye('walkaround')"
           :style (the eye-button-style) "walkaround")
-        (:a :href "/" :style (string-append (the eye-button-style)
-                                            "text-decoration:none;display:inline-block;")
+        (:a :href "/bridge" :style (string-append (the eye-button-style)
+                                                  "text-decoration:none;display:inline-block;")
           "⊙ to the bridge"))
       ;; the helm card: the controls, and what the ship is doing
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.88);border:1px solid #e8c839;border-radius:10px;padding:12px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;"
@@ -719,11 +826,84 @@
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note)))))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
-        "Galaxy World — the cockpit (first fitting-out)")
+        "Galaxy World — the cockpit")
+      ;; the paint shop: the world's face, the leather, and the wood
+      ;; are all painted onto canvases here and handed to the scene's
+      ;; ImageTextures as data URLs.  This inline script runs before
+      ;; x3dom's load-time init, so the textures are in place when
+      ;; the scene first builds.  Deterministic hash noise -- the
+      ;; same grain on every visit.
       (:script (str "
 function bindEye (id) {
   document.getElementById(id).setAttribute('set_bind','true');
-}"))))
+}
+(function () {
+  function rnd (n) { var x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
+  function tex (id, w, h, draw) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    el.setAttribute('url', c.toDataURL());
+  }
+  tex('earth-tex', 1024, 512, function (g, w, h) {
+    var sea = g.createLinearGradient(0, 0, 0, h);
+    sea.addColorStop(0, '#16305a'); sea.addColorStop(0.5, '#1d4f8a'); sea.addColorStop(1, '#16305a');
+    g.fillStyle = sea; g.fillRect(0, 0, w, h);
+    function land (pts, fill) {
+      g.beginPath();
+      for (var i = 0; i < pts.length; i++) {
+        var x = (pts[i][0] + 180) / 360 * w, y = (90 - pts[i][1]) / 180 * h;
+        if (i) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath(); g.fillStyle = fill; g.fill();
+    }
+    var green = '#3f6f33', dry = '#8a7a4a';
+    land([[-165,65],[-130,70],[-95,72],[-75,68],[-58,52],[-70,44],[-76,35],[-81,25],[-97,27],[-92,17],[-84,10],[-92,15],[-105,22],[-117,33],[-124,42],[-150,60]], green);
+    land([[-80,9],[-72,11],[-60,5],[-50,0],[-35,-8],[-40,-22],[-55,-35],[-62,-41],[-71,-52],[-75,-45],[-70,-30],[-70,-18],[-78,-5]], green);
+    land([[-52,60],[-42,62],[-25,70],[-35,78],[-55,76]], '#dde6ec');
+    land([[-17,15],[-10,32],[10,37],[32,31],[43,12],[51,10],[40,-5],[35,-20],[27,-34],[18,-34],[12,-18],[8,-1],[-8,5]], dry);
+    land([[-10,36],[-8,43],[-2,48],[-5,58],[5,62],[15,68],[40,70],[70,73],[100,77],[140,72],[170,67],[178,64],[160,60],[152,48],[140,42],[128,38],[122,30],[108,18],[104,8],[98,12],[92,22],[86,20],[80,12],[76,8],[72,20],[66,24],[57,22],[50,28],[42,32],[35,36],[25,36],[15,38],[3,36]], green);
+    land([[113,-22],[122,-17],[135,-12],[142,-11],[147,-19],[153,-27],[150,-37],[140,-38],[131,-32],[115,-34]], dry);
+    g.fillStyle = '#e8eef2';
+    g.fillRect(0, 0, w, h * 0.045); g.fillRect(0, h * 0.94, w, h * 0.06);
+    g.fillStyle = 'rgba(255,255,255,0.30)';
+    for (var i = 0; i < 26; i++) {
+      var cx = rnd(i) * w, cy = (0.15 + 0.7 * rnd(i + 40)) * h, rx = 30 + 60 * rnd(i + 80);
+      g.beginPath(); g.ellipse(cx, cy, rx, rx * 0.28, 0, 0, 6.2832); g.fill();
+    }
+  });
+  tex('leather-tex', 256, 256, function (g, w, h) {
+    g.fillStyle = '#6b4423'; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 2200; i++) {
+      var x = rnd(i) * w, y = rnd(i + 9000) * h, r = 0.6 + 1.8 * rnd(i + 5000);
+      g.fillStyle = rnd(i + 700) > 0.5 ? 'rgba(30,15,5,0.16)' : 'rgba(210,160,110,0.10)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+    }
+    g.strokeStyle = 'rgba(25,12,4,0.28)'; g.lineWidth = 0.7;
+    for (var j = 0; j < 130; j++) {
+      var x0 = rnd(j + 300) * w, y0 = rnd(j + 400) * h, a = rnd(j + 500) * 6.2832, l = 4 + 10 * rnd(j + 600);
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * l, y0 + Math.sin(a) * l); g.stroke();
+    }
+  });
+  tex('wood-tex', 512, 128, function (g, w, h) {
+    g.fillStyle = '#7a4f28'; g.fillRect(0, 0, w, h);
+    for (var y = 0; y < h; y++) {
+      var t = 0.5 + 0.5 * Math.sin(y * 0.55 + 3.5 * Math.sin(y * 0.061));
+      g.fillStyle = 'rgba(46,24,8,' + (0.10 + 0.22 * t).toFixed(3) + ')';
+      g.fillRect(0, y, w, 1);
+    }
+    g.strokeStyle = 'rgba(30,15,5,0.5)';
+    for (var k = 0; k < 7; k++) {
+      var yy = (0.12 + 0.76 * rnd(k + 50)) * h;
+      g.lineWidth = 0.6 + rnd(k) * 1.2;
+      g.beginPath(); g.moveTo(0, yy);
+      for (var x = 0; x <= w; x += 16) g.lineTo(x, yy + 3 * Math.sin(x * 0.02 + k * 7));
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
+  });
+})();"))))
 
    (eye-button-style
     "background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;"))

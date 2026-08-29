@@ -19,14 +19,19 @@
   (format nil "User-agent: *~%Disallow: /sessions/~%Disallow: /answer~%~%Sitemap: https://galaxyworld.space/sitemap.xml~%"))
 
 (defparameter *sitemap-xml*
-  (format nil "<?xml version=\"1.0\" encoding=\"UTF-8\"?>~%<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">~%  <url>~%    <loc>https://galaxyworld.space/</loc>~%    <lastmod>2026-08-23</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%  <url>~%    <loc>https://galaxyworld.space/cockpit</loc>~%    <lastmod>2026-08-28</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%</urlset>~%"))
+  (format nil "<?xml version=\"1.0\" encoding=\"UTF-8\"?>~%<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">~%  <url>~%    <loc>https://galaxyworld.space/</loc>~%    <lastmod>2026-08-29</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%  <url>~%    <loc>https://galaxyworld.space/bridge</loc>~%    <lastmod>2026-08-29</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%</urlset>~%"))
 
 (gwl:with-all-servers (server)
-  (gwl:publish-gwl-app "/galaxy-world" 'galaxy-world:bridge-view
+  ;; the front door is the DRIVER'S SEAT: the public "/" (which the
+  ;; proxy hands through as "/galaxy-world") lands you in the
+  ;; cockpit, hands on the wheel.  The bridge stands one deck up at
+  ;; /bridge; the old /cockpit route stays good for bookmarks.
+  (gwl:publish-gwl-app "/galaxy-world" 'galaxy-world:cockpit-view
                        :host *galaxy-world-hosts*
                        :server server)
-  ;; the proxy hands the public "/" through as "/galaxy-world", so
-  ;; sub-pages hang off that prefix
+  (gwl:publish-gwl-app "/galaxy-world/bridge" 'galaxy-world:bridge-view
+                       :host *galaxy-world-hosts*
+                       :server server)
   (gwl:publish-gwl-app "/galaxy-world/cockpit" 'galaxy-world:cockpit-view
                        :host *galaxy-world-hosts*
                        :server server)
