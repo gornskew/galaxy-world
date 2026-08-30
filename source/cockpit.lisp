@@ -516,6 +516,46 @@
 (defparameter +mu-jupiter+ (coerce bsk-astro:+mu-jupiter+ 'double-float))
 (defparameter +jupiter-ring-radius+ 232760.0)
 
+;; Saturn, out at 9.58 au, wearing the rings that make him Saturn.
+;; bsk-astro's constant sheet stops at Jupiter, so his figures are
+;; stated here: JPL values, km^3/s^2 and km.  The berth ratio puts
+;; her ring at 196,210 km -- outside the A ring, where the view is.
+(defparameter +mu-saturn+ 37931207.0d0)
+(defparameter +saturn-radius+ 60268.0)
+(defparameter +saturn-sun-radius+ (* 9.5826d0 +au+))
+(defparameter +saturn-ring-radius+ 196210.0)
+;; the lean that shows the rings: ~26.7 degrees off the plane
+(defparameter +saturn-tilt+ 0.4665)
+
+;; One flat annulus in a body frame's equatorial plane, radii in
+;; body-radius units so it rides the frame's scale and travels with
+;; the body on a voyage.
+(defun ring-annulus-x3d (inner outer diffuse emissive transparency
+                         &key (sectors 48))
+  (let ((points (make-string-output-stream))
+        (idx (make-string-output-stream)))
+    (dotimes (s (1+ sectors))
+      (let* ((th (* 2 pi (/ s sectors)))
+             (c (cos th)) (sn (sin th)))
+        (format points "~,4f ~,4f 0, ~,4f ~,4f 0, "
+                (* inner c) (* inner sn) (* outer c) (* outer sn))))
+    (dotimes (s sectors)
+      (let ((p (* 2 s)))
+        (format idx "~d ~d ~d ~d -1 " p (+ p 1) (+ p 3) (+ p 2))))
+    (format nil "<Shape><Appearance><Material diffuseColor=\"~a\" emissiveColor=\"~a\" transparency=\"~,2f\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate></IndexedFaceSet></Shape>"
+            diffuse emissive transparency
+            (get-output-stream-string idx)
+            (get-output-stream-string points))))
+
+;; Saturn's rings at teaching grain: the dim C band inboard, the
+;; bright B band, the Cassini gap, the A band outboard -- real radii
+;; in units of his own radius.
+(defun saturn-rings-x3d ()
+  (string-append
+   (ring-annulus-x3d 1.24 1.52 "0.55 0.50 0.42" "0.22 0.20 0.17" 0.55)
+   (ring-annulus-x3d 1.53 1.95 "0.82 0.75 0.62" "0.35 0.32 0.26" 0.15)
+   (ring-annulus-x3d 2.03 2.27 "0.72 0.66 0.55" "0.28 0.26 0.21" 0.30)))
+
 ;; The worlds a cockpit can fall around.  Until the road to Mars
 ;; there was only home; now it is a table, ordered outbound along
 ;; the sun's road.  Each entry: the name the card shows, mu, the
@@ -540,7 +580,16 @@
               :ring +jupiter-ring-radius+
               :sun-radius +jupiter-sun-radius+
               :texture "jupiter-tex"
-              :diffuse "0.72 0.60 0.44" :emissive "0.12 0.10 0.07")))
+              :diffuse "0.72 0.60 0.44" :emissive "0.12 0.10 0.07")
+        (list :saturn :name "Saturn" :mu +mu-saturn+
+              :radius +saturn-radius+
+              :sky (+ +saturn-radius+ 100)
+              :ring +saturn-ring-radius+
+              :sun-radius +saturn-sun-radius+
+              :texture "saturn-tex"
+              :diffuse "0.78 0.68 0.50" :emissive "0.13 0.11 0.08"
+              :tilt +saturn-tilt+
+              :adornment (saturn-rings-x3d))))
 
 (defun world-figure (world key)
   (getf (cdr (assoc world *worlds*)) key))
@@ -586,18 +635,24 @@ the given heading; positive to port."
   (sqrt (+ (expt (- tx px) 2) (expt (- ty py) 2))))
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
-                 &key spin? diffuse emissive scale-override)
+                 &key spin? diffuse emissive scale-override tilt adornment)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  SPIN? adds the
 pole-spin clock.  SCALE-OVERRIDE authors a different scale than the
 subtended one -- a voyage page hides a body until its clock's first
-key sets the true size."
+key sets the true size.  ADORNMENT is extra markup riding the frame
+in body-radius units (Saturn's rings), and TILT leans body and
+adornment together so a ring plane shows itself from the cockpit."
   (multiple-value-bind (tx ty s)
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\"><Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform></Transform>"
-             prefix prefix tx ty s s s prefix texture-id diffuse emissive)
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+             prefix prefix tx ty s s s
+             (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
+             prefix texture-id diffuse emissive
+             (or adornment "")
+             (if tilt "</Transform>" ""))
      (if spin?
          (format nil "<TimeSensor DEF=\"~a-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"~a-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"~a-clock\" fromField=\"fraction_changed\" toNode=\"~a-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-swing\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
                  prefix prefix prefix prefix prefix prefix)
@@ -989,7 +1044,9 @@ key sets the true size."
                                     :spin? (getf body :spin?)
                                     :diffuse (getf body :diffuse)
                                     :emissive (getf body :emissive)
-                                    :scale-override (getf body :scale-override)))))))
+                                    :scale-override (getf body :scale-override)
+                                    :tilt (getf body :tilt)
+                                    :adornment (getf body :adornment)))))))
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (if (eql (the transit-target) :moon)
                                              90 120))
@@ -1005,7 +1062,9 @@ key sets the true size."
            (body-x3d "planet" (world-figure (the world) :texture)
                      (the planet-bearing) (the radius) (the world-radius)
                      :spin? t :diffuse (world-figure (the world) :diffuse)
-                     :emissive (world-figure (the world) :emissive))
+                     :emissive (world-figure (the world) :emissive)
+                     :tilt (world-figure (the world) :tilt)
+                     :adornment (world-figure (the world) :adornment))
            (if (eql (the world) :home)
                (string-append
                 (body-x3d "moon" "moon-tex"
@@ -1358,6 +1417,23 @@ function toggleHelm () {
     g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.fill();
     g.strokeStyle = 'rgba(120,45,25,0.6)'; g.lineWidth = 2;
     g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.stroke();
+  });
+  tex(['saturn-tex'], 512, 256, function (g, w, h) {
+    var bands = ['#d8c49a', '#cbb488', '#e6d6ae', '#c2a878', '#dcc79c', '#cfb98e', '#e2d0a6'];
+    var y = 0;
+    for (var i = 0; i < bands.length; i++) {
+      var bh = h * (0.08 + 0.12 * rnd(i + 60));
+      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
+      y += bh;
+    }
+    g.fillStyle = bands[1]; g.fillRect(0, y, w, h - y);
+    for (var j = 0; j < 140; j++) {
+      var yy = rnd(j + 150) * h, xx = rnd(j + 250) * w, l = 20 + 70 * rnd(j + 350);
+      g.fillStyle = rnd(j + 450) > 0.5 ? 'rgba(250,240,215,0.08)' : 'rgba(120,95,55,0.08)';
+      g.fillRect(xx, yy, l, 2 + 2 * rnd(j + 550));
+    }
+    g.fillStyle = 'rgba(190,205,215,0.25)';
+    g.fillRect(0, 0, w, h * 0.06);
   });
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
@@ -1714,6 +1790,8 @@ function toggleHelm () {
                          :targets dests
                          :diffuse (world-figure to-world :diffuse)
                          :emissive (world-figure to-world :emissive)
+                         :tilt (world-figure to-world :tilt)
+                         :adornment (world-figure to-world :adornment)
                          ;; no visible size at au range anyway; the
                          ;; first key sets him true -- the same guard
                          ;; the moon road gives its hidden moon
@@ -1724,7 +1802,9 @@ function toggleHelm () {
                          :targets asterns
                          :spin? t
                          :diffuse (world-figure from-world :diffuse)
-                         :emissive (world-figure from-world :emissive)))
+                         :emissive (world-figure from-world :emissive)
+                         :tilt (world-figure from-world :tilt)
+                         :adornment (world-figure from-world :adornment)))
              ;; the moon rides along only when home is the world
              ;; falling astern
              (when (eql from-world :home)
