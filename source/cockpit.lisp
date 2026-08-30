@@ -494,6 +494,39 @@
 (defparameter +moon-road-radius+ 384400.0)
 (defparameter +moon-x+ -396400.0)
 
+;; Mars, and the sun's road between worlds: real figures again.
+;; Home rides the sun at one au, Mars at 1.524; the leg between them
+;; is the sun's own Hohmann, with an escape kick at this end and a
+;; capture kick at that one -- patched conics at teaching grain, the
+;; same grain as the moon standing still.
+(defparameter +mu-sun+ (coerce bsk-astro:+mu-sun+ 'double-float))
+(defparameter +au+ (coerce bsk-astro:+au+ 'double-float))
+(defparameter +mars-sun-radius+ (* 1.52366d0 +au+))
+(defparameter +mars-radius+ (coerce bsk-astro:+req-mars+ 'double-float))
+(defparameter +mu-mars+ (coerce bsk-astro:+mu-mars+ 'double-float))
+;; the ring she keeps over Mars: the same berth ratio she keeps over
+;; home, 3.26 radii up
+(defparameter +mars-ring-radius+ 11058.0)
+
+;; The worlds a cockpit can fall around.  Until the road to Mars
+;; there was only home; now it is a table.  Each entry: the name the
+;; card shows, mu, the body's radius, the sky (meet it and the
+;; flight is over), the ring she keeps (and is set back on), the
+;; face the page paints, and the material under the face.
+(defparameter *worlds*
+  (list (list :home :name "home" :mu +mu+ :radius +planet-radius+
+              :sky +sky-radius+ :ring +ring-radius+
+              :texture "earth-tex"
+              :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+        (list :mars :name "Mars" :mu +mu-mars+ :radius +mars-radius+
+              :sky (+ +mars-radius+ 100)
+              :ring +mars-ring-radius+
+              :texture "mars-tex"
+              :diffuse "0.62 0.32 0.18" :emissive "0.10 0.05 0.03")))
+
+(defun world-figure (world key)
+  (getf (cdr (assoc world *worlds*)) key))
+
 ;; The berth keeps a tally of what the helms aboard actually do --
 ;; the seed of the play-feeds-the-buildout channel.  One image, one
 ;; table, every cockpit.
@@ -578,36 +611,52 @@ key sets the true size."
             (get-output-stream-string spins))))
 
 ;; The voyage, flown by the scene: the sampled road becomes
-;; interpolator tracks -- both bodies' frames and the sky's heading
-;; -- driven by one one-shot clock.  SAMPLES is a list of
-;; (key heading-rad pos-x pos-y).
-(defun transit-anim-x3d (samples &key (duration 90))
+;; interpolator tracks -- every riding body's frame and the sky's
+;; heading -- driven by one one-shot clock.  SAMPLES is a list of
+;; (key heading-rad pos-x pos-y).  BODIES is a list of body specs as
+;; plists (see the transit-bodies slot): :prefix names the DEF'd
+;; frame the tracks drive, :radius the body's true radius, :targets
+;; the body's position, one (x y) per sample -- a body standing
+;; still repeats one target; a body riding its own road brings a
+;; different one for every key.
+(defun transit-anim-x3d (samples bodies &key (duration 90))
   (let ((keys (make-string-output-stream))
-        (ppos (make-string-output-stream)) (pscl (make-string-output-stream))
-        (mpos (make-string-output-stream)) (mscl (make-string-output-stream))
-        (nose (make-string-output-stream)))
+        (nose (make-string-output-stream))
+        (tracks nil))
     (dolist (s samples)
       (destructuring-bind (key h px py) s
+        (declare (ignore px py))
         (format keys "~,4f " key)
-        (multiple-value-bind (tx ty sc)
-            (scene-body-frame (bearing-to px py h 0 0) (dist-to px py 0 0)
-                              +planet-radius+)
-          (format ppos "~,1f ~,1f 0 " tx ty)
-          (format pscl "~,2f ~,2f ~,2f " sc sc sc))
-        (multiple-value-bind (tx ty sc)
-            (scene-body-frame (bearing-to px py h +moon-x+ 0)
-                              (dist-to px py +moon-x+ 0) +moon-radius+)
-          (format mpos "~,1f ~,1f 0 " tx ty)
-          (format mscl "~,2f ~,2f ~,2f " sc sc sc))
         (format nose "0 0 1 ~,5f " (- h))))
+    (dolist (body bodies)
+      (let ((pos (make-string-output-stream))
+            (scl (make-string-output-stream)))
+        (loop for s in samples
+              for target in (getf body :targets)
+              do (destructuring-bind (key h px py) s
+                   (declare (ignore key))
+                   (destructuring-bind (tx ty) target
+                     (multiple-value-bind (sx sy sc)
+                         (scene-body-frame (bearing-to px py h tx ty)
+                                           (dist-to px py tx ty)
+                                           (getf body :radius))
+                       (format pos "~,1f ~,1f 0 " sx sy)
+                       (format scl "~,2f ~,2f ~,2f " sc sc sc)))))
+        (push (list (getf body :prefix)
+                    (get-output-stream-string pos)
+                    (get-output-stream-string scl))
+              tracks)))
     (let ((k (get-output-stream-string keys)))
-      (format nil "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"></TimeSensor><PositionInterpolator DEF=\"vy-ppos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-pscl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-mpos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-mscl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"vy-nose\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-ppos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-pscl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-mpos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-mscl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-nose\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-ppos\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-pscl\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_scale\"></ROUTE><ROUTE fromNode=\"vy-mpos\" fromField=\"value_changed\" toNode=\"moon-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-mscl\" fromField=\"value_changed\" toNode=\"moon-frame\" toField=\"set_scale\"></ROUTE><ROUTE fromNode=\"vy-nose\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE>"
-              duration
-              k (get-output-stream-string ppos)
-              k (get-output-stream-string pscl)
-              k (get-output-stream-string mpos)
-              k (get-output-stream-string mscl)
-              k (get-output-stream-string nose)))))
+      (with-output-to-string (out)
+        (format out "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"></TimeSensor>"
+                duration)
+        (dolist (track (nreverse tracks))
+          (destructuring-bind (prefix pos scl) track
+            (format out "<PositionInterpolator DEF=\"vy-~a-pos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-~a-scl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-pos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-scl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-pos\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-~a-scl\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_scale\"></ROUTE>"
+                    prefix k pos prefix k scl
+                    prefix prefix prefix prefix prefix prefix)))
+        (format out "<OrientationInterpolator DEF=\"vy-nose\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-nose\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-nose\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE>"
+                k (get-output-stream-string nose))))))
 
 ;; The night itself drifts: the whole starfield swings slowly about
 ;; the scene's zenith, the way the sky wheels past a ship falling
@@ -831,6 +880,18 @@ key sets the true size."
    (last-move-note "nose-in on the world, falling sideways past him -- coast, and watch the continents slide by"
                    :settable)
 
+   ;; the world she falls around -- home until a road leads
+   ;; elsewhere.  Every figure of the fall reads the world's row in
+   ;; the table: the mu, the radius, the sky, the ring she is set
+   ;; back on.
+   (world :home :settable)
+   (world-name (world-figure (the world) :name))
+   (world-mu (world-figure (the world) :mu))
+   (world-radius (world-figure (the world) :radius))
+   (world-sky (world-figure (the world) :sky))
+   (world-ring (world-figure (the world) :ring))
+   (world-ring-speed (sqrt (/ (the world-mu) (the world-ring))))
+
    (dice-lean (ecase (the last-burn)
                 (:none 0) (:forward 38) (:retro -38)))
 
@@ -838,24 +899,24 @@ key sets the true size."
                    (* (the vel-y) (the vel-y)))))
    (radius (sqrt (+ (* (the pos-x) (the pos-x))
                     (* (the pos-y) (the pos-y)))))
-   (altitude (- (the radius) +planet-radius+))
+   (altitude (- (the radius) (the world-radius)))
 
    ;; the shape of the road she is on: vis-viva for the size,
    ;; angular momentum for the roundness
    (specific-h (- (* (the pos-x) (the vel-y))
                   (* (the pos-y) (the vel-x))))
    (semi-major (let ((inv (- (/ 2 (the radius))
-                             (/ (* (the speed) (the speed)) +mu+))))
+                             (/ (* (the speed) (the speed)) (the world-mu)))))
                  (when (plusp inv) (/ 1 inv))))
    (eccentricity (when (the semi-major)
                    (sqrt (max 0 (- 1 (/ (* (the specific-h) (the specific-h))
-                                        (* +mu+ (the semi-major))))))))
+                                        (* (the world-mu) (the semi-major))))))))
    (apoapsis-alt (when (the semi-major)
                    (- (* (the semi-major) (+ 1 (the eccentricity)))
-                      +planet-radius+)))
+                      (the world-radius))))
    (periapsis-alt (when (the semi-major)
                     (- (* (the semi-major) (- 1 (the eccentricity)))
-                       +planet-radius+)))
+                       (the world-radius))))
    ;; where the world stands off the nose
    (planet-bearing (- (atan (- (the pos-y)) (- (the pos-x)))
                       (deg->rad (the heading-deg))))
@@ -865,9 +926,19 @@ key sets the true size."
    (moon-distance (dist-to (the pos-x) (the pos-y) +moon-x+ 0))
 
    ;; the sampled road of a just-flown programmed voyage, or nil.
-   ;; Set by fly-programmed-road!, cleared by the next hand-flown
+   ;; Set by the road functions, cleared by the next hand-flown
    ;; move; while set, the page carries the voyage animation.
    (transit-samples nil :settable)
+
+   ;; which road was flown -- :moon or :mars -- while samples stand
+   (transit-target nil :settable)
+
+   ;; the bodies riding the voyage page: specs for body-x3d and
+   ;; transit-anim-x3d, set by the road function alongside the
+   ;; samples so page and animation author from one list.  Each is a
+   ;; plist: :prefix :texture :radius :targets :diffuse :emissive
+   ;; :spin? :scale-override.
+   (transit-bodies nil :settable)
 
    ;; she stands the moon watch: set on arrival, cleared by the
    ;; next hand-flown move; while set, the scene loops the parked
@@ -883,64 +954,99 @@ key sets the true size."
    (bodies-x3d
     (let ((samples (the transit-samples)))
       (if samples
+          ;; a voyage page: every riding body authors from the road's
+          ;; first sample, and the one-shot clock flies them all
           (destructuring-bind (key0 h0 px0 py0) (first samples)
             (declare (ignore key0))
             (string-append
-             (body-x3d "planet" "earth-tex"
-                       (bearing-to px0 py0 h0 0 0) (dist-to px0 py0 0 0)
-                       +planet-radius+
-                       :spin? t :diffuse "0.10 0.18 0.85"
-                       :emissive "0.05 0.07 0.12")
-             ;; the moon authors HIDDEN on a voyage page: he and home
-             ;; share the same spot at departure, and if home's big
-             ;; texture is still decoding at first paint the moon dot
-             ;; peeks through -- the clock's first key restores his
-             ;; true size the moment the road starts
-             (body-x3d "moon" "moon-tex"
-                       (bearing-to px0 py0 h0 +moon-x+ 0)
-                       (dist-to px0 py0 +moon-x+ 0) +moon-radius+
-                       :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
-                       :scale-override 0.001)
-             (transit-anim-x3d samples)
-             ;; the watch waits, parked, for the voyage to land
-             (moon-ambient-x3d (the planet-bearing)
-                               (- (deg->rad (the heading-deg)))
-                               :enabled? nil)))
+             (let ((markup ""))
+               (dolist (body (the transit-bodies) markup)
+                 (destructuring-bind (tx0 ty0) (first (getf body :targets))
+                   (setq markup
+                         (string-append markup
+                          (body-x3d (getf body :prefix) (getf body :texture)
+                                    (bearing-to px0 py0 h0 tx0 ty0)
+                                    (dist-to px0 py0 tx0 ty0)
+                                    (getf body :radius)
+                                    :spin? (getf body :spin?)
+                                    :diffuse (getf body :diffuse)
+                                    :emissive (getf body :emissive)
+                                    :scale-override (getf body :scale-override)))))))
+             (transit-anim-x3d samples (the transit-bodies)
+                               :duration (if (eql (the transit-target) :mars)
+                                             120 90))
+             ;; the watch waits, parked, for the moon road to land;
+             ;; at Mars the plain scene already stands the watch
+             (if (eql (the transit-target) :mars)
+                 ""
+                 (moon-ambient-x3d (the planet-bearing)
+                                   (- (deg->rad (the heading-deg)))
+                                   :enabled? nil))))
           (string-append
-           (body-x3d "planet" "earth-tex"
-                     (the planet-bearing) (the radius) +planet-radius+
-                     :spin? t :diffuse "0.10 0.18 0.85"
-                     :emissive "0.05 0.07 0.12")
-           (body-x3d "moon" "moon-tex"
-                     (the moon-bearing) (the moon-distance) +moon-radius+
-                     :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
-           (if (the moon-orbit?)
-               (moon-ambient-x3d (the planet-bearing)
-                                 (- (deg->rad (the heading-deg)))
-                                 :enabled? t)
+           (body-x3d "planet" (world-figure (the world) :texture)
+                     (the planet-bearing) (the radius) (the world-radius)
+                     :spin? t :diffuse (world-figure (the world) :diffuse)
+                     :emissive (world-figure (the world) :emissive))
+           (if (eql (the world) :home)
+               (string-append
+                (body-x3d "moon" "moon-tex"
+                          (the moon-bearing) (the moon-distance) +moon-radius+
+                          :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+                (if (the moon-orbit?)
+                    (moon-ambient-x3d (the planet-bearing)
+                                      (- (deg->rad (the heading-deg)))
+                                      :enabled? t)
+                    ""))
                "")))))
 
    ;; the voyage's page script: first load arms the one-shot clock;
    ;; a reload of the same arrival fast-forwards the scene to the
    ;; road's end instead of replaying five days
+   ;; the ARRIVED pose of every voyage body, for the fast-forward
+   ;; path below: the world dead ahead at its ring distance, and on
+   ;; the mars road the farewell bodies shrunk out of sight (they
+   ;; stand au-scale astern -- no visible size at all)
+   (voyage-fin-js
+    (with-output-to-string (out)
+      (let ((fins
+             (ecase (the transit-target)
+               (:moon
+                (append
+                 (multiple-value-bind (tx ty sc)
+                     (scene-body-frame (the planet-bearing) (the radius)
+                                       +planet-radius+)
+                   (list (list "planet-frame" tx ty sc)))
+                 (multiple-value-bind (tx ty sc)
+                     (scene-body-frame (the moon-bearing) (the moon-distance)
+                                       +moon-radius+)
+                   (list (list "moon-frame" tx ty sc)))))
+               (:mars
+                (append
+                 (multiple-value-bind (tx ty sc)
+                     (scene-body-frame (the planet-bearing) (the radius)
+                                       (the world-radius))
+                   (list (list "planet-frame" tx ty sc)))
+                 (list (list "home-frame" -3000.0 0.0 0.001)
+                       (list "moon-frame" -3000.0 0.0 0.001)))))))
+        (format out "[")
+        (loop for (id tx ty sc) in fins
+              for first = t then nil
+              do (format out "~:[,~%           ~;~]['~a', '~,1f ~,1f 0', '~,2f ~,2f ~,2f']"
+                         first id tx ty sc sc sc))
+        (format out "]"))))
+
    (voyage-script-js
     (if (the transit-samples)
-        (multiple-value-bind (ptx pty psc)
-            (scene-body-frame (the planet-bearing) (the radius) +planet-radius+)
-          (multiple-value-bind (mtx mty msc)
-              (scene-body-frame (the moon-bearing) (the moon-distance)
-                                +moon-radius+)
-            ;; the one-shot key carries the SESSION's identity: a
-            ;; bare moves-count key collides across sessions in one
-            ;; browser tab -- every fresh session's first voyage
-            ;; would read as already-played and snap to arrival
-            (format nil "
+        ;; the one-shot key carries the SESSION's identity: a
+        ;; bare moves-count key collides across sessions in one
+        ;; browser tab -- every fresh session's first voyage
+        ;; would read as already-played and snap to arrival
+        (format nil "
 (function () {
   var key = 'gw-voyage-~a-~d', played = false;
   try { played = !!sessionStorage.getItem(key); } catch (e) {}
   if (played) {
-    var fin = [['planet-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f'],
-               ['moon-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f']];
+    var fin = ~a;
     fin.forEach(function (f) {
       var el = document.getElementById(f[0]);
       if (el) { el.setAttribute('translation', f[1]); el.setAttribute('scale', f[2]); }
@@ -963,14 +1069,14 @@ key sets the true size."
           amb.setAttribute('startTime', '' + (Date.now() / 1000));
           amb.setAttribute('enabled', 'true');
         }
-      }, 92000);
+      }, ~d);
     });
   }
 })();"
-                    (or (the instance-id) "local") (the moves-count)
-                    ptx pty psc psc psc
-                    mtx mty msc msc msc
-                    (- (deg->rad (the heading-deg))))))
+                (or (the instance-id) "local") (the moves-count)
+                (the voyage-fin-js)
+                (- (deg->rad (the heading-deg)))
+                (if (eql (the transit-target) :mars) 122000 92000))
         ""))
    ;; the speedo sweeps 8 o'clock to 4 o'clock, full scale 8 km/s
    (speedo-phi (+ -120 (* 240 (min 1 (/ (the speed) 8.0)))))
@@ -1073,6 +1179,7 @@ key sets the true size."
         (:div :id "helm-body" :style "margin-top:8px;"
         (str (the helm-form-html))
         (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+          (:div (fmt "falling around: ~a" (the world-name)))
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
           (:div (fmt "speed: ~,2f km/s" (the speed)))
           (:div (fmt "altitude: ~,0f km" (the altitude)))
@@ -1200,6 +1307,23 @@ function toggleHelm () {
       g.beginPath(); g.arc(x - r * 0.15, y - r * 0.15, r * 0.8, 0, 6.2832); g.stroke();
     }
   });
+  tex(['mars-tex'], 512, 256, function (g, w, h) {
+    var dust = g.createLinearGradient(0, 0, 0, h);
+    dust.addColorStop(0, '#8a4a26'); dust.addColorStop(0.5, '#b06034'); dust.addColorStop(1, '#8a4a26');
+    g.fillStyle = dust; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 7; i++) {
+      var x = rnd(i + 500) * w, y = (0.25 + 0.5 * rnd(i + 550)) * h, r = 30 + 70 * rnd(i + 600);
+      g.fillStyle = 'rgba(70,35,20,0.35)';
+      g.beginPath(); g.ellipse(x, y, r, r * 0.5, rnd(i + 650) * 3, 0, 6.2832); g.fill();
+    }
+    for (var j = 0; j < 60; j++) {
+      var x = rnd(j + 700) * w, y = rnd(j + 800) * h, r = 1.5 + 6 * rnd(j + 900);
+      g.fillStyle = 'rgba(60,28,14,0.45)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+    }
+    g.fillStyle = '#e8e2d8';
+    g.fillRect(0, 0, w, h * 0.03); g.fillRect(0, h * 0.965, w, h * 0.035);
+  });
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
     var pips = [[[0.5,0.5]],
@@ -1265,12 +1389,20 @@ function toggleHelm () {
    ;; already programmed, so the FIRST move flies it -- then the
    ;; helm is yours, and the astrodynamics lessons start from the
    ;; moon's road
+   ;; the roads on offer read the world: home offers the moon and
+   ;; Mars; at Mars the helm is yours (the road home is a later
+   ;; lesson)
    (voyage-control :type 'gwl:menu-form-control
                    :prompt "the road: "
                    :size 1
                    :default :moon
-                   :choice-plist (list :hand "fly her by hand"
-                                       :moon "the programmed road to the moon"))
+                   :choice-plist (ecase (the world)
+                                   (:home
+                                    (list :hand "fly her by hand"
+                                          :moon "the programmed road to the moon"
+                                          :mars "the programmed road to Mars"))
+                                   (:mars
+                                    (list :hand "fly her by hand"))))
 
    (wheel-control :type 'gwl:menu-form-control
                   :prompt "wheel: "
@@ -1304,11 +1436,12 @@ function toggleHelm () {
    ;; one-minute substeps.  Returns the new (vx vy px py).
    (fall
     (vx vy px py dt)
-    (let ((h 60.0d0))
+    (let ((h 60.0d0)
+          (mu (the world-mu)))
       (flet ((accel (x y)
                (let* ((r2 (+ (* x x) (* y y)))
                       (r (sqrt r2))
-                      (a (- (/ +mu+ r2))))
+                      (a (- (/ mu r2))))
                  (values (* a (/ x r)) (* a (/ y r))))))
         (dotimes (step (max 1 (round dt h)))
           (multiple-value-bind (ax0 ay0) (accel px py)
@@ -1328,9 +1461,10 @@ function toggleHelm () {
    ;; set back on the ring.
    (after-set!
     ()
-    (if (eql (the voyage-control value) :moon)
-        (the fly-programmed-road!)
-        (the make-helm-move!)))
+    (case (the voyage-control value)
+      (:moon (the fly-moon-road!))
+      (:mars (the fly-mars-road!))
+      (t (the make-helm-move!))))
 
    ;; The programmed road to the moon: the least-fuel two-burn
    ;; Hohmann from the home ring to the moon-road.  The ship's state
@@ -1343,7 +1477,7 @@ function toggleHelm () {
    ;; the last key swings the nose BACK to nose-in on the moon --
    ;; the arrival mirrors the departure, the new world square in
    ;; the windshield.
-   (fly-programmed-road!
+   (fly-moon-road!
     ()
     (let* ((r1 +ring-radius+) (r2 +moon-road-radius+)
            (a (* 0.5 (+ r1 r2)))
@@ -1374,6 +1508,7 @@ function toggleHelm () {
                 samples)))
       ;; the closing beat: nose-in on the moon
       (push (list 1.0 pi (- r2) 0) samples)
+      (setq samples (nreverse samples))
       (the (set-slot! :heading-deg 180))
       (the (set-slot! :vel-x 0))
       (the (set-slot! :vel-y (- vc2)))
@@ -1381,7 +1516,27 @@ function toggleHelm () {
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (set-slot! :transit-samples (nreverse samples)))
+      (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-target :moon))
+      (the (set-slot! :transit-bodies
+            (list (list :prefix "planet" :texture "earth-tex"
+                        :radius +planet-radius+
+                        :targets (make-list (length samples)
+                                            :initial-element (list 0 0))
+                        :spin? t
+                        :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+                  ;; the moon authors HIDDEN: he and home share the
+                  ;; same spot at departure, and if home's big
+                  ;; texture is still decoding at first paint the
+                  ;; moon dot peeks through -- the clock's first key
+                  ;; restores his true size the moment the road
+                  ;; starts
+                  (list :prefix "moon" :texture "moon-tex"
+                        :radius +moon-radius+
+                        :targets (make-list (length samples)
+                                            :initial-element (list +moon-x+ 0))
+                        :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
+                        :scale-override 0.001))))
       (the (set-slot! :moon-orbit? t))
       (the (set-slot! :last-move-note
                       (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and she settles into the watch around the moon.  The helm is yours."
@@ -1390,9 +1545,139 @@ function toggleHelm () {
       (tally! :moves)
       (tally! :voyages)))
 
+   ;; The programmed road to Mars: the first change of worlds.  Out
+   ;; of home's grip on an escape kick, the sun's own Hohmann from
+   ;; home's road to Mars's road, and a capture kick onto the ring
+   ;; over Mars -- patched conics at teaching grain, real figures
+   ;; throughout.  And the window is real: this road only exists
+   ;; when Mars stands the right few dozen degrees ahead of home
+   ;; along the sun's road, so she waits for it (a departure board
+   ;; is a later lesson).  The scene flies the leg heliocentric --
+   ;; home and the moon fall astern and shrink to sparks while both
+   ;; worlds keep riding their own roads, Mars rises ahead and grows
+   ;; -- and the arrival mirrors the departure, nose-in on the new
+   ;; world with him close aboard, the moon canon over Mars.
+   (fly-mars-road!
+    ()
+    (let* ((re +au+) (rm +mars-sun-radius+)
+           (a (* 0.5 (+ re rm)))
+           (e (/ (- rm re) (+ rm re)))
+           (p (* a (- 1 (* e e))))
+           (vcoeff (sqrt (/ +mu-sun+ p)))
+           (n-tr (sqrt (/ +mu-sun+ (* a a a))))
+           (tof (/ pi n-tr))
+           (tof-months (/ tof (* 86400 30.44)))
+           (n-e (sqrt (/ +mu-sun+ (* re re re))))
+           (n-m (sqrt (/ +mu-sun+ (* rm rm rm))))
+           ;; the window: where Mars must stand at departure so ship
+           ;; and world arrive at the same node together
+           (mars0 (- pi (* n-m tof)))
+           (window-deg (* mars0 (/ 180 pi)))
+           ;; the escape kick, from wherever she rides around home
+           (r1 (the radius))
+           (v-inf-dep (- (* vcoeff (+ 1 e)) (sqrt (/ +mu-sun+ re))))
+           (dv1 (- (sqrt (+ (/ (* 2 +mu+) r1) (* v-inf-dep v-inf-dep)))
+                   (sqrt (/ +mu+ r1))))
+           ;; the capture kick, onto the ring over Mars
+           (r2 +mars-ring-radius+)
+           (v-circ2 (sqrt (/ +mu-mars+ r2)))
+           (v-inf-arr (- (sqrt (/ +mu-sun+ rm)) (* vcoeff (- 1 e))))
+           (dv2 (- (sqrt (+ (/ (* 2 +mu-mars+) r2) (* v-inf-arr v-inf-arr)))
+                   v-circ2))
+           ;; Mars's track carries him one ring outboard of the
+           ;; road's end, so the arrival closes with him close aboard
+           (rm+ (+ rm r2))
+           (n 40)
+           ;; where she stands off home's center at departure: the
+           ;; transfer's perihelion sits AT home in the sun's frame,
+           ;; so this offset fades out over the early samples -- the
+           ;; escape unwinding -- keeping home astern at the swing
+           ;; beat and the arrival exact
+           (ox (the pos-x)) (oy (the pos-y))
+           ;; pre-burn beat: wherever and however she stands, in the
+           ;; sun's frame -- home rides at (re, 0) at departure
+           (samples (list (list 0.0 (deg->rad (the heading-deg))
+                                (+ re ox) oy)))
+           (earths (list (list re 0)))
+           (moons (list (list (+ re +moon-x+) 0)))
+           (marses (list (list (* rm+ (cos mars0)) (* rm+ (sin mars0)))))
+           (prev-h nil))
+      (dotimes (i (1+ n))
+        (let* ((ecc-anom (* pi (/ i n)))
+               (r (* a (- 1 (* e (cos ecc-anom)))))
+               (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
+                            (- (cos ecc-anom) e)))
+               (h (atan (* vcoeff (+ e (cos theta)))
+                        (* vcoeff (- (sin theta)))))
+               (tim (/ (- ecc-anom (* e (sin ecc-anom))) n-tr))
+               (th-e (* n-e tim))
+               (th-m (+ mars0 (* n-m tim)))
+               (fade (expt (- 1 (/ i n)) 3)))
+          ;; unwrap the heading so the nose track never jumps a lap
+          (when prev-h
+            (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
+            (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
+          (setq prev-h h)
+          (push (list (+ 0.07 (* 0.86 (/ i n))) h
+                      (+ (* r (cos theta)) (* ox fade))
+                      (+ (* r (sin theta)) (* oy fade)))
+                samples)
+          (push (list (* re (cos th-e)) (* re (sin th-e))) earths)
+          (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e)))
+                moons)
+          (push (list (* rm+ (cos th-m)) (* rm+ (sin th-m))) marses)))
+      ;; the closing beat: nose-in on Mars, home dead astern of the sun
+      (push (list 1.0 pi (- rm) 0) samples)
+      (let ((th-e (* n-e tof)))
+        (push (list (* re (cos th-e)) (* re (sin th-e))) earths)
+        (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e))) moons))
+      (push (list (- rm+) 0) marses)
+      (setq samples (nreverse samples)
+            earths (nreverse earths)
+            moons (nreverse moons)
+            marses (nreverse marses))
+      (the (set-slot! :world :mars))
+      (the (set-slot! :heading-deg 180))
+      (the (set-slot! :vel-x 0))
+      (the (set-slot! :vel-y v-circ2))
+      (the (set-slot! :pos-x r2))
+      (the (set-slot! :pos-y 0))
+      (the (set-slot! :last-burn :none))
+      (the (set-slot! :moon-orbit? nil))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-target :mars))
+      (the (set-slot! :transit-bodies
+            (list (list :prefix "planet" :texture "mars-tex"
+                        :radius +mars-radius+
+                        :targets marses
+                        :diffuse "0.62 0.32 0.18" :emissive "0.10 0.05 0.03"
+                        ;; no visible size at au range anyway; the
+                        ;; first key sets him true -- the same guard
+                        ;; the moon road gives its hidden moon
+                        :scale-override 0.001)
+                  (list :prefix "home" :texture "earth-tex"
+                        :radius +planet-radius+
+                        :targets earths
+                        :spin? t
+                        :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+                  (list :prefix "moon" :texture "moon-tex"
+                        :radius +moon-radius+
+                        :targets moons
+                        :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
+      (the (set-slot! :last-move-note
+            (format nil "the sun's road: she waited on the window -- Mars standing ~d degrees ahead of home -- then a kick out of home's grip (+~,2f km/s), ~,1f months falling around the sun, and a capture kick (+~,2f) onto the ring over Mars.  A new world turns in the glass; the helm is yours."
+                    (round window-deg) dv1 tof-months dv2)))
+      (the voyage-control (set-slot! :value :hand))
+      (tally! :moves)
+      (tally! :voyages)
+      (tally! :mars-voyages)))
+
    (make-helm-move!
     ()
     (the (set-slot! :transit-samples nil))
+    (the (set-slot! :transit-target nil))
+    (the (set-slot! :transit-bodies nil))
     (the (set-slot! :moon-orbit? nil))
     (let* ((turn (ecase (the wheel-control value)
                    (:hard-port 30) (:easy-port 10) (:amidships 0)
@@ -1409,7 +1694,7 @@ function toggleHelm () {
                              (the pos-x) (the pos-y) dt)))
            (r (sqrt (+ (* (third state) (third state))
                        (* (fourth state) (fourth state)))))
-           (crashed? (< r +sky-radius+))
+           (crashed? (< r (the world-sky)))
            ;; how the burn lay against the road: along it, against
            ;; it, or a sideways shove
            (v0 (sqrt (+ (* (the vel-x) (the vel-x))
@@ -1431,10 +1716,11 @@ function toggleHelm () {
                         "a sideways shove — the road tilts; speed hardly changes")
                        (t "coasting — falling around the world; that curve IS the orbit"))))
       (cond (crashed?
+             ;; set back on the ring of whatever world came up
              (the (set-slot! :heading-deg 180))
              (the (set-slot! :vel-x 0))
-             (the (set-slot! :vel-y +ring-speed+))
-             (the (set-slot! :pos-x +ring-radius+))
+             (the (set-slot! :vel-y (the world-ring-speed)))
+             (the (set-slot! :pos-x (the world-ring)))
              (the (set-slot! :pos-y 0)))
             (t
              (the (set-slot! :heading-deg heading))
