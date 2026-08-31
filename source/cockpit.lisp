@@ -273,6 +273,7 @@
    ;; the glass itself, five raked chords along the sweep
    (windshield-glass :type 'box
                      :sequence (:size 5)
+                     :pseudo-inputs (theta sill head)
                      :theta (the (span-theta (+ (the-child index) 0.5) 5))
                      :sill (the (cowl-point (the-child theta)))
                      :head (the (header-point (the-child theta)))
@@ -290,6 +291,7 @@
    ;; the cowl deck closes the gap between panel top and glass base
    (cowl-deck :type 'box
               :sequence (:size 5)
+              :pseudo-inputs (theta)
               :theta (the (span-theta (+ (the-child index) 0.5) 5))
               :center (let ((sill (the (cowl-point (the-child theta)))))
                         (make-point (- (get-x sill) (* 0.085 (cos (the-child theta))))
@@ -447,7 +449,8 @@
            :radius 0.008
            :display-controls (list :color +chrome+))
 
-   ;; three on the tree: the column shifter is the display-scale lever
+   ;; three on the tree, honestly now: forward, neutral, reverse.
+   ;; The clutch lives up here since neutral took over its work.
    (shifter-lever :type 'c-cylinder
                   :start (the shifter-pivot)
                   :end (add-vectors (the shifter-pivot)
@@ -460,9 +463,11 @@
                  :radius 0.018
                  :display-controls (list :color +gauge-face+))
 
-   ;; the pedals: clutch, brake, gas.  The brake is fully present
-   ;; and does nothing whatsoever -- space doesn't brake, and the
-   ;; pedal is how the cockpit says so.
+   ;; the pedals: feather, brake, gas.  The clutch moved up the
+   ;; column when neutral joined the shifter, and the light foot
+   ;; got the freed pedal.  The brake is fully present and does
+   ;; nothing whatsoever -- space doesn't brake, and the pedal is
+   ;; how the cockpit says so.
    (pedal-plates :type 'box
                  :sequence (:size 3)
                  :center (make-point 0.72
@@ -1211,8 +1216,9 @@ window.togglePlot = function () {
 ;; move still posts through make the move and the same after-set!
 ;; game step.  Grab the wheel and it turns under the pointer (the
 ;; sensor route), let go and the wheel card shows the band you left
-;; her in; click the shifter through the gate; press a pedal and it
-;; gives under the click.  The brake presses beautifully.
+;; her in; click the shifter through the gate -- forward, neutral,
+;; reverse; press a pedal and it gives under the click.  The brake
+;; presses beautifully.
 (defparameter *helm-hands-js* "
 (function () {
   function findSel (opt) {
@@ -1222,13 +1228,12 @@ window.togglePlot = function () {
     return null;
   }
   var wheelSel = findSel(':AMIDSHIPS'),
-      gearSel  = findSel(':FIRST'),
-      pedalSel = findSel(':COAST');
+      gearSel  = findSel(':NEUTRAL'),
+      pedalSel = findSel(':BURN');
   var wheelPose = { ':HARD-PORT': 1.3, ':EASY-PORT': 0.55, ':AMIDSHIPS': 0,
                     ':EASY-STARBOARD': -0.55, ':HARD-STARBOARD': -1.3 };
-  var gearPose  = { ':FIRST': 0, ':SECOND': 0.35, ':THIRD': 0.7,
-                    ':OVERDRIVE': 1.0, ':REVERSE': -0.4 };
-  var gearCycle = [':FIRST', ':SECOND', ':THIRD', ':OVERDRIVE', ':REVERSE'];
+  var gearPose  = { ':FORWARD': 0.5, ':NEUTRAL': 0, ':REVERSE': -0.5 };
+  var gearCycle = [':FORWARD', ':NEUTRAL', ':REVERSE'];
   function setWheelPose (ang) {
     var t = document.getElementById('wheel-turn');
     var s = document.getElementById('wheel-sensor');
@@ -1294,7 +1299,7 @@ window.togglePlot = function () {
     gearSel.value = next;
     setShifterPose(gearPose[next]);
   });
-  var pedalVals = [':COAST', ':BRAKE', ':GAS'];
+  var pedalVals = [':FEATHER', ':BRAKE', ':BURN'];
   [0, 1, 2].forEach(function (i) {
     hook('pedal-rig-' + i, function () {
       var rig = document.getElementById('pedal-rig-' + i);
@@ -1441,8 +1446,8 @@ window.togglePlot = function () {
       (format out "}")
       (when (the transit-samples)
         (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~d,\"samples\":["
-                (if (eql (the transit-target) :moon) "home" "the sun's")
-                (if (eql (the transit-target) :moon) 90 120))
+                (if (member (the transit-target) '(:moon :homeward)) "home" "the sun's")
+                (if (member (the transit-target) '(:moon :homeward)) 90 120))
         (loop for s in (the transit-samples)
               for first = t then nil
               do (destructuring-bind (k h px py) s
@@ -1472,7 +1477,8 @@ window.togglePlot = function () {
    ;; move; while set, the page carries the voyage animation.
    (transit-samples nil :settable)
 
-   ;; which road was flown -- :moon or :mars -- while samples stand
+   ;; which road was flown -- :moon, :homeward (the moon road flown
+   ;; back), or a world key on the sun's road -- while samples stand
    (transit-target nil :settable)
 
    ;; the bodies riding the voyage page: specs for body-x3d and
@@ -1517,7 +1523,8 @@ window.togglePlot = function () {
                                     :tilt (getf body :tilt)
                                     :adornment (getf body :adornment)))))))
              (transit-anim-x3d samples (the transit-bodies)
-                               :duration (if (eql (the transit-target) :moon)
+                               :duration (if (member (the transit-target)
+                                                     '(:moon :homeward))
                                              90 120))
              ;; the watch waits, parked, for the moon road to land;
              ;; at a new world the plain scene already stands the
@@ -1634,7 +1641,7 @@ window.togglePlot = function () {
                 (or (the instance-id) "local") (the moves-count)
                 (the voyage-fin-js)
                 (- (deg->rad (the heading-deg)))
-                (if (eql (the transit-target) :moon) 92000 122000))
+                (if (member (the transit-target) '(:moon :homeward)) 92000 122000))
         ""))
    ;; the speedo sweeps 8 o'clock to 4 o'clock; full scale reads the
    ;; world -- 8 km/s over home and Mars, opened up over a giant
@@ -1649,8 +1656,9 @@ window.togglePlot = function () {
       (:div :style "display:flex;flex-direction:column;gap:4px;"
         (:div (str (the voyage-control html-string)))
         (:div (str (the wheel-control html-string)))
-        (:div (str (the gear-control html-string)))
-        (:div (str (the pedal-control html-string))))
+        (:div (str (the shifter-control html-string)))
+        (:div (str (the pedal-control html-string)))
+        (:div (str (the glass-control html-string))))
       (:input :type "submit" :value "make the move"
        :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;")))
 
@@ -2018,9 +2026,10 @@ function toggleHelm () {
    ;; helm is yours, and the astrodynamics lessons start from the
    ;; moon's road
    ;; the roads on offer read the world: the moon road from home,
-   ;; and the sun's road to every world further out than the one
-   ;; that has her.  Roads back down the well are a later lesson --
-   ;; from the outermost world the helm is simply yours.
+   ;; the sun's road to every world further out than the one that
+   ;; has her -- and from anywhere that is not home, the programmed
+   ;; road home: the moon road flown back, or the sun's own road
+   ;; back down the well.
    (voyage-control :type 'gwl:menu-form-control
                    :prompt "the road: "
                    :size 1
@@ -2030,9 +2039,10 @@ function toggleHelm () {
                     (list :hand "fly her by hand")
                     (when (eql (the world) :home)
                       (list :moon "the programmed road to the moon"))
+                    (unless (eql (the world) :home)
+                      (list :home "the programmed road home"))
                     ;; the sun's roads run between the worlds on his
-                    ;; own road; from the moon the helm is simply
-                    ;; yours (rows with no :sun-radius offer none)
+                    ;; own road (rows with no :sun-radius offer none)
                     (let ((here (world-figure (the world) :sun-radius)))
                       (when here
                         (loop for row in *worlds*
@@ -2054,24 +2064,37 @@ function toggleHelm () {
                                       :easy-starboard "easy, to starboard"
                                       :hard-starboard "hard over, to starboard"))
 
-   (gear-control :type 'gwl:menu-form-control
-                 :prompt "gear: "
-                 :size 1
-                 :default :first
-                 :choice-plist (list :first "first — close work"
-                                     :second "second — approach"
-                                     :third "third — cruise"
-                                     :overdrive "overdrive — the long haul"
-                                     :reverse "reverse — nose-about"))
+   ;; the shifter carries direction and nothing else: forward,
+   ;; neutral, reverse.  Neutral IS the clutch -- clutched out, no
+   ;; pedal reaches the engines, and she coasts.
+   (shifter-control :type 'gwl:menu-form-control
+                    :prompt "shifter: "
+                    :size 1
+                    :default :neutral
+                    :choice-plist (list :forward "forward"
+                                        :neutral "neutral — clutched out, coasting"
+                                        :reverse "reverse — nose-about"))
 
    (pedal-control :type 'gwl:menu-form-control
                   :prompt "pedal: "
                   :size 1
-                  :default :coast
-                  :choice-plist (list :coast "clutch in — coast"
-                                      :gas "gas — burn"
+                  :default :burn
+                  :choice-plist (list :burn "burn — the full pedal"
                                       :feather "feather — a breath of gas"
-                                      :brake "brake")))
+                                      :brake "brake"))
+
+   ;; the glass: how long a turn runs, its own lever now instead of
+   ;; a job smuggled into the gearbox.  Every move falls this long,
+   ;; even in neutral with the wheel amidships -- time passes
+   ;; whether or not you touch anything, which is the whole lesson.
+   (glass-control :type 'gwl:menu-form-control
+                  :prompt "the glass: "
+                  :size 1
+                  :default :short
+                  :choice-plist (list :short "short — a minute"
+                                      :medium "medium — ten minutes"
+                                      :longer "longer — an hour"
+                                      :longest "longest — a day")))
 
   :functions
   (;; Fall through DT seconds of gravity: velocity Verlet in
@@ -2102,17 +2125,23 @@ function toggleHelm () {
    ;; One move of the game, folded into the ship's state when the
    ;; helm form posts.  With the programmed road selected, the move
    ;; IS the voyage; otherwise turn the wheel, then burn (or don't),
-   ;; then FALL as long as the gear holds the clutch out -- a minute
-   ;; in first, ten in second, an hour in third.  The brake is heard
-   ;; and changes nothing.  Meet the sky of the world and you are
-   ;; set back on the ring.
+   ;; then FALL as long as the glass runs -- a minute on the short
+   ;; glass, a day on the longest.  The shifter's neutral is the
+   ;; clutch: clutched out, no pedal reaches the engines.  The brake
+   ;; is heard and changes nothing.  Meet the sky of the world and
+   ;; you are set back on the ring.
    (after-set!
     ()
     (let ((choice (the voyage-control value)))
       (cond ((and (eql choice :moon) (eql (the world) :home))
              (the fly-moon-road!))
+            ;; the moon rides home, not the sun: his road home is
+            ;; the moon road flown back, not a sun's road
+            ((and (eql choice :home) (eql (the world) :moon))
+             (the fly-moon-road-home!))
             ((and (assoc choice *worlds*)
                   (world-figure choice :sun-radius)
+                  (world-figure (the world) :sun-radius)
                   (not (eql choice (the world))))
              (the (fly-sun-road! choice)))
             (t (the make-helm-move!)))))
@@ -2134,7 +2163,6 @@ function toggleHelm () {
            (a (* 0.5 (+ r1 r2)))
            (e (/ (- r2 r1) (+ r2 r1)))
            (p (* a (- 1 (* e e))))
-           (vc2 (sqrt (/ +mu+ r2)))
            (dv1 (- (sqrt (* +mu+ (- (/ 2 r1) (/ 1 a)))) (sqrt (/ +mu+ r1))))
            ;; the capture kick is onto the MOON's watch now, out of
            ;; the transfer's apoapsis crawl -- his ring, his mu
@@ -2204,6 +2232,93 @@ function toggleHelm () {
       (tally! :moves)
       (tally! :voyages)))
 
+   ;; The programmed road home: the moon road flown the other way.
+   ;; A kick out of the moon's grip onto the transfer's apogee
+   ;; crawl, the same half-ellipse fallen down the well -- the
+   ;; lower half of the plane, the mirror of the road out -- and
+   ;; the big brake at perigee onto the home ring.  The same two
+   ;; kicks as the road out, spent in the other order: cheap to
+   ;; leave the moon, dear to stop at the bottom of the well.  The
+   ;; scene flies the leg in home's frame, the moon falling astern
+   ;; at full size, home growing in the glass, and the arrival
+   ;; mirrors every road's: nose-in, the world square in the
+   ;; windshield.
+   (fly-moon-road-home!
+    ()
+    (let* ((r1 +ring-radius+) (r2 +moon-road-radius+)
+           (a (* 0.5 (+ r1 r2)))
+           (e (/ (- r2 r1) (+ r2 r1)))
+           (p (* a (- 1 (* e e))))
+           ;; the departure kick, off the moon's watch and onto the
+           ;; transfer's apogee -- his grip let go
+           (dv1 (- (sqrt (/ +mu-moon+ +moon-watch-radius+))
+                   (sqrt (* +mu+ (- (/ 2 r2) (/ 1 a))))))
+           ;; the capture brake at perigee, down to the ring's own
+           ;; pace -- the same figure the road out spent to leave
+           (dv2 (- (sqrt (* +mu+ (- (/ 2 r1) (/ 1 a))))
+                   (sqrt (/ +mu+ r1))))
+           (tof-days (/ (* pi (sqrt (/ (* a a a) +mu+))) 86400))
+           (vcoeff (sqrt (/ +mu+ p)))
+           (n 32)
+           ;; pre-burn: on the watch at the transfer's own node,
+           ;; nose-in on the moon -- the road out ended exactly here
+           (samples (list (list 0.0 pi (- r2) 0)))
+           (prev-h pi))
+      (dotimes (i (1+ n))
+        (let* ((ecc-anom (+ pi (* pi (/ i n))))
+               (r (* a (- 1 (* e (cos ecc-anom)))))
+               (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
+                            (- (cos ecc-anom) e)))
+               (h (atan (* vcoeff (+ e (cos theta)))
+                        (* vcoeff (- (sin theta))))))
+          ;; unwrap the heading so the nose track never jumps a lap
+          (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
+          (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi)))
+          (setq prev-h h)
+          (push (list (+ 0.07 (* 0.86 (/ i n))) h
+                      (* r (cos theta)) (* r (sin theta)))
+                samples)))
+      ;; the closing beat: nose-in on home, swung on from prograde
+      ;; without ever unwinding the lap the fall wound up
+      (push (list 1.0 (* 3 pi) r1 0) samples)
+      (setq samples (nreverse samples))
+      ;; she arrives back in HOME's frame, on the ring she first
+      ;; rode: circular, prograde, nose-in
+      (the (set-slot! :world :home))
+      (the (set-slot! :landed? nil))
+      (the (set-slot! :heading-deg 180))
+      (the (set-slot! :vel-x 0))
+      (the (set-slot! :vel-y +ring-speed+))
+      (the (set-slot! :pos-x +ring-radius+))
+      (the (set-slot! :pos-y 0))
+      (the (set-slot! :last-burn :none))
+      (the (set-slot! :moon-orbit? nil))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-target :homeward))
+      (the (set-slot! :transit-bodies
+            (list (list :prefix "planet" :texture "earth-tex"
+                        :radius +planet-radius+
+                        :targets (make-list (length samples)
+                                            :initial-element (list 0 0))
+                        :spin? t
+                        :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+                  ;; the moon at full size from the first frame:
+                  ;; she departs his very doorstep, and he falls
+                  ;; astern the whole way down
+                  (list :prefix "moon" :texture "moon-tex"
+                        :radius +moon-radius+
+                        :targets (make-list (length samples)
+                                            :initial-element (list +moon-x+ 0))
+                        :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
+      (the (set-slot! :last-move-note
+                      (format nil "the road home: a kick off the moon's watch (+~,2f km/s), ~,1f days falling down the well, and the big brake at perigee (-~,2f) -- the home ring takes her back.  The helm is yours."
+                              dv1 tof-days dv2)))
+      (the voyage-control (set-slot! :value :hand))
+      (tally! :moves)
+      (tally! :voyages)
+      (tally! :homecomings)))
+
    ;; The sun's road to another world: an escape kick out of the
    ;; grip of the world that has her, the sun's own Hohmann from
    ;; her road to the new world's road, and a capture kick onto the
@@ -2213,7 +2328,9 @@ function toggleHelm () {
    ;; And the window is real: each road only exists when the new
    ;; world stands the right few dozen degrees ahead along the
    ;; sun's road, so she waits for it (a departure board is a later
-   ;; lesson).  The scene flies the leg heliocentric -- the world
+   ;; lesson).  The same conic serves both directions: an inward
+   ;; leg -- the road home -- runs the ellipse from its far end,
+   ;; the eccentricity signed negative and every formula standing.  The scene flies the leg heliocentric -- the world
    ;; she left falls astern and shrinks to a spark while every
    ;; world keeps riding its own road, the new one rises ahead and
    ;; grows -- and the arrival mirrors the departure, nose-in with
@@ -2239,6 +2356,13 @@ function toggleHelm () {
            ;; together
            (mars0 (- pi (* n-m tof)))
            (window-deg (* mars0 (/ 180 pi)))
+           ;; phrased for the sky as she sees it: on an inward leg
+           ;; the faster inner world laps her, and the window reads
+           ;; astern
+           (window-phrase (let ((w (mod (round window-deg) 360)))
+                            (if (<= w 180)
+                                (format nil "~d degrees ahead of" w)
+                                (format nil "~d degrees astern of" (- 360 w)))))
            ;; the escape kick, from wherever she rides now
            (r1 (the radius))
            (v-inf-dep (- (* vcoeff (+ 1 e)) (sqrt (/ +mu-sun+ re))))
@@ -2346,10 +2470,24 @@ function toggleHelm () {
                            :radius +moon-radius+
                            :targets moons
                            :diffuse "0.75 0.74 0.70"
-                           :emissive "0.10 0.10 0.09"))))))
+                           :emissive "0.10 0.10 0.09")))
+             ;; ...and rides out to MEET her when home is the
+             ;; road's end, standing at his node off the growing
+             ;; world (hidden until the first key, the same guard
+             ;; the destination gets)
+             (when (eql to-world :home)
+               (list (list :prefix "moon" :texture "moon-tex"
+                           :radius +moon-radius+
+                           :targets (mapcar (lambda (d)
+                                              (list (+ (first d) +moon-x+)
+                                                    (second d)))
+                                            dests)
+                           :diffuse "0.75 0.74 0.70"
+                           :emissive "0.10 0.10 0.09"
+                           :scale-override 0.001))))))
       (the (set-slot! :last-move-note
-            (format nil "the sun's road: she waited on the window -- ~a standing ~d degrees ahead of ~a -- then a kick out of ~a's grip (+~,2f km/s), ~a falling around the sun, and a capture kick (+~,2f) onto the ring over ~a~a.  A new world turns in the glass; the helm is yours."
-                    (world-figure to-world :name) (round window-deg)
+            (format nil "the sun's road: she waited on the window -- ~a standing ~a ~a -- then a kick out of ~a's grip (+~,2f km/s), ~a falling around the sun, and a capture kick (+~,2f) onto the ring over ~a~a.  ~a turns in the glass; the helm is yours."
+                    (world-figure to-world :name) window-phrase
                     (world-figure from-world :name)
                     (world-figure from-world :name) dv1
                     (if (> tof-months 24)
@@ -2358,7 +2496,8 @@ function toggleHelm () {
                     dv2 (world-figure to-world :name)
                     (if (> dv2 5)
                         " -- the deeper the well, the dearer the stop at the bottom"
-                        ""))))
+                        "")
+                    (if (eql to-world :home) "Home" "A new world"))))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
       (tally! :voyages)
@@ -2376,19 +2515,23 @@ function toggleHelm () {
         (let* ((turn (ecase (the wheel-control value)
                        (:hard-port 30) (:easy-port 10) (:amidships 0)
                        (:easy-starboard -10) (:hard-starboard -30)))
-               (gear (the gear-control value))
+               (shifter (the shifter-control value))
                (pedal (the pedal-control value))
                (heading (mod (+ (the heading-deg) turn) 360))
                (rad (deg->rad heading))
-               (flip (if (eql gear :reverse) -1 1))
+               (flip (if (eql shifter :reverse) -1 1))
                ;; the full pedal is a real kick; feather is the
-               ;; light foot close work needs
-               (dv (case pedal (:gas 0.5) (:feather 0.1) (t 0)))
+               ;; light foot close work needs; neutral clutches
+               ;; every pedal out
+               (dv (if (eql shifter :neutral)
+                       0
+                       (case pedal (:burn 0.5) (:feather 0.1) (t 0))))
                ;; the scope of a move: a minute of close work up to
-               ;; a full day in overdrive -- Space Travel's lesson
-               ;; that scale and clock are one lever
-               (dt (ecase gear (:first 60) (:second 600) (:third 3600)
-                          (:overdrive 86400) (:reverse 60)))
+               ;; a full day on the longest glass -- Space Travel's
+               ;; clock, its own lever now
+               (dt (ecase (the glass-control value)
+                     (:short 60) (:medium 600)
+                     (:longer 3600) (:longest 86400)))
                (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
                                  (+ (the vel-y) (* dv flip (sin rad)))
                                  (the pos-x) (the pos-y) dt)))
@@ -2420,7 +2563,7 @@ function toggleHelm () {
                                     (* dv flip (sin rad) (the vel-y)))
                                  (* dv v0))))
                (note (cond (down?
-                            (format nil "DOWN on ~a -- ~,2f km/s at the touch, under the ~,1f the surface forgives.  The world turns under him; gas to climb back to the ring"
+                            (format nil "DOWN on ~a -- ~,2f km/s at the touch, under the ~,1f the surface forgives.  The world turns under him; forward and the full pedal to climb back to the ring"
                                     (the world-name) contact-speed
                                     +landing-speed-cap+))
                            (crashed?
@@ -2434,7 +2577,7 @@ function toggleHelm () {
                             "burn against the road — less speed, and the far side falls")
                            ((plusp dv)
                             "a sideways shove — the road tilts; speed hardly changes")
-                           (t "coasting — falling around the world; that curve IS the orbit"))))
+                           (t "coasting — clutched out in neutral, falling around the world; that curve IS the orbit"))))
           (cond (down?
                  ;; set down at the point of contact, engines cold
                  (let ((scale (/ (the world-sky) (max r 1.0))))
@@ -2458,13 +2601,15 @@ function toggleHelm () {
                  (the (set-slot! :pos-x (third state)))
                  (the (set-slot! :pos-y (fourth state)))))
           (the (set-slot! :last-burn (cond ((or contact? (zerop dv)) :none)
-                                           ((eql gear :reverse) :retro)
+                                           ((eql shifter :reverse) :retro)
                                            (t :forward))))
           (the (set-slot! :moves-count (1+ (the moves-count))))
           (the (set-slot! :last-move-note note))
           (tally! :moves)
-          (tally! (ecase pedal (:gas :burns) (:feather :feathers)
-                         (:coast :coasts) (:brake :brakes)))
+          (tally! (cond ((eql pedal :brake) :brakes)
+                        ((zerop dv) :coasts)
+                        ((eql pedal :burn) :burns)
+                        (t :feathers)))
           (when crashed? (tally! :crashes))
           (when down?
             (tally! :landings)
@@ -2509,14 +2654,16 @@ function toggleHelm () {
                (tally! :handoffs-homeward))))
           (t nil)))
 
-   ;; A move made on the ground.  Gas lights the engines for the
-   ;; programmed climb back to the world's ring -- the LANDING is
-   ;; where the skill lives, the ascent is the yard's gift.  Anything
-   ;; else and he sits, the world turning under him.
+   ;; A move made on the ground.  Forward gear and the full pedal
+   ;; light the engines for the programmed climb back to the
+   ;; world's ring -- the LANDING is where the skill lives, the
+   ;; ascent is the yard's gift.  Anything else and he sits, the
+   ;; world turning under him.
    (make-parked-move!
     ()
-    (let ((pedal (the pedal-control value)))
-      (cond ((eql pedal :gas)
+    (let ((shifter (the shifter-control value))
+          (pedal (the pedal-control value)))
+      (cond ((and (eql shifter :forward) (eql pedal :burn))
              (the (set-slot! :landed? nil))
              (the (set-slot! :heading-deg 180))
              (the (set-slot! :vel-x 0))
@@ -2533,9 +2680,16 @@ function toggleHelm () {
              (the (set-slot! :last-move-note
                              (cond ((eql pedal :brake)
                                     "the brake presses beautifully, and he is already stopped")
+                                   ((eql shifter :reverse)
+                                    "reverse on the ground just squats her on her gear -- forward is the way off a world")
+                                   ((eql shifter :neutral)
+                                    (if (eql pedal :burn)
+                                        "the engines answer -- and neutral holds the clutch out, going nowhere.  Forward, and the full pedal climbs"
+                                        (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
+                                                (the world-name))))
                                    ((eql pedal :feather)
                                     "a breath of gas stirs the dust -- it takes the full pedal to climb")
-                                   (t (format nil "down on ~a, engines cold -- the world turns under him.  Gas to climb"
+                                   (t (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
                                               (the world-name))))))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (tally! :moves)))))

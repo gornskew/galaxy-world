@@ -141,20 +141,26 @@ are parallel -- don't point this straight up or down."
 
    ;; The first viewpoint in document order is bound at load: the
    ;; chart view when a course is on the table, the port eye
-   ;; otherwise.
+   ;; otherwise.  Every eye keeps the pole star overhead (:up +z):
+   ;; the bare shortest-arc orientation left the cameras rolled 90
+   ;; degrees for gazes lying near the ring plane.
    (viewpoints-x3d
-    (let ((port (viewpoint-x3d "port-eye" "Port eye"
-                               (the port-eye-position)
-                               (the port-eye-direction)
-                               (the eye-field-of-view)))
-          (starboard (viewpoint-x3d "starboard-eye" "Starboard eye"
-                                    (the starboard-eye-position)
-                                    (the starboard-eye-direction)
-                                    (the eye-field-of-view)))
-          (chart-eye (viewpoint-x3d "chart-eye" "Chart view"
-                                    (the chart-eye-position)
-                                    (the chart-eye-direction)
-                                    (the eye-field-of-view))))
+    (let* ((up (make-vector 0 0 1))
+           (port (viewpoint-x3d "port-eye" "Port eye"
+                                (the port-eye-position)
+                                (the port-eye-direction)
+                                (the eye-field-of-view)
+                                :up up))
+           (starboard (viewpoint-x3d "starboard-eye" "Starboard eye"
+                                     (the starboard-eye-position)
+                                     (the starboard-eye-direction)
+                                     (the eye-field-of-view)
+                                     :up up))
+           (chart-eye (viewpoint-x3d "chart-eye" "Chart view"
+                                     (the chart-eye-position)
+                                     (the chart-eye-direction)
+                                     (the eye-field-of-view)
+                                     :up up)))
       (if (the course-plotted?)
           (string-append chart-eye port starboard)
           (string-append port starboard chart-eye))))
