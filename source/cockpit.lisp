@@ -689,6 +689,16 @@ the given heading; positive to port."
 (defun dist-to (px py tx ty)
   (sqrt (+ (expt (- tx px) 2) (expt (- ty py) 2))))
 
+;; The real faces: home and the moon wear NASA imagery -- the Blue
+;; Marble composite and the LROC color mosaic -- served as static
+;; routes (see publish.lisp), courtesy NASA, public domain.  URLs
+;; in the markup mean the faces ride with the scene under EITHER
+;; renderer, present at first paint; the remaining worlds keep the
+;; page's own painted faces.
+(defun texture-url-for (texture-id)
+  (cond ((equal texture-id "earth-tex") "/gw-tex/earth.jpg")
+        ((equal texture-id "moon-tex") "/gw-tex/moon.jpg")))
+
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
                  &key spin? diffuse emissive scale-override tilt adornment)
   "One body: a unit sphere under a DEF'd frame transform carrying
@@ -707,10 +717,13 @@ near ring arc lost the draw and hid behind the globe."
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"\"></ImageTexture><Material DEF=\"~a-mat\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
-             prefix texture-id texture-id prefix diffuse emissive
+             prefix texture-id texture-id
+             (let ((u (texture-url-for texture-id)))
+               (if u (format nil "&quot;~a&quot;" u) ""))
+             prefix diffuse emissive
              (or adornment "")
              (if tilt "</Transform>" ""))
      (if spin?
@@ -1684,33 +1697,6 @@ window.togglePlot = function () {
       if (el) el.setAttribute('url', u);
     });
   }
-  tex(['earth-tex'], 1024, 512, function (g, w, h) {
-    var sea = g.createLinearGradient(0, 0, 0, h);
-    sea.addColorStop(0, '#16305a'); sea.addColorStop(0.5, '#1d4f8a'); sea.addColorStop(1, '#16305a');
-    g.fillStyle = sea; g.fillRect(0, 0, w, h);
-    function land (pts, fill) {
-      g.beginPath();
-      for (var i = 0; i < pts.length; i++) {
-        var x = (pts[i][0] + 180) / 360 * w, y = (90 - pts[i][1]) / 180 * h;
-        if (i) g.lineTo(x, y); else g.moveTo(x, y);
-      }
-      g.closePath(); g.fillStyle = fill; g.fill();
-    }
-    var green = '#3f6f33', dry = '#8a7a4a';
-    land([[-165,65],[-130,70],[-95,72],[-75,68],[-58,52],[-70,44],[-76,35],[-81,25],[-97,27],[-92,17],[-84,10],[-92,15],[-105,22],[-117,33],[-124,42],[-150,60]], green);
-    land([[-80,9],[-72,11],[-60,5],[-50,0],[-35,-8],[-40,-22],[-55,-35],[-62,-41],[-71,-52],[-75,-45],[-70,-30],[-70,-18],[-78,-5]], green);
-    land([[-52,60],[-42,62],[-25,70],[-35,78],[-55,76]], '#dde6ec');
-    land([[-17,15],[-10,32],[10,37],[32,31],[43,12],[51,10],[40,-5],[35,-20],[27,-34],[18,-34],[12,-18],[8,-1],[-8,5]], dry);
-    land([[-10,36],[-8,43],[-2,48],[-5,58],[5,62],[15,68],[40,70],[70,73],[100,77],[140,72],[170,67],[178,64],[160,60],[152,48],[140,42],[128,38],[122,30],[108,18],[104,8],[98,12],[92,22],[86,20],[80,12],[76,8],[72,20],[66,24],[57,22],[50,28],[42,32],[35,36],[25,36],[15,38],[3,36]], green);
-    land([[113,-22],[122,-17],[135,-12],[142,-11],[147,-19],[153,-27],[150,-37],[140,-38],[131,-32],[115,-34]], dry);
-    g.fillStyle = '#e8eef2';
-    g.fillRect(0, 0, w, h * 0.045); g.fillRect(0, h * 0.94, w, h * 0.06);
-    g.fillStyle = 'rgba(255,255,255,0.30)';
-    for (var i = 0; i < 26; i++) {
-      var cx = rnd(i) * w, cy = (0.15 + 0.7 * rnd(i + 40)) * h, rx = 30 + 60 * rnd(i + 80);
-      g.beginPath(); g.ellipse(cx, cy, rx, rx * 0.28, 0, 0, 6.2832); g.fill();
-    }
-  });
   tex(['leather-tex'], 256, 256, function (g, w, h) {
     g.fillStyle = '#6b4423'; g.fillRect(0, 0, w, h);
     for (var i = 0; i < 2200; i++) {
@@ -1740,21 +1726,6 @@ window.togglePlot = function () {
       g.stroke();
     }
     g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
-  });
-  tex(['moon-tex'], 512, 256, function (g, w, h) {
-    g.fillStyle = '#b6b2a8'; g.fillRect(0, 0, w, h);
-    for (var i = 0; i < 9; i++) {
-      var x = rnd(i + 20) * w, y = (0.2 + 0.6 * rnd(i + 60)) * h, r = 20 + 55 * rnd(i + 100);
-      g.fillStyle = 'rgba(90,88,82,0.35)';
-      g.beginPath(); g.ellipse(x, y, r, r * 0.7, rnd(i) * 3, 0, 6.2832); g.fill();
-    }
-    for (var j = 0; j < 90; j++) {
-      var x = rnd(j + 200) * w, y = rnd(j + 300) * h, r = 1.5 + 7 * rnd(j + 400);
-      g.fillStyle = 'rgba(70,68,62,0.5)';
-      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
-      g.strokeStyle = 'rgba(235,232,225,0.55)'; g.lineWidth = 1;
-      g.beginPath(); g.arc(x - r * 0.15, y - r * 0.15, r * 0.8, 0, 6.2832); g.stroke();
-    }
   });
   tex(['mars-tex'], 512, 256, function (g, w, h) {
     var dust = g.createLinearGradient(0, 0, 0, h);

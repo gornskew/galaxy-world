@@ -76,6 +76,22 @@
                         :host *galaxy-world-hosts*
                         :server server
                         :function 'xr-scene-responder))
+  ;; the real faces: NASA imagery (Blue Marble; LROC color mosaic)
+  ;; as static routes -- public domain, courtesy NASA.  Path
+  ;; resolution rides the system definition, so flat and bucketed
+  ;; checkouts both find the files.
+  (dolist (spec '(("/gw-tex/earth.jpg" "earth.jpg")
+                  ("/galaxy-world/gw-tex/earth.jpg" "earth.jpg")
+                  ("/gw-tex/moon.jpg" "moon.jpg")
+                  ("/galaxy-world/gw-tex/moon.jpg" "moon.jpg")))
+    (net.aserve:publish-file
+     :path (first spec)
+     :file (namestring (asdf:system-relative-pathname
+                        :galaxy-world
+                        (format nil "textures/~a" (second spec))))
+     :content-type "image/jpeg"
+     :host *galaxy-world-hosts*
+     :server server))
   (gwl:publish-string-content "/robots.txt" *robots-txt*
                               :host *galaxy-world-hosts*
                               :content-type "text/plain"

@@ -58,6 +58,13 @@ The yard is at
 [github.com/gornskew/basilisk](https://github.com/gornskew/basilisk).
 A ship of your own is a clone and a raising: `./basilisk up`.
 
+## Textures
+
+Home and the moon wear real faces: the Blue Marble land/ocean/ice
+composite (NASA Visible Earth) and the LROC color mosaic (NASA SVS
+CGI Moon Kit), courtesy NASA, public domain (`textures/`). The
+other worlds' faces are painted by the page itself.
+
 ## License
 
 AGPL-3.0-or-later, © 2026 Gornskew Enterprises. See `LICENSE`.
