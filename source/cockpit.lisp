@@ -1211,6 +1211,33 @@ window.togglePlot = function () {
   })();
 })();")
 
+;; The voice of the road: while a programmed voyage flies, the beats
+;; speak into the move-note line in step with the scene's own clock
+;; -- the window, the kicks, the long coast -- and the full arrival
+;; note returns when the road is flown.
+(defparameter *voyage-beats-js* "
+(function () {
+  var V = (typeof GW_PLAN === 'object' && GW_PLAN && GW_PLAN.voyage) || null;
+  if (!V || !V.beats || !V.beats.length) return;
+  var el = document.getElementById('move-note');
+  if (!el) return;
+  var finale = el.textContent;
+  function step () {
+    if (typeof window.GW_VOYAGE_T0 !== 'number') {
+      if (window.GW_VOYAGE_T0 === null) return;
+      setTimeout(step, 100); return;
+    }
+    var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
+    if (f >= 1) { el.textContent = finale; return; }
+    var text = null;
+    for (var i = 0; i < V.beats.length; i++)
+      if (V.beats[i][0] <= f) text = V.beats[i][1];
+    if (f >= 0 && text) el.textContent = text;
+    setTimeout(step, 250);
+  }
+  step();
+})();")
+
 ;; The hands on the helm: drags and clicks on the rigs mirror into
 ;; the form controls, which stay the readout and the fallback -- the
 ;; move still posts through make the move and the same after-set!
@@ -1310,6 +1337,35 @@ window.togglePlot = function () {
       if (pedalSel) pedalSel.value = pedalVals[i];
     });
   });
+  // the dash radio: preset buttons drive the hidden radio inputs,
+  // and the station readout names the channel playing
+  var stations = { ':SLOW': 'drone 33', ':MEDIUM': 'dub 72',
+                   ':FAST': 'house 120', ':FASTEST': 'goa 145' };
+  function radioByVal (v) {
+    var ins = document.querySelectorAll('#helm-body input');
+    for (var i = 0; i < ins.length; i++)
+      if (ins[i].value === v) return ins[i];
+    return null;
+  }
+  function wireFace (cls, after) {
+    var btns = document.querySelectorAll(cls);
+    Array.prototype.forEach.call(btns, function (b) {
+      var r = radioByVal(b.getAttribute('data-val'));
+      if (!r) return;
+      if (r.checked) { b.classList.add('lit'); if (after) after(b); }
+      b.addEventListener('click', function () {
+        r.checked = true;
+        Array.prototype.forEach.call(btns, function (o) { o.classList.remove('lit'); });
+        b.classList.add('lit');
+        if (after) after(b);
+      });
+    });
+  }
+  wireFace('.cadence-btn', function (b) {
+    var s = document.getElementById('radio-station');
+    if (s) s.textContent = stations[b.getAttribute('data-val')] || '';
+  });
+  wireFace('.transport-btn');
 })();")
 
 ;; The cab is the same for every session, so like the starfield its
@@ -1463,6 +1519,11 @@ window.togglePlot = function () {
                        do (format out "~:[,~;~][~,1f,~,1f]"
                                   f2 (first tg) (second tg)))
                  (format out "]}"))
+        (format out "],\"beats\":[")
+        (loop for beat in (the transit-beats)
+              for first = t then nil
+              do (format out "~:[,~;~][~,3f,~s]"
+                         first (car beat) (cdr beat)))
         (format out "]}"))
       (format out "}")))
 
@@ -1487,6 +1548,11 @@ window.togglePlot = function () {
    ;; plist: :prefix :texture :radius :targets :diffuse :emissive
    ;; :spin? :scale-override.
    (transit-bodies nil :settable)
+
+   ;; the running story of a programmed road: (fraction . line)
+   ;; pairs the page speaks into the move-note while the voyage
+   ;; clock flies, the full arrival note returning at the end
+   (transit-beats nil :settable)
 
    ;; she stands the moon watch: set on arrival, cleared by the
    ;; next hand-flown move; while set, the scene loops the parked
@@ -1658,7 +1724,31 @@ window.togglePlot = function () {
         (:div (str (the wheel-control html-string)))
         (:div (str (the shifter-control html-string)))
         (:div (str (the pedal-control html-string)))
-        (:div (str (the glass-control html-string))))
+        ;; the dash radio: cadence presets and the tape transport.
+        ;; The real radio inputs ride hidden below; these buttons
+        ;; drive them, the station readout names the channel.
+        (:div :id "radio-face"
+          :style "margin-top:4px;border:1px solid #7a6a1f;border-radius:8px;padding:6px 8px;background:rgba(10,10,10,0.72);"
+          (:div :style "display:flex;justify-content:space-between;font-size:10px;letter-spacing:0.14em;color:#c9a227;margin-bottom:4px;"
+            (:span "CADENCE")
+            (:span :id "radio-station" :style "font-variant-numeric:tabular-nums;" ""))
+          (:div :style "display:flex;gap:4px;align-items:center;"
+            (:button :type "button" :class "rbtn cadence-btn" :data-val ":SLOW"
+              :title "slow — a minute a turn (ambient drone)" "slow")
+            (:button :type "button" :class "rbtn cadence-btn" :data-val ":MEDIUM"
+              :title "medium — ten minutes a turn (dub)" "med")
+            (:button :type "button" :class "rbtn cadence-btn" :data-val ":FAST"
+              :title "fast — an hour a turn (house)" "fast")
+            (:button :type "button" :class "rbtn cadence-btn" :data-val ":FASTEST"
+              :title "fastest — a day a turn (145 bpm goa)" "fstst")
+            (:span :style "flex:1;")
+            (:button :type "button" :class "rbtn transport-btn" :data-val ":REWIND"
+              :title "rewind — the turn falls into the past; the engines don't light" "◀◀")
+            (:button :type "button" :class "rbtn transport-btn" :data-val ":PLAY"
+              :title "play — the turn runs forward" "▶"))
+          (:div :style "display:none;"
+            (str (the cadence-control html-string))
+            (str (the transport-control html-string)))))
       (:input :type "submit" :value "make the move"
        :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;")))
 
@@ -1741,7 +1831,9 @@ window.togglePlot = function () {
       ;; the re-render a move posts (sessionStorage, like the view).
       (:style (str "
 #helm-body select { background:rgba(16,16,16,0.6); color:#e8c839; border:1px solid #7a6a1f; border-radius:6px; padding:2px 4px; font-size:12px; }
-#helm-body select option { background:#1a1a1a; color:#e8c839; }"))
+#helm-body select option { background:#1a1a1a; color:#e8c839; }
+#helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
+#helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
         (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "toggleHelm()"
@@ -1760,7 +1852,7 @@ window.togglePlot = function () {
           ;; on the ground there is no road to describe -- the world
           ;; itself holds him
           (if (the landed?)
-              (htm (:div "engines cold — gas to climb"))
+              (htm (:div "engines cold — forward and the full pedal to climb"))
               (htm
                (:div (fmt "altitude: ~,0f km" (the altitude)))
                (if (the semi-major)
@@ -1775,7 +1867,8 @@ window.togglePlot = function () {
                    (htm (:div :style "color:#e07050;"
                           "the road is unbound — the deep dark has you")))))
           (:div (fmt "moves made: ~d" (the moves-count)))
-          (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
+          (:div :id "move-note"
+            :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note))))))
       ;; THE PLOT: the plan view every real ship keeps beside the
       ;; glass -- the world's frame from above, the road's true
@@ -2014,6 +2107,7 @@ function toggleHelm () {
         (str (format nil "var GW_PLAN = ~a;" (the plan-json)))
         (str *plan-view-js*)
         (str *helm-hands-js*)
+        (str *voyage-beats-js*)
         (str (the voyage-script-js)))))
 
    (eye-button-style
@@ -2083,23 +2177,43 @@ function toggleHelm () {
                                       :feather "feather — a breath of gas"
                                       :brake "brake"))
 
-   ;; the glass: how long a turn runs, its own lever now instead of
-   ;; a job smuggled into the gearbox.  Every move falls this long,
-   ;; even in neutral with the wheel amidships -- time passes
-   ;; whether or not you touch anything, which is the whole lesson.
-   (glass-control :type 'gwl:menu-form-control
-                  :prompt "the glass: "
-                  :size 1
-                  :default :short
-                  :choice-plist (list :short "short — a minute"
-                                      :medium "medium — ten minutes"
-                                      :longer "longer — an hour"
-                                      :longest "longest — a day")))
+   ;; the radio: how long a turn runs, worn as the truck's dash
+   ;; radio.  Four channels -- the faster the music, the bigger the
+   ;; jump per turn -- and every move falls that long, even in
+   ;; neutral with the wheel amidships: time passes whether or not
+   ;; you touch anything, which is the whole lesson.  The real
+   ;; radio inputs ride hidden in the form; the faceplate's preset
+   ;; buttons drive them, the same mirror the 3D rigs use.
+   (cadence-control :type 'gwl:radio-form-control
+                    :default :slow
+                    :choice-plist (list :slow "slow"
+                                        :medium "medium"
+                                        :fast "fast"
+                                        :fastest "fastest"))
+
+   ;; the tape transport: play runs the turn forward, rewind runs
+   ;; it BACKWARD -- gravity is symmetric, so the deck can carry
+   ;; the fall either way.  The engines don't light in rewind.
+   (transport-control :type 'gwl:radio-form-control
+                      :default :play
+                      :choice-plist (list :play "play"
+                                          :rewind "rewind")))
 
   :functions
   (;; Fall through DT seconds of gravity: velocity Verlet in
-   ;; one-minute substeps.  Returns the new (vx vy px py).
+   ;; one-minute substeps.  Returns the new (vx vy px py).  A
+   ;; NEGATIVE dt runs the fall backward: gravity is symmetric, so
+   ;; the rewind negates the velocities, falls |dt| forward, and
+   ;; negates them back -- the exact same road, unfallen.
    (fall
+    (vx vy px py dt)
+    (if (minusp dt)
+        (destructuring-bind (rvx rvy rpx rpy)
+            (the (fall (- vx) (- vy) px py (- dt)))
+          (list (- rvx) (- rvy) rpx rpy))
+        (the (fall-forward vx vy px py dt))))
+
+   (fall-forward
     (vx vy px py dt)
     (let ((h 60.0d0)
           (mu (the world-mu))
@@ -2125,11 +2239,12 @@ function toggleHelm () {
    ;; One move of the game, folded into the ship's state when the
    ;; helm form posts.  With the programmed road selected, the move
    ;; IS the voyage; otherwise turn the wheel, then burn (or don't),
-   ;; then FALL as long as the glass runs -- a minute on the short
-   ;; glass, a day on the longest.  The shifter's neutral is the
+   ;; then FALL as long as the radio plays -- a minute on the slow
+   ;; channel, a day on the fastest.  The shifter's neutral is the
    ;; clutch: clutched out, no pedal reaches the engines.  The brake
-   ;; is heard and changes nothing.  Meet the sky of the world and
-   ;; you are set back on the ring.
+   ;; is heard and changes nothing.  Rewind on the tape transport
+   ;; runs the turn backward, engines cold.  Meet the sky of the
+   ;; world and you are set back on the ring.
    (after-set!
     ()
     (let ((choice (the voyage-control value)))
@@ -2225,6 +2340,12 @@ function toggleHelm () {
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
                         :scale-override 0.001))))
       (the (set-slot! :moon-orbit? t))
+      (the (set-slot! :transit-beats
+            (list (cons 0.02 "hands off the wheel -- the programmed road has her")
+                  (cons 0.07 (format nil "the kick at perigee: +~,2f km/s, and the road out opens" dv1))
+                  (cons 0.35 (format nil "falling uphill -- ~,1f days of coast, compressed to a breath" tof-days))
+                  (cons 0.90 (format nil "the capture kick: +~,2f km/s, onto the moon's watch" dv2))
+                  (cons 0.97 "the watch takes her -- nose-in on a new world"))))
       (the (set-slot! :last-move-note
                       (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and she settles into the watch around the moon.  The helm is yours."
                               dv1 tof-days dv2)))
@@ -2311,6 +2432,12 @@ function toggleHelm () {
                         :targets (make-list (length samples)
                                             :initial-element (list +moon-x+ 0))
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
+      (the (set-slot! :transit-beats
+            (list (cons 0.02 "cast off the watch -- the road home has her")
+                  (cons 0.07 (format nil "the kick off the watch: +~,2f km/s, and the moon's grip lets go" dv1))
+                  (cons 0.35 (format nil "falling down the well -- ~,1f days, home growing in the glass" tof-days))
+                  (cons 0.90 (format nil "the big brake at perigee: -~,2f km/s, down to the ring's own pace" dv2))
+                  (cons 0.97 "the home ring takes her back"))))
       (the (set-slot! :last-move-note
                       (format nil "the road home: a kick off the moon's watch (+~,2f km/s), ~,1f days falling down the well, and the big brake at perigee (-~,2f) -- the home ring takes her back.  The helm is yours."
                               dv1 tof-days dv2)))
@@ -2363,6 +2490,9 @@ function toggleHelm () {
                             (if (<= w 180)
                                 (format nil "~d degrees ahead of" w)
                                 (format nil "~d degrees astern of" (- 360 w)))))
+           (leg-span (if (> tof-months 24)
+                         (format nil "~,1f years" (/ tof (* 86400 365.25)))
+                         (format nil "~,1f months" tof-months)))
            ;; the escape kick, from wherever she rides now
            (r1 (the radius))
            (v-inf-dep (- (* vcoeff (+ 1 e)) (sqrt (/ +mu-sun+ re))))
@@ -2485,14 +2615,23 @@ function toggleHelm () {
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09"
                            :scale-override 0.001))))))
+      (the (set-slot! :transit-beats
+            (list (cons 0.02 (format nil "she waited on the window -- ~a standing ~a ~a"
+                                     (world-figure to-world :name) window-phrase
+                                     (world-figure from-world :name)))
+                  (cons 0.07 (format nil "the escape kick: +~,2f km/s, out of ~a's grip"
+                                     dv1 (world-figure from-world :name)))
+                  (cons 0.35 (format nil "falling around the sun -- ~a of coast, ~a shrinking astern"
+                                     leg-span (world-figure from-world :name)))
+                  (cons 0.90 (format nil "the capture kick: +~,2f km/s, onto the ring over ~a"
+                                     dv2 (world-figure to-world :name)))
+                  (cons 0.97 (format nil "~a fills the glass" (world-figure to-world :name))))))
       (the (set-slot! :last-move-note
             (format nil "the sun's road: she waited on the window -- ~a standing ~a ~a -- then a kick out of ~a's grip (+~,2f km/s), ~a falling around the sun, and a capture kick (+~,2f) onto the ring over ~a~a.  ~a turns in the glass; the helm is yours."
                     (world-figure to-world :name) window-phrase
                     (world-figure from-world :name)
                     (world-figure from-world :name) dv1
-                    (if (> tof-months 24)
-                        (format nil "~,1f years" (/ tof (* 86400 365.25)))
-                        (format nil "~,1f months" tof-months))
+                    leg-span
                     dv2 (world-figure to-world :name)
                     (if (> dv2 5)
                         " -- the deeper the well, the dearer the stop at the bottom"
@@ -2509,6 +2648,7 @@ function toggleHelm () {
     (the (set-slot! :transit-samples nil))
     (the (set-slot! :transit-target nil))
     (the (set-slot! :transit-bodies nil))
+    (the (set-slot! :transit-beats nil))
     (the (set-slot! :moon-orbit? nil))
     (if (the landed?)
         (the make-parked-move!)
@@ -2517,21 +2657,25 @@ function toggleHelm () {
                        (:easy-starboard -10) (:hard-starboard -30)))
                (shifter (the shifter-control value))
                (pedal (the pedal-control value))
+               (rewind? (eql (the transport-control value) :rewind))
                (heading (mod (+ (the heading-deg) turn) 360))
                (rad (deg->rad heading))
                (flip (if (eql shifter :reverse) -1 1))
                ;; the full pedal is a real kick; feather is the
                ;; light foot close work needs; neutral clutches
-               ;; every pedal out
-               (dv (if (eql shifter :neutral)
+               ;; every pedal out, and the engines don't light in
+               ;; rewind -- the tape only carries the fall
+               (dv (if (or rewind? (eql shifter :neutral))
                        0
                        (case pedal (:burn 0.5) (:feather 0.1) (t 0))))
                ;; the scope of a move: a minute of close work up to
-               ;; a full day on the longest glass -- Space Travel's
-               ;; clock, its own lever now
-               (dt (ecase (the glass-control value)
-                     (:short 60) (:medium 600)
-                     (:longer 3600) (:longest 86400)))
+               ;; a full day on the fastest channel -- Space
+               ;; Travel's clock, worn as the dash radio, and the
+               ;; tape transport signs it
+               (dt (* (if rewind? -1 1)
+                      (ecase (the cadence-control value)
+                        (:slow 60) (:medium 600)
+                        (:fast 3600) (:fastest 86400))))
                (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
                                  (+ (the vel-y) (* dv flip (sin rad)))
                                  (the pos-x) (the pos-y) dt)))
@@ -2569,6 +2713,8 @@ function toggleHelm () {
                            (crashed?
                             (format nil "the world came up to meet you at ~,1f km/s -- back on the ring, falling clean.  Under ~,1f km/s at the touch would have been a landing"
                                     contact-speed +landing-speed-cap+))
+                           (rewind?
+                            "the tape runs backward — the road unfalls behind her; the engines don't light in rewind")
                            ((eql pedal :brake)
                             "the brake presses beautifully and does nothing — space doesn't brake")
                            ((and (plusp dv) (> alignment 0.5))
@@ -2606,7 +2752,8 @@ function toggleHelm () {
           (the (set-slot! :moves-count (1+ (the moves-count))))
           (the (set-slot! :last-move-note note))
           (tally! :moves)
-          (tally! (cond ((eql pedal :brake) :brakes)
+          (tally! (cond (rewind? :rewinds)
+                        ((eql pedal :brake) :brakes)
                         ((zerop dv) :coasts)
                         ((eql pedal :burn) :burns)
                         (t :feathers)))
@@ -2662,8 +2809,9 @@ function toggleHelm () {
    (make-parked-move!
     ()
     (let ((shifter (the shifter-control value))
-          (pedal (the pedal-control value)))
-      (cond ((and (eql shifter :forward) (eql pedal :burn))
+          (pedal (the pedal-control value))
+          (rewind? (eql (the transport-control value) :rewind)))
+      (cond ((and (not rewind?) (eql shifter :forward) (eql pedal :burn))
              (the (set-slot! :landed? nil))
              (the (set-slot! :heading-deg 180))
              (the (set-slot! :vel-x 0))
@@ -2678,7 +2826,9 @@ function toggleHelm () {
             (t
              (the (set-slot! :last-burn :none))
              (the (set-slot! :last-move-note
-                             (cond ((eql pedal :brake)
+                             (cond (rewind?
+                                    "the tape runs backward and the world turns the other way under him -- there is no road into the past off this rock")
+                                   ((eql pedal :brake)
                                     "the brake presses beautifully, and he is already stopped")
                                    ((eql shifter :reverse)
                                     "reverse on the ground just squats her on her gear -- forward is the way off a world")
