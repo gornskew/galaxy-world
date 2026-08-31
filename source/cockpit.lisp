@@ -704,12 +704,17 @@ near ring arc lost the draw and hid behind the globe."
   (let ((homes (make-string-output-stream))
         (skys (make-string-output-stream))
         (spins (make-string-output-stream)))
+    ;; the watch runs CLOCKWISE (the transfer's apoapsis crawl hands
+    ;; her over that way, and the integrated state agrees): riding
+    ;; nose-in, home's bearing INCREASES -- dead astern, up the
+    ;; starboard side, ahead, down the port side -- and the sky
+    ;; wheels with it; his face scrolls the other way under her
     (dotimes (k 9)
-      (let ((b (- home-bearing (* k (/ pi 4)))))
+      (let ((b (+ home-bearing (* k (/ pi 4)))))
         (format homes "~,1f ~,1f 0 " (* 3000 (cos b)) (* 3000 (sin b)))))
     (dotimes (k 5)
-      (format skys "0 0 1 ~,5f " (- sky-angle (* k (/ pi 2))))
-      (format spins "0 -1 0 ~,5f " (* k (/ pi 2))))
+      (format skys "0 0 1 ~,5f " (+ sky-angle (* k (/ pi 2))))
+      (format spins "0 1 0 ~,5f " (* k (/ pi 2))))
     (format nil "<TimeSensor DEF=\"ambient-clock\" id=\"ambient-clock\" cycleInterval=\"~d\" loop=\"true\" enabled=\"~a\"~:[ startTime=\"8000000000\"~;~]></TimeSensor><PositionInterpolator DEF=\"amb-home\" key=\"0 0.125 0.25 0.375 0.5 0.625 0.75 0.875 1\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"amb-sky\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><OrientationInterpolator DEF=\"amb-moonspin\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-home\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-sky\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-moonspin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"amb-home\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"amb-sky\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE><ROUTE fromNode=\"amb-moonspin\" fromField=\"value_changed\" toNode=\"moon-spin\" toField=\"set_rotation\"></ROUTE>"
             period (if enabled? "true" "false") enabled?
             (get-output-stream-string homes)
@@ -1517,8 +1522,14 @@ window.togglePlot = function () {
              ;; the watch waits, parked, for the moon road to land;
              ;; at a new world the plain scene already stands the
              ;; watch
+             ;; the ambient's anchor is HOME's true bearing -- since
+             ;; the arrival state lives in the MOON's frame now,
+             ;; (the planet-bearing) means HIM, not home; aim at
+             ;; home's own seat in his frame
              (if (eql (the transit-target) :moon)
-                 (moon-ambient-x3d (the planet-bearing)
+                 (moon-ambient-x3d (bearing-to (the pos-x) (the pos-y)
+                                               (deg->rad (the heading-deg))
+                                               (- +moon-x+) 0)
                                    (- (deg->rad (the heading-deg)))
                                    :enabled? nil)
                  "")))
