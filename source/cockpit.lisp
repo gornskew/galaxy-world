@@ -506,6 +506,11 @@
 ;; it with him close aboard to starboard.
 (defparameter +moon-radius+ 1737.0)
 (defparameter +moon-road-radius+ 384400.0)
+;; the moon is a WORLD now, not scenery: his own mu, his own solid
+;; sky, and the watch ring the road settles her onto -- the standoff
+;; between his node and the road's arrival point
+(defparameter +mu-moon+ 4902.8d0)
+(defparameter +moon-watch-radius+ 12000.0)
 (defparameter +moon-x+ -396400.0)
 
 ;; Mars, and the sun's road between worlds: real figures again.
@@ -582,6 +587,15 @@
               :sun-radius +au+
               :texture "earth-tex"
               :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+        ;; the moon rides HOME, not the sun: no :sun-radius, so the
+        ;; outbound popup never offers a sun road from or to him.
+        ;; He stands at his node (no clock yet); dominance handoff
+        ;; (maybe-hand-off!) is how a ship enters and leaves him.
+        (list :moon :name "the moon" :mu +mu-moon+ :radius +moon-radius+
+              :sky (+ +moon-radius+ 100)
+              :ring +moon-watch-radius+
+              :texture "moon-tex"
+              :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
         (list :mars :name "Mars" :mu +mu-mars+ :radius +mars-radius+
               :sky (+ +mars-radius+ 100)
               :ring +mars-ring-radius+
@@ -1207,8 +1221,9 @@ window.togglePlot = function () {
       pedalSel = findSel(':COAST');
   var wheelPose = { ':HARD-PORT': 1.3, ':EASY-PORT': 0.55, ':AMIDSHIPS': 0,
                     ':EASY-STARBOARD': -0.55, ':HARD-STARBOARD': -1.3 };
-  var gearPose  = { ':FIRST': 0, ':SECOND': 0.35, ':THIRD': 0.7, ':REVERSE': -0.4 };
-  var gearCycle = [':FIRST', ':SECOND', ':THIRD', ':REVERSE'];
+  var gearPose  = { ':FIRST': 0, ':SECOND': 0.35, ':THIRD': 0.7,
+                    ':OVERDRIVE': 1.0, ':REVERSE': -0.4 };
+  var gearCycle = [':FIRST', ':SECOND', ':THIRD', ':OVERDRIVE', ':REVERSE'];
   function setWheelPose (ang) {
     var t = document.getElementById('wheel-turn');
     var s = document.getElementById('wheel-sensor');
@@ -1514,17 +1529,28 @@ window.togglePlot = function () {
                      :emissive (world-figure (the world) :emissive)
                      :tilt (world-figure (the world) :tilt)
                      :adornment (world-figure (the world) :adornment))
-           (if (eql (the world) :home)
-               (string-append
-                (body-x3d "moon" "moon-tex"
-                          (the moon-bearing) (the moon-distance) +moon-radius+
-                          :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
-                (if (the moon-orbit?)
-                    (moon-ambient-x3d (the planet-bearing)
-                                      (- (deg->rad (the heading-deg)))
-                                      :enabled? t)
-                    ""))
-               "")))))
+           (cond ((eql (the world) :home)
+                  (string-append
+                   (body-x3d "moon" "moon-tex"
+                             (the moon-bearing) (the moon-distance) +moon-radius+
+                             :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+                   (if (the moon-orbit?)
+                       (moon-ambient-x3d (the planet-bearing)
+                                         (- (deg->rad (the heading-deg)))
+                                         :enabled? t)
+                       "")))
+                 ;; falling around the moon, home hangs in his sky:
+                 ;; the whole blue marble at his true bearing
+                 ((eql (the world) :moon)
+                  (body-x3d "home-far" "earth-tex"
+                            (bearing-to (the pos-x) (the pos-y)
+                                        (deg->rad (the heading-deg))
+                                        (- +moon-x+) 0)
+                            (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
+                            +planet-radius+
+                            :diffuse "0.10 0.18 0.85"
+                            :emissive "0.05 0.07 0.12"))
+                 (t ""))))))
 
    ;; the voyage's page script: first load arms the one-shot clock;
    ;; a reload of the same arrival fast-forwards the scene to the
@@ -1993,15 +2019,19 @@ function toggleHelm () {
                     (list :hand "fly her by hand")
                     (when (eql (the world) :home)
                       (list :moon "the programmed road to the moon"))
+                    ;; the sun's roads run between the worlds on his
+                    ;; own road; from the moon the helm is simply
+                    ;; yours (rows with no :sun-radius offer none)
                     (let ((here (world-figure (the world) :sun-radius)))
-                      (loop for row in *worlds*
-                            when (> (world-figure (first row) :sun-radius)
-                                    here)
-                              append
-                              (list (first row)
-                                    (format nil "the programmed road to ~a"
-                                            (world-figure (first row)
-                                                          :name)))))))
+                      (when here
+                        (loop for row in *worlds*
+                              for sr = (world-figure (first row) :sun-radius)
+                              when (and sr (> sr here))
+                                append
+                                (list (first row)
+                                      (format nil "the programmed road to ~a"
+                                              (world-figure (first row)
+                                                            :name))))))))
 
    (wheel-control :type 'gwl:menu-form-control
                   :prompt "wheel: "
@@ -2020,6 +2050,7 @@ function toggleHelm () {
                  :choice-plist (list :first "first — close work"
                                      :second "second — approach"
                                      :third "third — cruise"
+                                     :overdrive "overdrive — the long haul"
                                      :reverse "reverse — nose-about"))
 
    (pedal-control :type 'gwl:menu-form-control
@@ -2066,8 +2097,10 @@ function toggleHelm () {
    (after-set!
     ()
     (let ((choice (the voyage-control value)))
-      (cond ((eql choice :moon) (the fly-moon-road!))
+      (cond ((and (eql choice :moon) (eql (the world) :home))
+             (the fly-moon-road!))
             ((and (assoc choice *worlds*)
+                  (world-figure choice :sun-radius)
                   (not (eql choice (the world))))
              (the (fly-sun-road! choice)))
             (t (the make-helm-move!)))))
@@ -2091,7 +2124,10 @@ function toggleHelm () {
            (p (* a (- 1 (* e e))))
            (vc2 (sqrt (/ +mu+ r2)))
            (dv1 (- (sqrt (* +mu+ (- (/ 2 r1) (/ 1 a)))) (sqrt (/ +mu+ r1))))
-           (dv2 (- vc2 (sqrt (* +mu+ (- (/ 2 r2) (/ 1 a))))))
+           ;; the capture kick is onto the MOON's watch now, out of
+           ;; the transfer's apoapsis crawl -- his ring, his mu
+           (dv2 (- (sqrt (/ +mu-moon+ +moon-watch-radius+))
+                   (sqrt (* +mu+ (- (/ 2 r2) (/ 1 a))))))
            (tof-days (/ (* pi (sqrt (/ (* a a a) +mu+))) 86400))
            (vcoeff (sqrt (/ +mu+ p)))
            (n 32)
@@ -2115,11 +2151,15 @@ function toggleHelm () {
       ;; the closing beat: nose-in on the moon
       (push (list 1.0 pi (- r2) 0) samples)
       (setq samples (nreverse samples))
+      ;; she arrives in the MOON's OWN FRAME, truly falling around
+      ;; him: the watch is state now, not scenery.  Clockwise, the
+      ;; way the transfer's apoapsis crawl handed her over.
+      (the (set-slot! :world :moon))
       (the (set-slot! :landed? nil))
       (the (set-slot! :heading-deg 180))
       (the (set-slot! :vel-x 0))
-      (the (set-slot! :vel-y (- vc2)))
-      (the (set-slot! :pos-x (- r2)))
+      (the (set-slot! :vel-y (- (sqrt (/ +mu-moon+ +moon-watch-radius+)))))
+      (the (set-slot! :pos-x +moon-watch-radius+))
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
@@ -2330,7 +2370,11 @@ function toggleHelm () {
                (rad (deg->rad heading))
                (flip (if (eql gear :reverse) -1 1))
                (dv (if (eql pedal :gas) 0.5 0))
-               (dt (ecase gear (:first 60) (:second 600) (:third 3600) (:reverse 60)))
+               ;; the scope of a move: a minute of close work up to
+               ;; a full day in overdrive -- Space Travel's lesson
+               ;; that scale and clock are one lever
+               (dt (ecase gear (:first 60) (:second 600) (:third 3600)
+                          (:overdrive 86400) (:reverse 60)))
                (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
                                  (+ (the vel-y) (* dv flip (sin rad)))
                                  (the pos-x) (the pos-y) dt)))
@@ -2411,7 +2455,44 @@ function toggleHelm () {
             (tally! :landings)
             (tally! (intern (concatenate 'string (symbol-name (the world))
                                          "-LANDINGS")
-                            :keyword))))))
+                            :keyword)))
+          (unless contact? (the maybe-hand-off!)))))
+
+   ;; Thompson's rule, one world at a time: whoever pulls hardest on
+   ;; her owns her.  Checked at the end of every hand-flown move,
+   ;; with a margin so the boundary between grips does not flap.
+   ;; The moon stands at his node (no galaxy clock yet), so home's
+   ;; frame and his differ by a pure translation and the velocity
+   ;; crosses unchanged.
+   (maybe-hand-off!
+    ()
+    (cond ((eql (the world) :home)
+           (let* ((mx (- (the pos-x) +moon-x+))
+                  (my (the pos-y))
+                  (pull-moon (/ +mu-moon+ (+ (* mx mx) (* my my))))
+                  (pull-home (/ +mu+ (* (the radius) (the radius)))))
+             (when (> pull-moon (* 1.15 pull-home))
+               (the (set-slot! :world :moon))
+               (the (set-slot! :pos-x mx))
+               (the (set-slot! :last-move-note
+                     (concatenate 'string (the last-move-note)
+                                  " — and the moon's grip takes her: falling around the moon now")))
+               (tally! :handoffs)
+               (tally! :handoffs-moonward))))
+          ((eql (the world) :moon)
+           (let* ((hx (+ (the pos-x) +moon-x+))
+                  (hy (the pos-y))
+                  (pull-home (/ +mu+ (+ (* hx hx) (* hy hy))))
+                  (pull-moon (/ +mu-moon+ (* (the radius) (the radius)))))
+             (when (> pull-home (* 1.15 pull-moon))
+               (the (set-slot! :world :home))
+               (the (set-slot! :pos-x hx))
+               (the (set-slot! :last-move-note
+                     (concatenate 'string (the last-move-note)
+                                  " — and home reclaims her: back in the big well")))
+               (tally! :handoffs)
+               (tally! :handoffs-homeward))))
+          (t nil)))
 
    ;; A move made on the ground.  Gas lights the engines for the
    ;; programmed climb back to the world's ring -- the LANDING is
