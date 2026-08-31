@@ -233,34 +233,10 @@
    ;; cut as a smooth-shaded mesh by (the wheel-rim-x3d) -- see
    ;; cockpit-x3d, which appends it to the cab
 
-   ;; the wheel is dished: the hub sits recessed down the column and
-   ;; the spokes climb out to the rim
-   (wheel-hub :type 'c-cylinder
-              :start (add-vectors (the wheel-center)
-                                  (scalar*vector -0.075 (the column-axis)))
-              :end (add-vectors (the wheel-center)
-                               (scalar*vector -0.015 (the column-axis)))
-              :radius 0.04
-              :number-of-sections 24
-              :display-controls (list :color +chrome+))
-
-   (horn-button :type 'sphere
-                :center (add-vectors (the wheel-center)
-                                     (scalar*vector -0.008 (the column-axis)))
-                :radius 0.025
-                :display-controls (list :color +chrome+))
-
-   ;; classic three-spoke: two high, one straight down
-   (spokes :type 'c-cylinder
-           :sequence (:size 3)
-           :start (add-vectors (the wheel-center)
-                               (scalar*vector -0.055 (the column-axis)))
-           :end (the (rim-point (ecase (the-child index)
-                                  (0 (deg->rad 60))
-                                  (1 (deg->rad -60))
-                                  (2 pi))))
-           :radius 0.008
-           :display-controls (list :color +chrome+))
+   ;; the wheel, shifter and pedals are NOT here: they are the
+   ;; grabbable helm controls, so they render inside the sensor
+   ;; rigs -- see helm-rigs-x3d -- and live in :hidden-objects
+   ;; below, out of the baked cab tree.
 
    (column :type 'c-cylinder
            :start (add-vectors (the wheel-center)
@@ -269,46 +245,6 @@
                              (scalar*vector -0.60 (the column-axis)))
            :radius 0.024
            :display-controls (list :color +paint+))
-
-   ;; three on the tree: the column shifter is the display-scale lever
-   (shifter-lever :type 'c-cylinder
-                  :start (the shifter-pivot)
-                  :end (add-vectors (the shifter-pivot)
-                                    (make-vector -0.06 -0.34 0.10))
-                  :radius 0.007
-                  :display-controls (list :color +chrome+))
-   (shifter-knob :type 'sphere
-                 :center (add-vectors (the shifter-pivot)
-                                      (make-vector -0.06 -0.34 0.10))
-                 :radius 0.018
-                 :display-controls (list :color +gauge-face+))
-
-   ;; the pedals: clutch, brake, gas.  The brake is fully present
-   ;; and does nothing whatsoever -- space doesn't brake, and the
-   ;; pedal is how the cockpit says so.
-   (pedal-plates :type 'box
-                 :sequence (:size 3)
-                 :center (make-point 0.72
-                                     (ecase (the-child index)
-                                       (0 0.22) (1 0.05) (2 -0.14))
-                                     (ecase (the-child index)
-                                       (0 -0.18) (1 -0.18) (2 -0.20)))
-                 :width 0.02
-                 :length (ecase (the-child index) (0 0.09) (1 0.09) (2 0.06))
-                 :height (ecase (the-child index) (0 0.08) (1 0.08) (2 0.15))
-                 :display-controls (list :color +rubber+))
-   (pedal-stalks :type 'c-cylinder
-                 :sequence (:size 3)
-                 :start (make-point 0.73
-                                    (ecase (the-child index)
-                                      (0 0.22) (1 0.05) (2 -0.14))
-                                    -0.22)
-                 :end (make-point 0.78
-                                  (ecase (the-child index)
-                                    (0 0.22) (1 0.05) (2 -0.14))
-                                  -0.35)
-                 :radius 0.008
-                 :display-controls (list :color +chrome+))
 
    ;; the greenhouse: cowl and header arcs as segmented rails
    (cowl-rail :type 'c-cylinder
@@ -476,7 +412,80 @@
               :length (ecase (the-child index)
                         (0 1.80) (1 1.80) (2 0.21) (3 0.21))
               :height 0.03
-              :display-controls (list :color +paint+))))
+              :display-controls (list :color +paint+)))
+
+  ;; The grabbable helm: these leaves stay out of the baked cab tree
+  ;; (hidden objects never reach cad-output-tree) and are emitted one
+  ;; by one inside the DEF'd sensor rigs -- see helm-rigs-x3d.
+  :hidden-objects
+  (;; the wheel is dished: the hub sits recessed down the column and
+   ;; the spokes climb out to the rim
+   (wheel-hub :type 'c-cylinder
+              :start (add-vectors (the wheel-center)
+                                  (scalar*vector -0.075 (the column-axis)))
+              :end (add-vectors (the wheel-center)
+                               (scalar*vector -0.015 (the column-axis)))
+              :radius 0.04
+              :number-of-sections 24
+              :display-controls (list :color +chrome+))
+
+   (horn-button :type 'sphere
+                :center (add-vectors (the wheel-center)
+                                     (scalar*vector -0.008 (the column-axis)))
+                :radius 0.025
+                :display-controls (list :color +chrome+))
+
+   ;; classic three-spoke: two high, one straight down
+   (spokes :type 'c-cylinder
+           :sequence (:size 3)
+           :start (add-vectors (the wheel-center)
+                               (scalar*vector -0.055 (the column-axis)))
+           :end (the (rim-point (ecase (the-child index)
+                                  (0 (deg->rad 60))
+                                  (1 (deg->rad -60))
+                                  (2 pi))))
+           :radius 0.008
+           :display-controls (list :color +chrome+))
+
+   ;; three on the tree: the column shifter is the display-scale lever
+   (shifter-lever :type 'c-cylinder
+                  :start (the shifter-pivot)
+                  :end (add-vectors (the shifter-pivot)
+                                    (make-vector -0.06 -0.34 0.10))
+                  :radius 0.007
+                  :display-controls (list :color +chrome+))
+   (shifter-knob :type 'sphere
+                 :center (add-vectors (the shifter-pivot)
+                                      (make-vector -0.06 -0.34 0.10))
+                 :radius 0.018
+                 :display-controls (list :color +gauge-face+))
+
+   ;; the pedals: clutch, brake, gas.  The brake is fully present
+   ;; and does nothing whatsoever -- space doesn't brake, and the
+   ;; pedal is how the cockpit says so.
+   (pedal-plates :type 'box
+                 :sequence (:size 3)
+                 :center (make-point 0.72
+                                     (ecase (the-child index)
+                                       (0 0.22) (1 0.05) (2 -0.14))
+                                     (ecase (the-child index)
+                                       (0 -0.18) (1 -0.18) (2 -0.20)))
+                 :width 0.02
+                 :length (ecase (the-child index) (0 0.09) (1 0.09) (2 0.06))
+                 :height (ecase (the-child index) (0 0.08) (1 0.08) (2 0.15))
+                 :display-controls (list :color +rubber+))
+   (pedal-stalks :type 'c-cylinder
+                 :sequence (:size 3)
+                 :start (make-point 0.73
+                                    (ecase (the-child index)
+                                      (0 0.22) (1 0.05) (2 -0.14))
+                                    -0.22)
+                 :end (make-point 0.78
+                                  (ecase (the-child index)
+                                    (0 0.22) (1 0.05) (2 -0.14))
+                                  -0.35)
+                 :radius 0.008
+                 :display-controls (list :color +chrome+))))
 
 ;; The world the cockpit falls around: the home planet, at the
 ;; origin of the plane.  Real figures -- km, km/s, km^3/s^2.
@@ -908,6 +917,160 @@ near ring arc lost the draw and hid behind the globe."
                 (look-at-orientation (make-vector 0 -1 0) (make-vector 0 0 1))
                 -0.63 -0.87))
 
+;; One hidden leaf, cut through the same lens the cab tree uses, so
+;; a rig's geometry matches the cab's finish exactly.
+(defun leaf-x3d (leaf)
+  (with-output-to-string (s)
+    (with-format (geom-base::x3d s)
+      (write-the-object leaf (geom-base::cad-output)))))
+
+;; The grabbable helm: the wheel under a CylinderSensor whose axis
+;; is the steering column, the shifter and pedals under DEF'd frames
+;; the page's script can swing and press.  A drag that starts on any
+;; rig belongs to the rig -- the pointing sensor captures it -- so
+;; grabbing the wheel never moves the camera.  The wheel geometry is
+;; authored in cab coordinates; the rig sandwiches it between a
+;; frame that stands the sensor's y axis up the column and the
+;; inverse, so the sensor's rotation output turns the wheel about
+;; its own column through its own center.  Works with a plain mouse
+;; or touch today; the same sensors answer VR controllers when a
+;; headset binds.
+(defun helm-rigs-x3d (cab)
+  (let* ((wc (the-object cab wheel-center))
+         (a (the-object cab column-axis))
+         (sp (the-object cab shifter-pivot))
+         ;; rotation standing local +y up the column axis: axis
+         ;; y-cross-a, angle acos(y . a)
+         (u (unitize-vector (cross-vectors (make-vector 0 1 0) a)))
+         (phi (acos (get-y a))))
+    (string-append
+     ;; the wheel rig
+     (format nil "<Transform translation=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f ~,5f\"><CylinderSensor DEF=\"wheel-sensor\" id=\"wheel-sensor\" diskAngle=\"1.2\" autoOffset=\"true\" description=\"the wheel\"></CylinderSensor><Transform DEF=\"wheel-turn\" id=\"wheel-turn\"><Transform rotation=\"~,5f ~,5f ~,5f ~,5f\"><Transform translation=\"~,4f ~,4f ~,4f\">~a<Group DEF=\"horn-hit\" id=\"horn-hit\">~a</Group>~a~a</Transform></Transform></Transform></Transform><ROUTE fromNode=\"wheel-sensor\" fromField=\"rotation_changed\" toNode=\"wheel-turn\" toField=\"set_rotation\"></ROUTE>"
+             (get-x wc) (get-y wc) (get-z wc)
+             (get-x u) (get-y u) (get-z u) phi
+             (get-x u) (get-y u) (get-z u) (- phi)
+             (- (get-x wc)) (- (get-y wc)) (- (get-z wc))
+             (leaf-x3d (the-object cab wheel-hub))
+             (leaf-x3d (the-object cab horn-button))
+             (apply #'string-append
+                    (mapcar #'leaf-x3d
+                            (list-elements (the-object cab spokes))))
+             (the-object cab wheel-rim-x3d))
+     ;; the shifter rig: swings about the column axis at the pivot
+     (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\">~a~a</Transform>"
+             (get-x sp) (get-y sp) (get-z sp)
+             (get-x a) (get-y a) (get-z a)
+             (leaf-x3d (the-object cab shifter-lever))
+             (leaf-x3d (the-object cab shifter-knob)))
+     ;; the pedal rigs: clutch, brake, gas
+     (apply #'string-append
+            (mapcar (lambda (i)
+                      (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\">~a~a</Transform>"
+                              i i
+                              (leaf-x3d (the-object cab (pedal-plates i)))
+                              (leaf-x3d (the-object cab (pedal-stalks i)))))
+                    (list 0 1 2))))))
+
+;; The hands on the helm: drags and clicks on the rigs mirror into
+;; the form controls, which stay the readout and the fallback -- the
+;; move still posts through make the move and the same after-set!
+;; game step.  Grab the wheel and it turns under the pointer (the
+;; sensor route), let go and the wheel card shows the band you left
+;; her in; click the shifter through the gate; press a pedal and it
+;; gives under the click.  The brake presses beautifully.
+(defparameter *helm-hands-js* "
+(function () {
+  function findSel (opt) {
+    var sels = document.querySelectorAll('#helm-body select');
+    for (var i = 0; i < sels.length; i++)
+      if (sels[i].querySelector('option[value=\"' + opt + '\"]')) return sels[i];
+    return null;
+  }
+  var wheelSel = findSel(':AMIDSHIPS'),
+      gearSel  = findSel(':FIRST'),
+      pedalSel = findSel(':COAST');
+  var wheelPose = { ':HARD-PORT': 1.3, ':EASY-PORT': 0.55, ':AMIDSHIPS': 0,
+                    ':EASY-STARBOARD': -0.55, ':HARD-STARBOARD': -1.3 };
+  var gearPose  = { ':FIRST': 0, ':SECOND': 0.35, ':THIRD': 0.7, ':REVERSE': -0.4 };
+  var gearCycle = [':FIRST', ':SECOND', ':THIRD', ':REVERSE'];
+  function setWheelPose (ang) {
+    var t = document.getElementById('wheel-turn');
+    var s = document.getElementById('wheel-sensor');
+    if (t) t.setAttribute('rotation', '0 1 0 ' + ang);
+    if (s) s.setAttribute('offset', String(ang));
+  }
+  function setShifterPose (ang) {
+    var r = document.getElementById('shifter-rig');
+    if (!r) return;
+    var rot = r.getAttribute('rotation').split(/\\s+/);
+    r.setAttribute('rotation', rot[0] + ' ' + rot[1] + ' ' + rot[2] + ' ' + ang);
+  }
+  function bandFor (ang) {
+    if (ang > 0.9) return ':HARD-PORT';
+    if (ang > 0.22) return ':EASY-PORT';
+    if (ang < -0.9) return ':HARD-STARBOARD';
+    if (ang < -0.22) return ':EASY-STARBOARD';
+    return ':AMIDSHIPS';
+  }
+  function norm (a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+  function rotAngle (v) {
+    try {
+      if (v && typeof v.angle === 'number')
+        return norm(((v.y !== undefined && v.y < 0) ? -1 : 1) * v.angle);
+      if (v && v.toAxisAngle) {
+        var aa = v.toAxisAngle();
+        return norm((aa[0].y < 0 ? -1 : 1) * aa[1]);
+      }
+    } catch (e) {}
+    return 0;
+  }
+  var suppress = 0;
+  var lastAng = wheelSel ? (wheelPose[wheelSel.value] || 0) : 0;
+  if (wheelSel) setWheelPose(lastAng);
+  if (gearSel) setShifterPose(gearPose[gearSel.value] || 0);
+  var sensor = document.getElementById('wheel-sensor');
+  if (sensor) sensor.addEventListener('outputchange', function (e) {
+    var d = e.detail; if (!d) return;
+    if (d.fieldName === 'rotation_changed') { lastAng = rotAngle(d.value); }
+    else if (d.fieldName === 'isActive' &&
+             (d.value === false || d.value === 'false')) {
+      if (Date.now() < suppress) return;
+      if (wheelSel) wheelSel.value = bandFor(lastAng);
+    }
+  });
+  function hook (id, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  }
+  hook('horn-hit', function () {
+    suppress = Date.now() + 400;
+    lastAng = 0;
+    setWheelPose(0);
+    if (wheelSel) wheelSel.value = ':AMIDSHIPS';
+  });
+  hook('shifter-rig', function () {
+    if (!gearSel) return;
+    var next = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
+    gearSel.value = next;
+    setShifterPose(gearPose[next]);
+  });
+  var pedalVals = [':COAST', ':BRAKE', ':GAS'];
+  [0, 1, 2].forEach(function (i) {
+    hook('pedal-rig-' + i, function () {
+      var rig = document.getElementById('pedal-rig-' + i);
+      if (rig) {
+        rig.setAttribute('translation', '0.02 0 -0.045');
+        setTimeout(function () { rig.setAttribute('translation', '0 0 0'); }, 160);
+      }
+      if (pedalSel) pedalSel.value = pedalVals[i];
+    });
+  });
+})();")
+
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
 (defvar *cockpit-x3d-cache* nil)
@@ -920,7 +1083,7 @@ near ring arc lost the draw and hid behind the globe."
                (with-output-to-string (s)
                  (with-format (geom-base::x3d s)
                    (write-the-object cab (geom-base::cad-output-tree))))
-               (the-object cab wheel-rim-x3d)
+               (helm-rigs-x3d cab)
                (wood-panel-x3d)
                (star-dome-x3d))))))
 
@@ -1494,6 +1657,7 @@ function toggleHelm () {
     });
   });
 })();")
+        (str *helm-hands-js*)
         (str (the voyage-script-js)))))
 
    (eye-button-style
