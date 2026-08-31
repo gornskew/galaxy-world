@@ -460,20 +460,15 @@
            :radius 0.008
            :display-controls (list :color +chrome+))
 
-   ;; the brody knob: the one-handed way to spin her, riding the
-   ;; rim at the upper port quarter.  It turns with the wheel and
-   ;; grabs like the wheel -- it lives inside the same sensor rig.
+   ;; the brody knob's stalk: the knob itself is hand-cut markup in
+   ;; helm-rigs-x3d, because it PULSES -- a slow ember glow that
+   ;; says "grab me" without waiting on anyone's cursor
    (brody-stalk :type 'c-cylinder
                 :start (the (rim-point (deg->rad 45)))
                 :end (add-vectors (the (rim-point (deg->rad 45)))
                                   (scalar*vector 0.035 (the column-axis)))
                 :radius 0.005
                 :display-controls (list :color +chrome+))
-   (brody-knob :type 'sphere
-               :center (add-vectors (the (rim-point (deg->rad 45)))
-                                    (scalar*vector 0.045 (the column-axis)))
-               :radius 0.021
-               :display-controls (list :color +needle+))
 
    ;; three on the tree, honestly now: forward, neutral, reverse.
    ;; The clutch lives up here since neutral took over its work.
@@ -491,30 +486,31 @@
 
    ;; the pedals: feather, brake, gas.  The clutch moved up the
    ;; column when neutral joined the shifter, and the light foot
-   ;; got the freed pedal.  The brake is fully present and does
-   ;; nothing whatsoever -- space doesn't brake, and the pedal is
-   ;; how the cockpit says so.
+   ;; got the freed pedal.  They HANG from the dash now, the way a
+   ;; real truck hangs them -- floor-mounted they sat below the
+   ;; glass line and no pointer could reach them.  The brake is
+   ;; fully present and does nothing whatsoever -- space doesn't
+   ;; brake, and the pedal is how the cockpit says so.
    (pedal-plates :type 'box
                  :sequence (:size 3)
-                 :center (make-point 0.72
+                 :center (make-point 0.695
                                      (ecase (the-child index)
                                        (0 0.22) (1 0.05) (2 -0.14))
-                                     (ecase (the-child index)
-                                       (0 -0.18) (1 -0.18) (2 -0.20)))
+                                     0.18)
                  :width 0.02
                  :length (ecase (the-child index) (0 0.09) (1 0.09) (2 0.06))
                  :height (ecase (the-child index) (0 0.08) (1 0.08) (2 0.15))
                  :display-controls (list :color +rubber+))
    (pedal-stalks :type 'c-cylinder
                  :sequence (:size 3)
-                 :start (make-point 0.73
+                 :start (make-point 0.72
                                     (ecase (the-child index)
                                       (0 0.22) (1 0.05) (2 -0.14))
-                                    -0.22)
-                 :end (make-point 0.78
+                                    0.27)
+                 :end (make-point 0.70
                                   (ecase (the-child index)
                                     (0 0.22) (1 0.05) (2 -0.14))
-                                  -0.35)
+                                  0.21)
                  :radius 0.008
                  :display-controls (list :color +chrome+))))
 
@@ -965,8 +961,10 @@ near ring arc lost the draw and hid behind the globe."
 ;; moon close aboard on arrival.  The quad sits just proud of the
 ;; dark glass; solid=false spares us the winding argument.
 (defun eye-feed-x3d (camera-position orientation y-left y-right)
+  ;; the render's dimensions match the screen's own 1.6:1 aspect --
+  ;; a square render on this quad stretched every world it caught
   (format nil
-   "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"512 512 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
+   "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"512 320 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
    camera-position orientation y-left y-right y-right y-left))
 
 (defun port-eye-feed-x3d ()
@@ -978,6 +976,42 @@ near ring arc lost the draw and hid behind the globe."
   (eye-feed-x3d "0.0 -2.8 0.8"
                 (look-at-orientation (make-vector 0 -1 0) (make-vector 0 0 1))
                 -0.63 -0.87))
+
+;; The dash radio in the metal, with the starter beside it: the
+;; whole turn drives from inside the scene now.  Four preset keys
+;; and the tape transport sit on a plate under the speedo, the
+;; playing channel lit; the red starter under the climb gauge posts
+;; the move.  Renders per cockpit -- the lit key is session state
+;; -- and the page's script wires the clicks into the same hidden
+;; form controls everything else drives.
+(defun dash-radio-x3d (cadence transport)
+  (labels ((key-x3d (id mat-id y z len lit? label-color)
+             (declare (ignore label-color))
+             (format nil "<Transform id=\"~a\" DEF=\"~a\"><Transform translation=\"0.7185 ~,4f ~,4f\"><Shape><Appearance><Material id=\"~a\" DEF=\"~a\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Box size=\"0.009 ~,4f 0.028\"></Box></Shape></Transform></Transform>"
+                     id id y z mat-id mat-id
+                     (if lit? "0.91 0.78 0.22" "0.13 0.15 0.17")
+                     (if lit? "0.55 0.45 0.10" "0.05 0.06 0.07")
+                     len)))
+    (string-append
+     ;; the plate
+     "<Transform translation=\"0.7245 0 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
+     ;; the four channel keys, slow to fastest, port to starboard
+     (with-output-to-string (out)
+       (loop for val in '(:slow :medium :fast :fastest)
+             for i from 0
+             for y in '(0.09 0.03 -0.03 -0.09)
+             do (format out "~a"
+                        (key-x3d (format nil "radio-preset-~d" i)
+                                 (format nil "radio-preset-mat-~d" i)
+                                 y 0.331 0.048 (eql cadence val) nil))))
+     ;; the transport: rewind to port, play to starboard
+     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.035 0.292 0.05
+              (eql transport :rewind) nil)
+     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.035 0.292 0.05
+              (eql transport :play) nil)
+     ;; the starter, under the climb gauge: press it and the move
+     ;; is made
+     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030 \" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
 
 ;; One hidden leaf, cut through the same lens the cab tree uses, so
 ;; a rig's geometry matches the cab's finish exactly.
@@ -1019,7 +1053,15 @@ near ring arc lost the draw and hid behind the globe."
                      (mapcar #'leaf-x3d
                              (list-elements (the-object cab spokes))))
               (leaf-x3d (the-object cab brody-stalk))
-              (leaf-x3d (the-object cab brody-knob)))
+              ;; the brody knob, pulsing like an ember: the glow is
+              ;; the affordance -- it turns with the wheel and grabs
+              ;; like the wheel, riding inside the same sensor rig
+              (let ((kc (add-vectors
+                         (the-object cab (rim-point (deg->rad 45)))
+                         (scalar*vector 0.048
+                                        (the-object cab column-axis)))))
+                (format nil "<TimeSensor DEF=\"brody-pulse\" cycleInterval=\"2.6\" loop=\"true\"></TimeSensor><ColorInterpolator DEF=\"brody-glow\" key=\"0 0.5 1\" keyValue=\"0.45 0.10 0.06 0.95 0.42 0.18 0.45 0.10 0.06\"></ColorInterpolator><Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material DEF=\"brody-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.45 0.10 0.06\" specularColor=\"0.6 0.4 0.3\" shininess=\"0.5\"></Material></Appearance><Sphere radius=\"0.022\"></Sphere></Shape></Transform><ROUTE fromNode=\"brody-pulse\" fromField=\"fraction_changed\" toNode=\"brody-glow\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"brody-glow\" fromField=\"value_changed\" toNode=\"brody-mat\" toField=\"set_emissiveColor\"></ROUTE>"
+                        (get-x kc) (get-y kc) (get-z kc))))
              (the-object cab wheel-rim-x3d))
      ;; the shifter rig: swings about the column axis at the pivot
      (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\">~a~a</Transform>"
@@ -1410,7 +1452,7 @@ window.togglePlot = function () {
     hook('pedal-rig-' + i, function () {
       var rig = document.getElementById('pedal-rig-' + i);
       if (rig) {
-        rig.setAttribute('translation', '0.02 0 -0.045');
+        rig.setAttribute('translation', '0.025 0 -0.012');
         setTimeout(function () { rig.setAttribute('translation', '0 0 0'); }, 160);
       }
       if (pedalSel) pedalSel.value = pedalVals[i];
@@ -1440,13 +1482,53 @@ window.togglePlot = function () {
       });
     });
   }
+  // the dash radio in the metal mirrors the same values; a click
+  // on a 3D key clicks the matching faceplate button, and both
+  // relight together
+  var cadVals = [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'];
+  var tptVals = [':REWIND', ':PLAY'];
+  function relight3d (prefix, vals, active) {
+    vals.forEach(function (v, i) {
+      var m = document.getElementById(prefix + '-mat-' + i);
+      if (!m) return;
+      var lit = v === active;
+      m.setAttribute('diffuseColor', lit ? '0.91 0.78 0.22' : '0.13 0.15 0.17');
+      m.setAttribute('emissiveColor', lit ? '0.55 0.45 0.10' : '0.05 0.06 0.07');
+    });
+  }
   wireFace('.cadence-btn', function (b) {
+    var v = b.getAttribute('data-val');
     var s = document.getElementById('radio-station');
-    if (s) s.textContent = stations[b.getAttribute('data-val')] || '';
+    if (s) s.textContent = stations[v] || '';
+    relight3d('radio-preset', cadVals, v);
   });
-  wireFace('.transport-btn');
+  wireFace('.transport-btn', function (b) {
+    relight3d('radio-tpt', tptVals, b.getAttribute('data-val'));
+  });
+  function faceClick (cls, val) {
+    var btns = document.querySelectorAll(cls);
+    for (var i = 0; i < btns.length; i++)
+      if (btns[i].getAttribute('data-val') === val) { btns[i].click(); return; }
+  }
+  cadVals.forEach(function (v, i) {
+    hook('radio-preset-' + i, function () { faceClick('.cadence-btn', v); });
+  });
+  tptVals.forEach(function (v, i) {
+    hook('radio-tpt-' + i, function () { faceClick('.transport-btn', v); });
+  });
+  // the starter posts the move -- the whole turn drives from
+  // inside the scene
+  hook('starter-hit', function () {
+    var st = document.getElementById('starter-mat');
+    if (st) st.setAttribute('emissiveColor', '0.75 0.25 0.12');
+    var f = document.querySelector('#helm-body form');
+    if (!f) return;
+    var sub = f.querySelector('input[type=submit]');
+    if (f.requestSubmit) f.requestSubmit(sub || undefined); else f.submit();
+  });
   // what is grabbable says so: an arrow everywhere, the grab hand
-  // only over the wheel, the shifter, the pedals and the horn
+  // over the wheel, the shifter, the pedals and the horn, the
+  // plain pointer over the dash keys and the starter
   function setCur (c) {
     var x = document.querySelector('x3d'); if (!x) return;
     x.style.cursor = c;
@@ -1455,13 +1537,19 @@ window.togglePlot = function () {
   window.addEventListener('load', function () {
     setTimeout(function () { setCur('default'); }, 600);
   });
-  ['wheel-turn', 'shifter-rig', 'pedal-rig-0', 'pedal-rig-1',
-   'pedal-rig-2', 'horn-hit'].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('mouseover', function () { setCur('grab'); });
-    el.addEventListener('mouseout', function () { setCur('default'); });
-  });
+  function cursorOver (ids, cur) {
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('mouseover', function () { setCur(cur); });
+      el.addEventListener('mouseout', function () { setCur('default'); });
+    });
+  }
+  cursorOver(['wheel-turn', 'shifter-rig', 'pedal-rig-0', 'pedal-rig-1',
+              'pedal-rig-2', 'horn-hit'], 'grab');
+  cursorOver(['radio-preset-0', 'radio-preset-1', 'radio-preset-2',
+              'radio-preset-3', 'radio-tpt-0', 'radio-tpt-1',
+              'starter-hit'], 'pointer');
 })();")
 
 ;; The cab is the same for every session, so like the starfield its
@@ -1899,9 +1987,12 @@ window.togglePlot = function () {
                                   (make-point -0.02 0 0.78)
                                   ;; lifted from -0.24: the wheel is
                                   ;; smaller and lower now, so the
-                                  ;; glass gets the vertical back
+                                  ;; glass gets the vertical back.
+                                  ;; The wider glass takes in the
+                                  ;; hanging pedals at the frame's
+                                  ;; foot.
                                   (make-vector 0.99 0 -0.15)
-                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
+                                  "1.25" :z-near "0.05" :z-far "8000" :up up))
              (cons :jump-seat
                    (viewpoint-x3d "jump-seat" "Jump seat"
                                   (make-point 0.05 -0.72 0.75)
@@ -1944,6 +2035,8 @@ window.togglePlot = function () {
             (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
             (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
             (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+            (str (dash-radio-x3d (the cadence-control value)
+                                 (the transport-control value)))
             (str (the port-feed-x3d))
             (str (starboard-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
@@ -2033,7 +2126,15 @@ window.togglePlot = function () {
       ;; same grain on every visit.
       (:script (str "
 function bindEye (id) {
-  document.getElementById(id).setAttribute('set_bind','true');
+  var vp = document.getElementById(id);
+  if (vp) vp.setAttribute('set_bind', 'true');
+  // re-binding the already-bound eye is a no-op in x3dom, so a
+  // second press (or a press after wandering the camera by hand)
+  // resets the view onto it explicitly
+  setTimeout(function () {
+    var x = document.querySelector('x3d');
+    if (x && x.runtime && x.runtime.resetView) x.runtime.resetView();
+  }, 80);
 }
 function toggleHelm () {
   var b = document.getElementById('helm-body');

@@ -244,7 +244,12 @@ are parallel -- don't point this straight up or down."
         "Galaxy World — the view from the bridge (first light)")
       (:script (str "
 function bindEye (id) {
-  document.getElementById(id).setAttribute('set_bind','true');
+  var vp = document.getElementById(id);
+  if (vp) vp.setAttribute('set_bind', 'true');
+  setTimeout(function () {
+    var x = document.querySelector('x3d');
+    if (x && x.runtime && x.runtime.resetView) x.runtime.resetView();
+  }, 80);
 }"))))
 
    (eye-button-style
