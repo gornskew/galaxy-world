@@ -707,10 +707,10 @@ near ring arc lost the draw and hid behind the globe."
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"\"></ImageTexture><Material DEF=\"~a-mat\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
-             prefix texture-id diffuse emissive
+             prefix texture-id texture-id prefix diffuse emissive
              (or adornment "")
              (if tilt "</Transform>" ""))
      (if spin?
@@ -848,7 +848,7 @@ near ring arc lost the draw and hid behind the globe."
           (format idx "~d ~d ~d ~d -1 " p00 (+ p00 m 1) (+ p00 m 2) (1+ p00)))))
     (format nil "<Shape><Appearance>~a<Material diffuseColor=\"~a\"~a></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
             (if texture-id
-                (format nil "<ImageTexture id=\"~a\" url=\"\"></ImageTexture>" texture-id)
+                (format nil "<ImageTexture DEF=\"~a\" id=\"~a\" url=\"\"></ImageTexture>" texture-id texture-id)
                 "")
             fallback-color
             (if (plusp transparency)
@@ -861,7 +861,7 @@ near ring arc lost the draw and hid behind the globe."
 ;; The instrument panel, in wood veneer: same box the cab used to
 ;; carry in paint, now wearing the grain the page paints client-side.
 (defun wood-panel-x3d ()
-  "<Transform translation=\"0.79 -0.36 0.415\"><Shape><Appearance><ImageTexture id=\"wood-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.48 0.31 0.16\"></Material></Appearance><Box size=\"0.12 1.66 0.27\"></Box></Shape></Transform>")
+  "<Transform translation=\"0.79 -0.36 0.415\"><Shape><Appearance><ImageTexture DEF=\"wood-tex\" id=\"wood-tex\" url=\"\"></ImageTexture><Material diffuseColor=\"0.48 0.31 0.16\"></Material></Appearance><Box size=\"0.12 1.66 0.27\"></Box></Shape></Transform>")
 
 ;; The star-roof: a glass bubble over the open center of the roof,
 ;; an ellipsoidal dome meshed band by band, its rim landing on the
@@ -899,8 +899,8 @@ near ring arc lost the draw and hid behind the globe."
         ;; atlas cells (col row) in face-emission order:
         ;; top 1, bottom 6, fore 2, aft 5, port 3, starboard 4
         (cells '((0 0) (2 1) (1 0) (1 1) (2 0) (0 1))))
-    (format nil "<Shape><Appearance><ImageTexture id=\"dice-tex-~d\" url=\"\"></ImageTexture><Material diffuseColor=\"0.93 0.91 0.86\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"4 5 6 7 -1 1 0 3 2 -1 5 1 2 6 -1 0 4 7 3 -1 6 2 3 7 -1 0 1 5 4 -1\" texCoordIndex=\"~{~a -1 ~}\"><Coordinate point=\"~{~{~,4f~^ ~}~^, ~}\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
-            n
+    (format nil "<Shape><Appearance><ImageTexture DEF=\"dice-tex-~d\" id=\"dice-tex-~d\" url=\"\"></ImageTexture><Material diffuseColor=\"0.93 0.91 0.86\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"4 5 6 7 -1 1 0 3 2 -1 5 1 2 6 -1 0 4 7 3 -1 6 2 3 7 -1 0 1 5 4 -1\" texCoordIndex=\"~{~a -1 ~}\"><Coordinate point=\"~{~{~,4f~^ ~}~^, ~}\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
+            n n
             (loop for f below 6
                   collect (format nil "~d ~d ~d ~d"
                                   (* f 4) (+ 1 (* f 4)) (+ 2 (* f 4)) (+ 3 (* f 4))))
@@ -1082,11 +1082,18 @@ near ring arc lost the draw and hid behind the globe."
      ;; click dispatch on scene elements is best-effort, but sensor
      ;; output events are first-class, the same channel the wheel's
      ;; CylinderSensor speaks.
+     ;; the knob is the gear indicator too: green forward, white
+     ;; neutral, amber reverse -- the state reads off the helm
+     ;; itself, no card required.  DEF'd material, lit by script
+     ;; under either renderer.
      (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\"><TouchSensor DEF=\"shifter-touch\" id=\"shifter-touch\" description=\"the shifter: forward, neutral, reverse\"></TouchSensor>~a~a</Transform>"
              (get-x sp) (get-y sp) (get-z sp)
              (get-x a) (get-y a) (get-z a)
              (leaf-x3d (the-object cab shifter-lever))
-             (leaf-x3d (the-object cab shifter-knob)))
+             (let ((kc (add-vectors (the-object cab shifter-pivot)
+                                    (make-vector -0.06 -0.34 0.10))))
+               (format nil "<Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material id=\"shifter-knob-mat\" DEF=\"shifter-knob-mat\" diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Sphere radius=\"0.018\"></Sphere></Shape></Transform>"
+                       (get-x kc) (get-y kc) (get-z kc))))
      ;; the pedal rigs, each with its own touch
      (apply #'string-append
             (mapcar (lambda (i)
@@ -1096,7 +1103,15 @@ near ring arc lost the draw and hid behind the globe."
                                        (1 "the brake") (2 "gas — burn"))
                               (leaf-x3d (the-object cab (pedal-plates i)))
                               (leaf-x3d (the-object cab (pedal-stalks i)))))
-                    (list 0 1 2))))))
+                    (list 0 1 2)))
+     ;; the steerage lamps: five ticks under the compass, the
+     ;; active band lit -- script-lit under either renderer, so
+     ;; the wheel's five in-place orientation calls read off the
+     ;; helm itself
+     (with-output-to-string (lamps)
+       (dotimes (i 5)
+         (format lamps "<Transform translation=\"0.7185 ~,4f 0.385\"><Shape><Appearance><Material id=\"steer-lamp-mat-~d\" DEF=\"steer-lamp-mat-~d\" diffuseColor=\"0.15 0.16 0.18\" emissiveColor=\"0.04 0.04 0.05\"></Material></Appearance><Box size=\"0.008 0.018 0.012\"></Box></Shape></Transform>"
+                 (- 0.235 (* i 0.0225)) i i))))))
 
 ;; The plot: draws GW_PLAN on the plan-view canvas.  Orbit pages
 ;; draw the world, the ring, the road's conic and the ship once;
@@ -1486,6 +1501,22 @@ window.togglePlot = function () {
     el.textContent = (gearSel ? (gmap[gearSel.value] || '·') : '·')
       + ' · ' + (wheelSel ? (wmap[wheelSel.value] || '') : '')
       + (rw ? ' ◀◀' : '');
+    var kc = { ':FORWARD': '0.30 0.75 0.35', ':NEUTRAL': '0.85 0.87 0.88',
+               ':REVERSE': '0.91 0.60 0.18' };
+    var km = document.getElementById('shifter-knob-mat');
+    if (km && gearSel)
+      km.setAttribute('diffuseColor', kc[gearSel.value] || '0.85 0.87 0.88');
+    if (wheelSel) {
+      var order = [':HARD-PORT', ':EASY-PORT', ':AMIDSHIPS',
+                   ':EASY-STARBOARD', ':HARD-STARBOARD'];
+      var idx = order.indexOf(wheelSel.value);
+      for (var i = 0; i < 5; i++) {
+        var lm = document.getElementById('steer-lamp-mat-' + i);
+        if (!lm) continue;
+        lm.setAttribute('diffuseColor', i === idx ? '0.91 0.78 0.22' : '0.15 0.16 0.18');
+        lm.setAttribute('emissiveColor', i === idx ? '0.55 0.45 0.10' : '0.04 0.04 0.05');
+      }
+    }
   }
   if (wheelSel) wheelSel.addEventListener('change', readout);
   if (gearSel) gearSel.addEventListener('change', readout);
@@ -1634,6 +1665,169 @@ window.togglePlot = function () {
 
 ;; The page: the view from the driver's seat, the galaxy out past
 ;; where the glass will go.
+;; The paint shop, now a standing department: the worlds' faces,
+;; the wood and the dice painted client-side onto canvases.  Every
+;; painted url is also stashed on window.GW_TEX, so a renderer
+;; whose scene cannot be reached by DOM id (X_ITE's src-loaded
+;; document) can take the same faces through the SAI.
+(defparameter *paint-shop-js*
+  "(function () {
+  function rnd (n) { var x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
+  function tex (ids, w, h, draw) {
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    var u = c.toDataURL();
+    window.GW_TEX = window.GW_TEX || {};
+    ids.forEach(function (id) { window.GW_TEX[id] = u; });
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.setAttribute('url', u);
+    });
+  }
+  tex(['earth-tex'], 1024, 512, function (g, w, h) {
+    var sea = g.createLinearGradient(0, 0, 0, h);
+    sea.addColorStop(0, '#16305a'); sea.addColorStop(0.5, '#1d4f8a'); sea.addColorStop(1, '#16305a');
+    g.fillStyle = sea; g.fillRect(0, 0, w, h);
+    function land (pts, fill) {
+      g.beginPath();
+      for (var i = 0; i < pts.length; i++) {
+        var x = (pts[i][0] + 180) / 360 * w, y = (90 - pts[i][1]) / 180 * h;
+        if (i) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath(); g.fillStyle = fill; g.fill();
+    }
+    var green = '#3f6f33', dry = '#8a7a4a';
+    land([[-165,65],[-130,70],[-95,72],[-75,68],[-58,52],[-70,44],[-76,35],[-81,25],[-97,27],[-92,17],[-84,10],[-92,15],[-105,22],[-117,33],[-124,42],[-150,60]], green);
+    land([[-80,9],[-72,11],[-60,5],[-50,0],[-35,-8],[-40,-22],[-55,-35],[-62,-41],[-71,-52],[-75,-45],[-70,-30],[-70,-18],[-78,-5]], green);
+    land([[-52,60],[-42,62],[-25,70],[-35,78],[-55,76]], '#dde6ec');
+    land([[-17,15],[-10,32],[10,37],[32,31],[43,12],[51,10],[40,-5],[35,-20],[27,-34],[18,-34],[12,-18],[8,-1],[-8,5]], dry);
+    land([[-10,36],[-8,43],[-2,48],[-5,58],[5,62],[15,68],[40,70],[70,73],[100,77],[140,72],[170,67],[178,64],[160,60],[152,48],[140,42],[128,38],[122,30],[108,18],[104,8],[98,12],[92,22],[86,20],[80,12],[76,8],[72,20],[66,24],[57,22],[50,28],[42,32],[35,36],[25,36],[15,38],[3,36]], green);
+    land([[113,-22],[122,-17],[135,-12],[142,-11],[147,-19],[153,-27],[150,-37],[140,-38],[131,-32],[115,-34]], dry);
+    g.fillStyle = '#e8eef2';
+    g.fillRect(0, 0, w, h * 0.045); g.fillRect(0, h * 0.94, w, h * 0.06);
+    g.fillStyle = 'rgba(255,255,255,0.30)';
+    for (var i = 0; i < 26; i++) {
+      var cx = rnd(i) * w, cy = (0.15 + 0.7 * rnd(i + 40)) * h, rx = 30 + 60 * rnd(i + 80);
+      g.beginPath(); g.ellipse(cx, cy, rx, rx * 0.28, 0, 0, 6.2832); g.fill();
+    }
+  });
+  tex(['leather-tex'], 256, 256, function (g, w, h) {
+    g.fillStyle = '#6b4423'; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 2200; i++) {
+      var x = rnd(i) * w, y = rnd(i + 9000) * h, r = 0.6 + 1.8 * rnd(i + 5000);
+      g.fillStyle = rnd(i + 700) > 0.5 ? 'rgba(30,15,5,0.16)' : 'rgba(210,160,110,0.10)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+    }
+    g.strokeStyle = 'rgba(25,12,4,0.28)'; g.lineWidth = 0.7;
+    for (var j = 0; j < 130; j++) {
+      var x0 = rnd(j + 300) * w, y0 = rnd(j + 400) * h, a = rnd(j + 500) * 6.2832, l = 4 + 10 * rnd(j + 600);
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * l, y0 + Math.sin(a) * l); g.stroke();
+    }
+  });
+  tex(['wood-tex'], 512, 128, function (g, w, h) {
+    g.fillStyle = '#7a4f28'; g.fillRect(0, 0, w, h);
+    for (var y = 0; y < h; y++) {
+      var t = 0.5 + 0.5 * Math.sin(y * 0.55 + 3.5 * Math.sin(y * 0.061));
+      g.fillStyle = 'rgba(46,24,8,' + (0.10 + 0.22 * t).toFixed(3) + ')';
+      g.fillRect(0, y, w, 1);
+    }
+    g.strokeStyle = 'rgba(30,15,5,0.5)';
+    for (var k = 0; k < 7; k++) {
+      var yy = (0.12 + 0.76 * rnd(k + 50)) * h;
+      g.lineWidth = 0.6 + rnd(k) * 1.2;
+      g.beginPath(); g.moveTo(0, yy);
+      for (var x = 0; x <= w; x += 16) g.lineTo(x, yy + 3 * Math.sin(x * 0.02 + k * 7));
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
+  });
+  tex(['moon-tex'], 512, 256, function (g, w, h) {
+    g.fillStyle = '#b6b2a8'; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 9; i++) {
+      var x = rnd(i + 20) * w, y = (0.2 + 0.6 * rnd(i + 60)) * h, r = 20 + 55 * rnd(i + 100);
+      g.fillStyle = 'rgba(90,88,82,0.35)';
+      g.beginPath(); g.ellipse(x, y, r, r * 0.7, rnd(i) * 3, 0, 6.2832); g.fill();
+    }
+    for (var j = 0; j < 90; j++) {
+      var x = rnd(j + 200) * w, y = rnd(j + 300) * h, r = 1.5 + 7 * rnd(j + 400);
+      g.fillStyle = 'rgba(70,68,62,0.5)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+      g.strokeStyle = 'rgba(235,232,225,0.55)'; g.lineWidth = 1;
+      g.beginPath(); g.arc(x - r * 0.15, y - r * 0.15, r * 0.8, 0, 6.2832); g.stroke();
+    }
+  });
+  tex(['mars-tex'], 512, 256, function (g, w, h) {
+    var dust = g.createLinearGradient(0, 0, 0, h);
+    dust.addColorStop(0, '#8a4a26'); dust.addColorStop(0.5, '#b06034'); dust.addColorStop(1, '#8a4a26');
+    g.fillStyle = dust; g.fillRect(0, 0, w, h);
+    for (var i = 0; i < 7; i++) {
+      var x = rnd(i + 500) * w, y = (0.25 + 0.5 * rnd(i + 550)) * h, r = 30 + 70 * rnd(i + 600);
+      g.fillStyle = 'rgba(70,35,20,0.35)';
+      g.beginPath(); g.ellipse(x, y, r, r * 0.5, rnd(i + 650) * 3, 0, 6.2832); g.fill();
+    }
+    for (var j = 0; j < 60; j++) {
+      var x = rnd(j + 700) * w, y = rnd(j + 800) * h, r = 1.5 + 6 * rnd(j + 900);
+      g.fillStyle = 'rgba(60,28,14,0.45)';
+      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+    }
+    g.fillStyle = '#e8e2d8';
+    g.fillRect(0, 0, w, h * 0.03); g.fillRect(0, h * 0.965, w, h * 0.035);
+  });
+  tex(['jupiter-tex'], 512, 256, function (g, w, h) {
+    var bands = ['#c8a878', '#a67a52', '#e8d8b8', '#b08658', '#d8c098', '#96684a', '#e0cca8', '#a87e56', '#cfae80'];
+    var y = 0;
+    for (var i = 0; i < bands.length; i++) {
+      var bh = h * (0.06 + 0.10 * rnd(i + 30));
+      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
+      y += bh;
+    }
+    g.fillStyle = bands[0]; g.fillRect(0, y, w, h - y);
+    for (var j = 0; j < 240; j++) {
+      var yy = rnd(j + 100) * h, xx = rnd(j + 200) * w, l = 15 + 60 * rnd(j + 300);
+      g.fillStyle = rnd(j + 400) > 0.5 ? 'rgba(255,240,215,0.12)' : 'rgba(90,55,30,0.12)';
+      g.fillRect(xx, yy, l, 1.5 + 2 * rnd(j + 500));
+    }
+    g.fillStyle = 'rgba(190,80,50,0.85)';
+    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.fill();
+    g.strokeStyle = 'rgba(120,45,25,0.6)'; g.lineWidth = 2;
+    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.stroke();
+  });
+  tex(['saturn-tex'], 512, 256, function (g, w, h) {
+    var bands = ['#d8c49a', '#cbb488', '#e6d6ae', '#c2a878', '#dcc79c', '#cfb98e', '#e2d0a6'];
+    var y = 0;
+    for (var i = 0; i < bands.length; i++) {
+      var bh = h * (0.08 + 0.12 * rnd(i + 60));
+      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
+      y += bh;
+    }
+    g.fillStyle = bands[1]; g.fillRect(0, y, w, h - y);
+    for (var j = 0; j < 140; j++) {
+      var yy = rnd(j + 150) * h, xx = rnd(j + 250) * w, l = 20 + 70 * rnd(j + 350);
+      g.fillStyle = rnd(j + 450) > 0.5 ? 'rgba(250,240,215,0.08)' : 'rgba(120,95,55,0.08)';
+      g.fillRect(xx, yy, l, 2 + 2 * rnd(j + 550));
+    }
+    g.fillStyle = 'rgba(190,205,215,0.25)';
+    g.fillRect(0, 0, w, h * 0.06);
+  });
+  tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
+    g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
+    var pips = [[[0.5,0.5]],
+                [[0.28,0.28],[0.72,0.72]],
+                [[0.28,0.28],[0.5,0.5],[0.72,0.72]],
+                [[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]],
+                [[0.28,0.28],[0.72,0.28],[0.5,0.5],[0.28,0.72],[0.72,0.72]],
+                [[0.28,0.25],[0.28,0.5],[0.28,0.75],[0.72,0.25],[0.72,0.5],[0.72,0.75]]];
+    g.fillStyle = '#151515';
+    for (var n = 0; n < 6; n++) {
+      var x0 = (n % 3) * 64, y0 = Math.floor(n / 3) * 64;
+      pips[n].forEach(function (p) {
+        g.beginPath(); g.arc(x0 + p[0] * 64, y0 + p[1] * 64, 6, 0, 6.2832); g.fill();
+      });
+    }
+  });
+})();
+")
+
 (define-object cockpit-view (session-control-mixin base-html-page)
 
   :input-slots
@@ -2242,159 +2436,9 @@ function toggleHelm () {
     }
   } catch (e) {}
 })();
-(function () {
-  function rnd (n) { var x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
-  function tex (ids, w, h, draw) {
-    var c = document.createElement('canvas'); c.width = w; c.height = h;
-    draw(c.getContext('2d'), w, h);
-    var u = c.toDataURL();
-    ids.forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) el.setAttribute('url', u);
-    });
-  }
-  tex(['earth-tex'], 1024, 512, function (g, w, h) {
-    var sea = g.createLinearGradient(0, 0, 0, h);
-    sea.addColorStop(0, '#16305a'); sea.addColorStop(0.5, '#1d4f8a'); sea.addColorStop(1, '#16305a');
-    g.fillStyle = sea; g.fillRect(0, 0, w, h);
-    function land (pts, fill) {
-      g.beginPath();
-      for (var i = 0; i < pts.length; i++) {
-        var x = (pts[i][0] + 180) / 360 * w, y = (90 - pts[i][1]) / 180 * h;
-        if (i) g.lineTo(x, y); else g.moveTo(x, y);
-      }
-      g.closePath(); g.fillStyle = fill; g.fill();
-    }
-    var green = '#3f6f33', dry = '#8a7a4a';
-    land([[-165,65],[-130,70],[-95,72],[-75,68],[-58,52],[-70,44],[-76,35],[-81,25],[-97,27],[-92,17],[-84,10],[-92,15],[-105,22],[-117,33],[-124,42],[-150,60]], green);
-    land([[-80,9],[-72,11],[-60,5],[-50,0],[-35,-8],[-40,-22],[-55,-35],[-62,-41],[-71,-52],[-75,-45],[-70,-30],[-70,-18],[-78,-5]], green);
-    land([[-52,60],[-42,62],[-25,70],[-35,78],[-55,76]], '#dde6ec');
-    land([[-17,15],[-10,32],[10,37],[32,31],[43,12],[51,10],[40,-5],[35,-20],[27,-34],[18,-34],[12,-18],[8,-1],[-8,5]], dry);
-    land([[-10,36],[-8,43],[-2,48],[-5,58],[5,62],[15,68],[40,70],[70,73],[100,77],[140,72],[170,67],[178,64],[160,60],[152,48],[140,42],[128,38],[122,30],[108,18],[104,8],[98,12],[92,22],[86,20],[80,12],[76,8],[72,20],[66,24],[57,22],[50,28],[42,32],[35,36],[25,36],[15,38],[3,36]], green);
-    land([[113,-22],[122,-17],[135,-12],[142,-11],[147,-19],[153,-27],[150,-37],[140,-38],[131,-32],[115,-34]], dry);
-    g.fillStyle = '#e8eef2';
-    g.fillRect(0, 0, w, h * 0.045); g.fillRect(0, h * 0.94, w, h * 0.06);
-    g.fillStyle = 'rgba(255,255,255,0.30)';
-    for (var i = 0; i < 26; i++) {
-      var cx = rnd(i) * w, cy = (0.15 + 0.7 * rnd(i + 40)) * h, rx = 30 + 60 * rnd(i + 80);
-      g.beginPath(); g.ellipse(cx, cy, rx, rx * 0.28, 0, 0, 6.2832); g.fill();
-    }
-  });
-  tex(['leather-tex'], 256, 256, function (g, w, h) {
-    g.fillStyle = '#6b4423'; g.fillRect(0, 0, w, h);
-    for (var i = 0; i < 2200; i++) {
-      var x = rnd(i) * w, y = rnd(i + 9000) * h, r = 0.6 + 1.8 * rnd(i + 5000);
-      g.fillStyle = rnd(i + 700) > 0.5 ? 'rgba(30,15,5,0.16)' : 'rgba(210,160,110,0.10)';
-      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
-    }
-    g.strokeStyle = 'rgba(25,12,4,0.28)'; g.lineWidth = 0.7;
-    for (var j = 0; j < 130; j++) {
-      var x0 = rnd(j + 300) * w, y0 = rnd(j + 400) * h, a = rnd(j + 500) * 6.2832, l = 4 + 10 * rnd(j + 600);
-      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + Math.cos(a) * l, y0 + Math.sin(a) * l); g.stroke();
-    }
-  });
-  tex(['wood-tex'], 512, 128, function (g, w, h) {
-    g.fillStyle = '#7a4f28'; g.fillRect(0, 0, w, h);
-    for (var y = 0; y < h; y++) {
-      var t = 0.5 + 0.5 * Math.sin(y * 0.55 + 3.5 * Math.sin(y * 0.061));
-      g.fillStyle = 'rgba(46,24,8,' + (0.10 + 0.22 * t).toFixed(3) + ')';
-      g.fillRect(0, y, w, 1);
-    }
-    g.strokeStyle = 'rgba(30,15,5,0.5)';
-    for (var k = 0; k < 7; k++) {
-      var yy = (0.12 + 0.76 * rnd(k + 50)) * h;
-      g.lineWidth = 0.6 + rnd(k) * 1.2;
-      g.beginPath(); g.moveTo(0, yy);
-      for (var x = 0; x <= w; x += 16) g.lineTo(x, yy + 3 * Math.sin(x * 0.02 + k * 7));
-      g.stroke();
-    }
-    g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
-  });
-  tex(['moon-tex'], 512, 256, function (g, w, h) {
-    g.fillStyle = '#b6b2a8'; g.fillRect(0, 0, w, h);
-    for (var i = 0; i < 9; i++) {
-      var x = rnd(i + 20) * w, y = (0.2 + 0.6 * rnd(i + 60)) * h, r = 20 + 55 * rnd(i + 100);
-      g.fillStyle = 'rgba(90,88,82,0.35)';
-      g.beginPath(); g.ellipse(x, y, r, r * 0.7, rnd(i) * 3, 0, 6.2832); g.fill();
-    }
-    for (var j = 0; j < 90; j++) {
-      var x = rnd(j + 200) * w, y = rnd(j + 300) * h, r = 1.5 + 7 * rnd(j + 400);
-      g.fillStyle = 'rgba(70,68,62,0.5)';
-      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
-      g.strokeStyle = 'rgba(235,232,225,0.55)'; g.lineWidth = 1;
-      g.beginPath(); g.arc(x - r * 0.15, y - r * 0.15, r * 0.8, 0, 6.2832); g.stroke();
-    }
-  });
-  tex(['mars-tex'], 512, 256, function (g, w, h) {
-    var dust = g.createLinearGradient(0, 0, 0, h);
-    dust.addColorStop(0, '#8a4a26'); dust.addColorStop(0.5, '#b06034'); dust.addColorStop(1, '#8a4a26');
-    g.fillStyle = dust; g.fillRect(0, 0, w, h);
-    for (var i = 0; i < 7; i++) {
-      var x = rnd(i + 500) * w, y = (0.25 + 0.5 * rnd(i + 550)) * h, r = 30 + 70 * rnd(i + 600);
-      g.fillStyle = 'rgba(70,35,20,0.35)';
-      g.beginPath(); g.ellipse(x, y, r, r * 0.5, rnd(i + 650) * 3, 0, 6.2832); g.fill();
-    }
-    for (var j = 0; j < 60; j++) {
-      var x = rnd(j + 700) * w, y = rnd(j + 800) * h, r = 1.5 + 6 * rnd(j + 900);
-      g.fillStyle = 'rgba(60,28,14,0.45)';
-      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
-    }
-    g.fillStyle = '#e8e2d8';
-    g.fillRect(0, 0, w, h * 0.03); g.fillRect(0, h * 0.965, w, h * 0.035);
-  });
-  tex(['jupiter-tex'], 512, 256, function (g, w, h) {
-    var bands = ['#c8a878', '#a67a52', '#e8d8b8', '#b08658', '#d8c098', '#96684a', '#e0cca8', '#a87e56', '#cfae80'];
-    var y = 0;
-    for (var i = 0; i < bands.length; i++) {
-      var bh = h * (0.06 + 0.10 * rnd(i + 30));
-      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
-      y += bh;
-    }
-    g.fillStyle = bands[0]; g.fillRect(0, y, w, h - y);
-    for (var j = 0; j < 240; j++) {
-      var yy = rnd(j + 100) * h, xx = rnd(j + 200) * w, l = 15 + 60 * rnd(j + 300);
-      g.fillStyle = rnd(j + 400) > 0.5 ? 'rgba(255,240,215,0.12)' : 'rgba(90,55,30,0.12)';
-      g.fillRect(xx, yy, l, 1.5 + 2 * rnd(j + 500));
-    }
-    g.fillStyle = 'rgba(190,80,50,0.85)';
-    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.fill();
-    g.strokeStyle = 'rgba(120,45,25,0.6)'; g.lineWidth = 2;
-    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.stroke();
-  });
-  tex(['saturn-tex'], 512, 256, function (g, w, h) {
-    var bands = ['#d8c49a', '#cbb488', '#e6d6ae', '#c2a878', '#dcc79c', '#cfb98e', '#e2d0a6'];
-    var y = 0;
-    for (var i = 0; i < bands.length; i++) {
-      var bh = h * (0.08 + 0.12 * rnd(i + 60));
-      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
-      y += bh;
-    }
-    g.fillStyle = bands[1]; g.fillRect(0, y, w, h - y);
-    for (var j = 0; j < 140; j++) {
-      var yy = rnd(j + 150) * h, xx = rnd(j + 250) * w, l = 20 + 70 * rnd(j + 350);
-      g.fillStyle = rnd(j + 450) > 0.5 ? 'rgba(250,240,215,0.08)' : 'rgba(120,95,55,0.08)';
-      g.fillRect(xx, yy, l, 2 + 2 * rnd(j + 550));
-    }
-    g.fillStyle = 'rgba(190,205,215,0.25)';
-    g.fillRect(0, 0, w, h * 0.06);
-  });
-  tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
-    g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
-    var pips = [[[0.5,0.5]],
-                [[0.28,0.28],[0.72,0.72]],
-                [[0.28,0.28],[0.5,0.5],[0.72,0.72]],
-                [[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]],
-                [[0.28,0.28],[0.72,0.28],[0.5,0.5],[0.28,0.72],[0.72,0.72]],
-                [[0.28,0.25],[0.28,0.5],[0.28,0.75],[0.72,0.25],[0.72,0.5],[0.72,0.75]]];
-    g.fillStyle = '#151515';
-    for (var n = 0; n < 6; n++) {
-      var x0 = (n % 3) * 64, y0 = Math.floor(n / 3) * 64;
-      pips[n].forEach(function (p) {
-        g.beginPath(); g.arc(x0 + p[0] * 64, y0 + p[1] * 64, 6, 0, 6.2832); g.fill();
-      });
-    }
-  });
-})();
+")
+        (str *paint-shop-js*)
+        (str "
 // The view keeper: mouse navigation saves the camera pose, and any
 // reload of the page -- including the full re-render after a helm
 // move -- puts you back where you left it, by injecting the saved
@@ -3269,27 +3313,159 @@ function toggleHelm () {
         });
       } catch (e) {}
     }
-    // X_ITE's initial bind is not landing on the first viewpoint;
-    // force the driver's seat once the scene stands, and say so
-    // where a headless capture can read it
-    var dv = named('drivers-seat');
-    var note = document.getElementById('plot-frame-label');
-    if (dv) {
-      var bound = false;
-      try { dv.set_bind = true; bound = true; } catch (e) {
-        try { dv.getField('set_bind').setValue(true); bound = true; } catch (e2) {}
-      }
-      if (note) note.textContent = bound ? 'bound: drivers-seat (forced)'
-                                         : 'bind failed on drivers-seat';
-    } else if (note) {
-      note.textContent = 'no DEF drivers-seat in scene';
+    // colors travel by SAI here: the scene is a document, not
+    // page DOM, so setAttribute reaches nothing
+    function setColor (node, fieldName, str) {
+      var p = str.split(' ').map(parseFloat);
+      try { node.getField(fieldName).setValue(new X3D.SFColor(p[0], p[1], p[2])); return; } catch (e) {}
+      try { node[fieldName] = new X3D.SFColor(p[0], p[1], p[2]); } catch (e) {}
     }
+    // the helm wears its own state: knob color by gear, lever
+    // pose, the steerage lamp for the active band, the radio keys
+    function indicators () {
+      var kc = { ':FORWARD': '0.30 0.75 0.35', ':NEUTRAL': '0.85 0.87 0.88',
+                 ':REVERSE': '0.91 0.60 0.18' };
+      var km = named('shifter-knob-mat');
+      if (km && gearSel) setColor(km, 'diffuseColor', kc[gearSel.value] || '0.85 0.87 0.88');
+      var rig = named('shifter-rig');
+      var pose = { ':FORWARD': 0.5, ':NEUTRAL': 0, ':REVERSE': -0.5 };
+      if (rig && gearSel) {
+        try {
+          var rf = rig.getField('rotation');
+          var rv = rf.getValue();
+          rv.angle = pose[gearSel.value] || 0;
+          rf.setValue(rv);
+        } catch (e) {}
+      }
+      var order = [':HARD-PORT', ':EASY-PORT', ':AMIDSHIPS',
+                   ':EASY-STARBOARD', ':HARD-STARBOARD'];
+      var idx = wheelSel ? order.indexOf(wheelSel.value) : 2;
+      for (var i = 0; i < 5; i++) {
+        var lm = named('steer-lamp-mat-' + i);
+        if (!lm) continue;
+        setColor(lm, 'diffuseColor', i === idx ? '0.91 0.78 0.22' : '0.15 0.16 0.18');
+        setColor(lm, 'emissiveColor', i === idx ? '0.55 0.45 0.10' : '0.04 0.04 0.05');
+      }
+      function litSet (prefix, vals, cls) {
+        var b = document.querySelector(cls + '.lit');
+        var active = b ? b.getAttribute('data-val') : null;
+        vals.forEach(function (v, i) {
+          var m = named(prefix + '-mat-' + i);
+          if (!m) return;
+          var lit = v === active;
+          setColor(m, 'diffuseColor', lit ? '0.91 0.78 0.22' : '0.13 0.15 0.17');
+          setColor(m, 'emissiveColor', lit ? '0.55 0.45 0.10' : '0.05 0.06 0.07');
+        });
+      }
+      litSet('radio-preset', [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'], '.cadence-btn');
+      litSet('radio-tpt', [':REWIND', ':PLAY'], '.transport-btn');
+    }
+    if (gearSel) gearSel.addEventListener('change', indicators);
+    if (wheelSel) wheelSel.addEventListener('change', indicators);
+    Array.prototype.forEach.call(
+      document.querySelectorAll('.cadence-btn, .transport-btn'),
+      function (b) {
+        b.addEventListener('click', function () { setTimeout(indicators, 0); });
+      });
+    indicators();
+    // the painted faces travel by SAI too: the paint shop stashes
+    // every data url on GW_TEX, and the DEF'd ImageTextures drink
+    // from it -- continents and craters under the second renderer
+    if (window.GW_TEX) {
+      Object.keys(window.GW_TEX).forEach(function (id) {
+        var tx = named(id);
+        if (!tx) return;
+        try { tx.getField('url').setValue(new X3D.MFString(window.GW_TEX[id])); } catch (e) {
+          try { tx.url = new X3D.MFString(window.GW_TEX[id]); } catch (e2) {}
+        }
+      });
+    }
+    // X_ITE MODULATES texture by diffuse where x3dom replaced
+    // it: once a body's face lands, its material goes white so
+    // the continents read true
+    ['planet', 'astern', 'moon'].forEach(function (p) {
+      var m = named(p + '-mat');
+      if (m) {
+        setColor(m, 'diffuseColor', '1 1 1');
+        setColor(m, 'emissiveColor', '0.18 0.18 0.18');
+      }
+    });
+    // the voyage clock re-arms on the CLIENT's own time: the baked
+    // startTime rode the server's clock, and skew or load latency
+    // left the road standing still
+    var vc = named('voyage-clock');
+    if (vc) {
+      var t0 = Date.now() / 1000 + 1.0;
+      try { vc.getField('startTime').setValue(t0); } catch (e) {
+        try { vc.startTime = t0; } catch (e2) {}
+      }
+      window.GW_VOYAGE_T0 = t0 * 1000;
+      var cyc = 90;
+      try { cyc = vc.getField('cycleInterval').getValue(); } catch (e) {}
+      // the parked watch lights after the road lands
+      var amb = named('ambient-clock');
+      if (amb) {
+        setTimeout(function () {
+          try { amb.getField('startTime').setValue(Date.now() / 1000); } catch (e) {}
+          try { amb.getField('enabled').setValue(true); } catch (e) {
+            try { amb.enabled = true; } catch (e2) {}
+          }
+        }, (cyc + 2) * 1000);
+      }
+    }
+    var note = document.getElementById('plot-frame-label');
+    if (note) note.textContent = 'X_ITE: wired';
+    // the twist itself: X_ITE's examine viewer STRAIGHTENS the
+    // horizon to +Y, discarding the roll our z-up viewpoints
+    // carry.  Turn that off before binding.
+    try { browser.setBrowserOption('StraightenHorizon', false); } catch (e) {}
+    // the early bind can be overridden by X_ITE's own initial
+    // bind; assert the seat once more now that all stands
+    bindSeat(browser);
+    // ...and X_ITE's own initial bind can land later still, when
+    // the full scene stands ready -- so the seat is asserted again
+    // on the browser's INITIALIZED event and on a short ladder of
+    // timeouts, whichever fires last
+    try {
+      browser.addBrowserCallback('gw-bind', X3D.X3DConstants.INITIALIZED_EVENT,
+        function () { setTimeout(function () { bindSeat(browser); }, 100); });
+    } catch (e) {}
+    [1500, 4000, 9000].forEach(function (ms) {
+      setTimeout(function () { bindSeat(browser); }, ms);
+    });
+  }
+  // bind the driver's seat the moment it is parseable -- with
+  // TELEPORT transitions this is a snap, not a tour
+  function bindSeat (browser) {
+    var note = document.getElementById('plot-frame-label');
+    var vp = null;
+    try { vp = browser.currentScene && browser.currentScene.getNamedNode('drivers-seat'); } catch (e) {}
+    if (!vp) { if (note) note.textContent = 'bind: no node yet'; return false; }
+    var how = 'fail';
+    // an early bind against the half-initialized scene leaves the
+    // node MARKED bound while the finished scene renders its own
+    // default camera -- and set_bind TRUE on a bound node is a
+    // no-op by spec.  Toggling FALSE first clears the stale entry.
+    try {
+      var bf = vp.getField('set_bind');
+      bf.setValue(false);
+      bf.setValue(true);
+      how = 'field';
+    } catch (e) {
+      try { vp.set_bind = false; vp.set_bind = true; how = 'prop'; } catch (e2) {}
+    }
+    var cur = '';
+    try { cur = (browser.activeViewpoint && browser.activeViewpoint.description) || ''; } catch (e) {}
+    if (note) note.textContent = 'bind:' + how + ' t=' + Math.round(performance.now() / 100) / 10 + ' cur=' + cur;
+    return how !== 'fail';
   }
   function start () {
     var canvas = document.querySelector('x3d-canvas');
     if (!canvas) return;
     var browser = canvas.browser;
-    if (!browser) { setTimeout(start, 500); return; }
+    if (!browser) { setTimeout(start, 250); return; }
+    // NO early bind: asserting against the half-initialized
+    // scene poisons the bind stack (see bindSeat)
     var tries = 0;
     (function poll () {
       tries++;
@@ -3302,7 +3478,7 @@ function toggleHelm () {
       if (tries < 60) setTimeout(poll, 500);
     })();
   }
-  window.addEventListener('load', function () { setTimeout(start, 300); });
+  window.addEventListener('load', function () { setTimeout(start, 100); });
 })();")
 
 ;; Strip one attribute wherever it appears -- the x3dom-only
@@ -3339,12 +3515,15 @@ function toggleHelm () {
     (string-append
      "<?xml version=\"1.0\" encoding=\"UTF-8\"?><X3D profile=\"Immersive\" version=\"4.0\"><Scene>"
      "<Background skyColor=\"0 0 0.012\"></Background>"
-     ;; the whole world rides one wrapper that stands our z-up cab
-     ;; into X3D's y-up convention: X_ITE straightens the horizon
-     ;; to +Y (x3dom never cared), and WebXR headsets are y-up by
-     ;; decree -- viewpoints rotate with everything else, so every
-     ;; relationship inside stands
-     "<Transform rotation=\"1 0 0 -1.5708\">"
+     ;; transitionTime 0: binds snap instead of touring (the
+     ;; visible tumble at load was the transition animation).  NOT
+     ;; transitionType TELEPORT -- under X_ITE that mode reported
+     ;; the bind and never moved the camera (benchmark datum #3).
+     "<NavigationInfo transitionTime=\"0\"></NavigationInfo>"
+     ;; NO y-up wrapper: X_ITE binds a Transform-wrapped Viewpoint
+     ;; without applying the parent transform (benchmark datum #2),
+     ;; so the world stays z-up here and the y-up question waits
+     ;; for authored-in-y-up viewpoints on the WebXR slice
      (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
      (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"sky-drift\">~a</Transform></Transform>"
              (- (the sky-authored-heading-rad))
@@ -3358,7 +3537,7 @@ function toggleHelm () {
      (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
-     "</Transform></Scene></X3D>"))
+     "</Scene></X3D>"))
 
    (body
     (with-lhtml-string ()
@@ -3376,11 +3555,13 @@ function toggleHelm () {
 #helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
 #helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
-        (:div :style "font-size:14px;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+        (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleHelm()"
           (:span "THE HELM")
           (:span :id "helm-readout"
             :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
-            (str (the helm-readout-html))))
+            (str (the helm-readout-html)))
+          (:span :id "helm-caret" "▾"))
         (:div :id "helm-body" :style "margin-top:8px;"
           (str (the helm-form-html))
           (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
@@ -3413,6 +3594,23 @@ function toggleHelm () {
         "Galaxy World — the cockpit, under X_ITE (scout)"
         (:a :href "/" :style "color:#e8c839;margin-left:10px;" "back to x3dom"))
       (:script
+        (str "
+function toggleHelm () {
+  var b = document.getElementById('helm-body');
+  var collapsed = b.style.display === 'none';
+  b.style.display = collapsed ? '' : 'none';
+  document.getElementById('helm-caret').textContent = collapsed ? '\\u25be' : '\\u25b8';
+  try { sessionStorage.setItem('gw-helm-collapsed', collapsed ? '0' : '1'); } catch (e) {}
+}
+(function () {
+  try {
+    if (sessionStorage.getItem('gw-helm-collapsed') === '1') {
+      document.getElementById('helm-body').style.display = 'none';
+      document.getElementById('helm-caret').textContent = '\\u25b8';
+    }
+  } catch (e) {}
+})();")
+        (str *paint-shop-js*)
         (str (format nil "var GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;"
                      (the plan-json)
                      (if (the transit-samples) "Date.now() + 2000" "null")))
