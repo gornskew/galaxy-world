@@ -495,6 +495,11 @@
 (defparameter +ring-radius+ 20742.0)    ; the ship's ring, same as the chart's
 (defparameter +ring-speed+ (sqrt (/ +mu+ +ring-radius+)))
 
+;; Meet the sky gently and you are not wrecked -- you are DOWN.
+;; The cap is the game's landing lesson: shed the road's speed
+;; before the surface has to shed it for you.
+(defparameter +landing-speed-cap+ 0.6)  ; km/s at touch
+
 ;; The moon: he rides the moon-road (the same ring the bridge chart
 ;; draws), and for now he stands at its far node, a stand-off
 ;; outboard of the arrival point -- so a ship taking the road takes
@@ -1117,6 +1122,10 @@ near ring arc lost the draw and hid behind the globe."
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
+   ;; down on the world's surface, engines cold.  Landing sets it,
+   ;; the climb back to the ring (gas while parked) or a programmed
+   ;; road clears it.
+   (landed? nil :settable)
    (last-burn :none :settable)
    (last-move-note "nose-in on the world, falling sideways past him -- coast, and watch the continents slide by"
                    :settable)
@@ -1422,21 +1431,28 @@ near ring arc lost the draw and hid behind the globe."
         (:div :id "helm-body" :style "margin-top:8px;"
         (str (the helm-form-html))
         (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
-          (:div (fmt "falling around: ~a" (the world-name)))
+          (:div (if (the landed?)
+                    (fmt "down on: ~a" (the world-name))
+                    (fmt "falling around: ~a" (the world-name))))
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
           (:div (fmt "speed: ~,2f km/s" (the speed)))
-          (:div (fmt "altitude: ~,0f km" (the altitude)))
-          (if (the semi-major)
+          ;; on the ground there is no road to describe -- the world
+          ;; itself holds him
+          (if (the landed?)
+              (htm (:div "engines cold — gas to climb"))
               (htm
-               (:div (fmt "high point of the road: ~,0f km" (the apoapsis-alt)))
-               (if (< (the periapsis-alt) 100)
+               (:div (fmt "altitude: ~,0f km" (the altitude)))
+               (if (the semi-major)
+                   (htm
+                    (:div (fmt "high point of the road: ~,0f km" (the apoapsis-alt)))
+                    (if (< (the periapsis-alt) 100)
+                        (htm (:div :style "color:#e07050;"
+                               (fmt "low point: ~,0f km — this road meets the sky"
+                                    (the periapsis-alt))))
+                        (htm (:div (fmt "low point of the road: ~,0f km"
+                                        (the periapsis-alt))))))
                    (htm (:div :style "color:#e07050;"
-                          (fmt "low point: ~,0f km — this road meets the sky"
-                               (the periapsis-alt))))
-                   (htm (:div (fmt "low point of the road: ~,0f km"
-                                   (the periapsis-alt))))))
-              (htm (:div :style "color:#e07050;"
-                     "the road is unbound — the deep dark has you")))
+                          "the road is unbound — the deep dark has you")))))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note))))))
@@ -1804,6 +1820,7 @@ function toggleHelm () {
       ;; the closing beat: nose-in on the moon
       (push (list 1.0 pi (- r2) 0) samples)
       (setq samples (nreverse samples))
+      (the (set-slot! :landed? nil))
       (the (set-slot! :heading-deg 180))
       (the (set-slot! :vel-x 0))
       (the (set-slot! :vel-y (- vc2)))
@@ -1941,6 +1958,7 @@ function toggleHelm () {
             moons (nreverse moons)
             dests (nreverse dests))
       (the (set-slot! :world to-world))
+      (the (set-slot! :landed? nil))
       (the (set-slot! :heading-deg 180))
       (the (set-slot! :vel-x 0))
       (the (set-slot! :vel-y v-circ2))
@@ -2006,60 +2024,125 @@ function toggleHelm () {
     (the (set-slot! :transit-target nil))
     (the (set-slot! :transit-bodies nil))
     (the (set-slot! :moon-orbit? nil))
-    (let* ((turn (ecase (the wheel-control value)
-                   (:hard-port 30) (:easy-port 10) (:amidships 0)
-                   (:easy-starboard -10) (:hard-starboard -30)))
-           (gear (the gear-control value))
-           (pedal (the pedal-control value))
-           (heading (mod (+ (the heading-deg) turn) 360))
-           (rad (deg->rad heading))
-           (flip (if (eql gear :reverse) -1 1))
-           (dv (if (eql pedal :gas) 0.5 0))
-           (dt (ecase gear (:first 60) (:second 600) (:third 3600) (:reverse 60)))
-           (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
-                             (+ (the vel-y) (* dv flip (sin rad)))
-                             (the pos-x) (the pos-y) dt)))
-           (r (sqrt (+ (* (third state) (third state))
-                       (* (fourth state) (fourth state)))))
-           (crashed? (< r (the world-sky)))
-           ;; how the burn lay against the road: along it, against
-           ;; it, or a sideways shove
-           (v0 (sqrt (+ (* (the vel-x) (the vel-x))
-                        (* (the vel-y) (the vel-y)))))
-           (alignment (if (or (zerop dv) (< v0 0.1))
-                          0
-                          (/ (+ (* dv flip (cos rad) (the vel-x))
-                                (* dv flip (sin rad) (the vel-y)))
-                             (* dv v0))))
-           (note (cond (crashed?
-                        "the world came up to meet you -- back on the ring, falling clean")
-                       ((eql pedal :brake)
-                        "the brake presses beautifully and does nothing — space doesn't brake")
-                       ((and (eql pedal :gas) (> alignment 0.5))
-                        "burn along the road — more speed, and the far side of the orbit rises")
-                       ((and (eql pedal :gas) (< alignment -0.5))
-                        "burn against the road — less speed, and the far side falls")
-                       ((eql pedal :gas)
-                        "a sideways shove — the road tilts; speed hardly changes")
-                       (t "coasting — falling around the world; that curve IS the orbit"))))
-      (cond (crashed?
-             ;; set back on the ring of whatever world came up
+    (if (the landed?)
+        (the make-parked-move!)
+        (let* ((turn (ecase (the wheel-control value)
+                       (:hard-port 30) (:easy-port 10) (:amidships 0)
+                       (:easy-starboard -10) (:hard-starboard -30)))
+               (gear (the gear-control value))
+               (pedal (the pedal-control value))
+               (heading (mod (+ (the heading-deg) turn) 360))
+               (rad (deg->rad heading))
+               (flip (if (eql gear :reverse) -1 1))
+               (dv (if (eql pedal :gas) 0.5 0))
+               (dt (ecase gear (:first 60) (:second 600) (:third 3600) (:reverse 60)))
+               (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
+                                 (+ (the vel-y) (* dv flip (sin rad)))
+                                 (the pos-x) (the pos-y) dt)))
+               (r (sqrt (+ (* (third state) (third state))
+                           (* (fourth state) (fourth state)))))
+               (contact? (< r (the world-sky)))
+               ;; the substep ends below the sky, having gained speed
+               ;; the true touch never had; energy walks the end state
+               ;; back up to the sky exactly
+               (contact-speed
+                (let ((v2 (+ (* (first state) (first state))
+                             (* (second state) (second state)))))
+                  (if contact?
+                      (sqrt (max 0.0 (- v2 (* 2 (the world-mu)
+                                              (- (/ 1 (max r 1.0))
+                                                 (/ 1 (the world-sky)))))))
+                      (sqrt v2))))
+               ;; meet the sky under the cap and you are DOWN;
+               ;; over it and the surface sheds the speed for you
+               (down? (and contact? (< contact-speed +landing-speed-cap+)))
+               (crashed? (and contact? (not down?)))
+               ;; how the burn lay against the road: along it, against
+               ;; it, or a sideways shove
+               (v0 (sqrt (+ (* (the vel-x) (the vel-x))
+                            (* (the vel-y) (the vel-y)))))
+               (alignment (if (or (zerop dv) (< v0 0.1))
+                              0
+                              (/ (+ (* dv flip (cos rad) (the vel-x))
+                                    (* dv flip (sin rad) (the vel-y)))
+                                 (* dv v0))))
+               (note (cond (down?
+                            (format nil "DOWN on ~a -- ~,2f km/s at the touch, under the ~,1f the surface forgives.  The world turns under him; gas to climb back to the ring"
+                                    (the world-name) contact-speed
+                                    +landing-speed-cap+))
+                           (crashed?
+                            (format nil "the world came up to meet you at ~,1f km/s -- back on the ring, falling clean.  Under ~,1f km/s at the touch would have been a landing"
+                                    contact-speed +landing-speed-cap+))
+                           ((eql pedal :brake)
+                            "the brake presses beautifully and does nothing — space doesn't brake")
+                           ((and (eql pedal :gas) (> alignment 0.5))
+                            "burn along the road — more speed, and the far side of the orbit rises")
+                           ((and (eql pedal :gas) (< alignment -0.5))
+                            "burn against the road — less speed, and the far side falls")
+                           ((eql pedal :gas)
+                            "a sideways shove — the road tilts; speed hardly changes")
+                           (t "coasting — falling around the world; that curve IS the orbit"))))
+          (cond (down?
+                 ;; set down at the point of contact, engines cold
+                 (let ((scale (/ (the world-sky) (max r 1.0))))
+                   (the (set-slot! :pos-x (* (third state) scale)))
+                   (the (set-slot! :pos-y (* (fourth state) scale))))
+                 (the (set-slot! :vel-x 0))
+                 (the (set-slot! :vel-y 0))
+                 (the (set-slot! :heading-deg heading))
+                 (the (set-slot! :landed? t)))
+                (crashed?
+                 ;; set back on the ring of whatever world came up
+                 (the (set-slot! :heading-deg 180))
+                 (the (set-slot! :vel-x 0))
+                 (the (set-slot! :vel-y (the world-ring-speed)))
+                 (the (set-slot! :pos-x (the world-ring)))
+                 (the (set-slot! :pos-y 0)))
+                (t
+                 (the (set-slot! :heading-deg heading))
+                 (the (set-slot! :vel-x (first state)))
+                 (the (set-slot! :vel-y (second state)))
+                 (the (set-slot! :pos-x (third state)))
+                 (the (set-slot! :pos-y (fourth state)))))
+          (the (set-slot! :last-burn (cond ((or contact? (not (eql pedal :gas))) :none)
+                                           ((eql gear :reverse) :retro)
+                                           (t :forward))))
+          (the (set-slot! :moves-count (1+ (the moves-count))))
+          (the (set-slot! :last-move-note note))
+          (tally! :moves)
+          (tally! (ecase pedal (:gas :burns) (:coast :coasts) (:brake :brakes)))
+          (when crashed? (tally! :crashes))
+          (when down?
+            (tally! :landings)
+            (tally! (intern (concatenate 'string (symbol-name (the world))
+                                         "-LANDINGS")
+                            :keyword))))))
+
+   ;; A move made on the ground.  Gas lights the engines for the
+   ;; programmed climb back to the world's ring -- the LANDING is
+   ;; where the skill lives, the ascent is the yard's gift.  Anything
+   ;; else and he sits, the world turning under him.
+   (make-parked-move!
+    ()
+    (let ((pedal (the pedal-control value)))
+      (cond ((eql pedal :gas)
+             (the (set-slot! :landed? nil))
              (the (set-slot! :heading-deg 180))
              (the (set-slot! :vel-x 0))
              (the (set-slot! :vel-y (the world-ring-speed)))
              (the (set-slot! :pos-x (the world-ring)))
-             (the (set-slot! :pos-y 0)))
+             (the (set-slot! :pos-y 0))
+             (the (set-slot! :last-burn :forward))
+             (the (set-slot! :last-move-note
+                             (format nil "the engines light -- the long climb off ~a, and the ring takes him back"
+                                     (the world-name))))
+             (tally! :takeoffs))
             (t
-             (the (set-slot! :heading-deg heading))
-             (the (set-slot! :vel-x (first state)))
-             (the (set-slot! :vel-y (second state)))
-             (the (set-slot! :pos-x (third state)))
-             (the (set-slot! :pos-y (fourth state)))))
-      (the (set-slot! :last-burn (cond ((or crashed? (not (eql pedal :gas))) :none)
-                                       ((eql gear :reverse) :retro)
-                                       (t :forward))))
+             (the (set-slot! :last-burn :none))
+             (the (set-slot! :last-move-note
+                             (cond ((eql pedal :brake)
+                                    "the brake presses beautifully, and he is already stopped")
+                                   (t (format nil "down on ~a, engines cold -- the world turns under him.  Gas to climb"
+                                              (the world-name))))))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (set-slot! :last-move-note note))
-      (tally! :moves)
-      (tally! (ecase pedal (:gas :burns) (:coast :coasts) (:brake :brakes)))
-      (when crashed? (tally! :crashes))))))
+      (tally! :moves)))))
