@@ -3546,9 +3546,13 @@ function toggleHelm () {
         ;; gwl-query-affinity module claims any iid-bearing query
         ;; and blackholes the ones without an affinity record --
         ;; the pt-20 gotcha, met again in the wild
+        ;; splashScreen off: every move re-renders the page, and
+        ;; the X_ITE splash flashing between turns broke the spell
+        ;; -- dark glass until the scene stands is the better wait
         (:|x3d-canvas|
           :src (format nil "/xr-scene.x3d?ship=~a" (the instance-id))
-          :style "width:100%;height:100%;display:block;"))
+          :|splashScreen| "false"
+          :style "width:100%;height:100%;display:block;background:#000;"))
       (:style (str "
 #helm-body select { background:rgba(16,16,16,0.6); color:#e8c839; border:1px solid #7a6a1f; border-radius:6px; padding:2px 4px; font-size:12px; }
 #helm-body select option { background:#1a1a1a; color:#e8c839; }
