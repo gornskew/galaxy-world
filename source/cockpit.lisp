@@ -757,7 +757,15 @@ near ring arc lost the draw and hid behind the globe."
 ;; the body's position, one (x y) per sample -- a body standing
 ;; still repeats one target; a body riding its own road brings a
 ;; different one for every key.
-(defun transit-anim-x3d (samples bodies &key (duration 90))
+;; START-TIME, when given, is unix epoch seconds baked into the
+;; clock itself -- a scene DOCUMENT (the X_ITE road) flies the
+;; voyage with no page script; the x3dom page keeps starting the
+;; clock from JS instead.
+(defun unix-now ()
+  "Unix epoch seconds -- the time scale X3D SFTime clocks keep."
+  (- (get-universal-time) 2208988800))
+
+(defun transit-anim-x3d (samples bodies &key (duration 90) start-time)
   (let ((keys (make-string-output-stream))
         (nose (make-string-output-stream))
         (tracks nil))
@@ -786,8 +794,8 @@ near ring arc lost the draw and hid behind the globe."
               tracks)))
     (let ((k (get-output-stream-string keys)))
       (with-output-to-string (out)
-        (format out "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"></TimeSensor>"
-                duration)
+        (format out "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"~@[ startTime=\"~,1f\"~]></TimeSensor>"
+                duration start-time)
         (dolist (track (nreverse tracks))
           (destructuring-bind (prefix pos scl) track
             (format out "<PositionInterpolator DEF=\"vy-~a-pos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-~a-scl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-pos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-scl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-pos\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-~a-scl\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_scale\"></ROUTE>"
@@ -1630,6 +1638,9 @@ window.togglePlot = function () {
 
   :input-slots
   ((title "Galaxy World — the cockpit")
+   ;; t on the X_ITE scout: the scene renders as a standalone X3D
+   ;; document (self-igniting voyage clock, no x3dom extensions)
+   (xr-scene? nil)
    (use-ajax? nil)
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
@@ -1834,7 +1845,12 @@ window.togglePlot = function () {
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (if (member (the transit-target)
                                                      '(:moon :homeward))
-                                             90 120))
+                                             90 120)
+                               ;; a scene document carries its own
+                               ;; ignition; the x3dom page lights the
+                               ;; clock from script instead
+                               :start-time (when (the xr-scene?)
+                                             (+ (unix-now) 2)))
              ;; the watch waits, parked, for the moon road to land;
              ;; at a new world the plain scene already stands the
              ;; watch
@@ -3155,3 +3171,231 @@ function toggleHelm () {
                                               (the world-name))))))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (tally! :moves)))))
+
+;; ============================================================
+;; THE X_ITE SCOUT: the same cockpit under the other X3D browser.
+;; X3D is the standard (ISO/IEC 19775, Web3D Consortium); x3dom and
+;; X_ITE are two independent implementations of it, and this page is
+;; the second-renderer proof: the scene rides as a standalone X3D
+;; document (self-igniting voyage clock, no x3dom extensions -- the
+;; RenderedTexture eye feeds stay dark, a measured debt), the helm
+;; card keeps the game loop honest, and X_ITE's own WebXR button
+;; stands ready on the canvas.  If the pointing sensors behave here,
+;; the x3dom flakiness is theirs, not ours.
+;; ============================================================
+
+;; The SAI wiring: X_ITE speaks the standard Scene Access Interface
+;; (named nodes, field callbacks) where x3dom speaks DOM events.
+;; Everything lands on the same helm-card controls, so the game
+;; step is identical.  All of it best-effort and guarded: a miss
+;; here leaves the card fully in command.
+(defparameter *xr-sai-js* "
+(function () {
+  function findSel (opt) {
+    var sels = document.querySelectorAll('#helm-body select');
+    for (var i = 0; i < sels.length; i++)
+      if (sels[i].querySelector('option[value=\"' + opt + '\"]')) return sels[i];
+    return null;
+  }
+  function faceClick (cls, val) {
+    var btns = document.querySelectorAll(cls);
+    for (var i = 0; i < btns.length; i++)
+      if (btns[i].getAttribute('data-val') === val) { btns[i].click(); return; }
+  }
+  function bandFor (ang) {
+    if (ang > 0.9) return ':HARD-PORT';
+    if (ang > 0.22) return ':EASY-PORT';
+    if (ang < -0.9) return ':HARD-STARBOARD';
+    if (ang < -0.22) return ':EASY-STARBOARD';
+    return ':AMIDSHIPS';
+  }
+  var gearCycle = [':FORWARD', ':NEUTRAL', ':REVERSE'];
+  function wire (browser) {
+    var scene = browser.currentScene;
+    function named (n) { try { return scene.getNamedNode(n); } catch (e) { return null; } }
+    function onRelease (def, fn) {
+      var node = named(def); if (!node) return;
+      try {
+        node.getField('isActive').addFieldCallback('gw-' + def, function (v) {
+          if (v === false || v === 'false') fn();
+        });
+      } catch (e) {}
+    }
+    var wheelSel = findSel(':AMIDSHIPS'), gearSel = findSel(':NEUTRAL'),
+        pedalSel = findSel(':BURN');
+    function changed (sel) {
+      try { sel.dispatchEvent(new Event('change')); } catch (e) {}
+    }
+    onRelease('shifter-touch', function () {
+      if (!gearSel) return;
+      gearSel.value = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
+      changed(gearSel);
+    });
+    [':FEATHER', ':BRAKE', ':BURN'].forEach(function (v, i) {
+      onRelease('pedal-touch-' + i, function () { if (pedalSel) pedalSel.value = v; });
+    });
+    onRelease('horn-touch', function () {
+      if (wheelSel) { wheelSel.value = ':AMIDSHIPS'; changed(wheelSel); }
+    });
+    [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'].forEach(function (v, i) {
+      onRelease('radio-preset-' + i + '-touch', function () { faceClick('.cadence-btn', v); });
+    });
+    [':REWIND', ':PLAY'].forEach(function (v, i) {
+      onRelease('radio-tpt-' + i + '-touch', function () { faceClick('.transport-btn', v); });
+    });
+    onRelease('starter-touch', function () {
+      var f = document.querySelector('#helm-body form'); if (!f) return;
+      var sub = f.querySelector('input[type=submit]');
+      if (f.requestSubmit) f.requestSubmit(sub || undefined); else f.submit();
+    });
+    var wheel = named('wheel-sensor');
+    if (wheel) {
+      var lastAng = 0;
+      try {
+        wheel.getField('rotation_changed').addFieldCallback('gw-rot', function (r) {
+          try {
+            var a = (typeof r.angle === 'number') ? r.angle : 0;
+            var y = (typeof r.y === 'number') ? r.y : 1;
+            lastAng = (y < 0 ? -1 : 1) * a;
+            while (lastAng > Math.PI) lastAng -= 2 * Math.PI;
+            while (lastAng < -Math.PI) lastAng += 2 * Math.PI;
+          } catch (e) {}
+        });
+        wheel.getField('isActive').addFieldCallback('gw-wact', function (v) {
+          if ((v === false || v === 'false') && wheelSel) {
+            wheelSel.value = bandFor(lastAng);
+            changed(wheelSel);
+          }
+        });
+      } catch (e) {}
+    }
+  }
+  function start () {
+    var canvas = document.querySelector('x3d-canvas');
+    if (!canvas) return;
+    var browser = canvas.browser;
+    if (!browser) { setTimeout(start, 500); return; }
+    var tries = 0;
+    (function poll () {
+      tries++;
+      var ok = false;
+      try {
+        ok = browser.currentScene &&
+             browser.currentScene.getNamedNode('shifter-touch');
+      } catch (e) {}
+      if (ok) { try { wire(browser); } catch (e) {} return; }
+      if (tries < 60) setTimeout(poll, 500);
+    })();
+  }
+  window.addEventListener('load', function () { setTimeout(start, 300); });
+})();")
+
+;; Strip one attribute wherever it appears -- the x3dom-only
+;; Viewpoint fields (zNear/zFar) make X_ITE's stricter parser drop
+;; the whole node, and a scene with no surviving Viewpoint falls to
+;; the default camera.
+(defun strip-attr (markup attr)
+  (let ((needle (format nil " ~a=\"" attr)))
+    (loop for start = (search needle markup)
+          while start
+          do (let ((close (position #\" markup
+                                    :start (+ start (length needle)))))
+               (setq markup (concatenate 'string
+                                         (subseq markup 0 start)
+                                         (subseq markup (1+ close))))))
+    markup))
+
+(define-object cockpit-xr-view (cockpit-view)
+
+  :computed-slots
+  ((title "Galaxy World — the cockpit, under X_ITE")
+   (xr-scene? t)
+   (use-x3dom? nil)
+   (additional-header-content
+    ;; the console tap rides ahead of X_ITE: scene-load complaints
+    ;; land on the plot's frame label, so a headless webshot can
+    ;; read the browser's mind
+    "<script>(function () { var orig = console.error; window.GW_ERRS = []; console.error = function () { try { var s = Array.prototype.join.call(arguments, ' '); GW_ERRS.push(s); var el = document.getElementById('plot-frame-label'); if (el) el.textContent = ('ERR ' + s).slice(0, 220); } catch (e) {} orig.apply(console, arguments); }; })();</script><script defer src=\"https://cdn.jsdelivr.net/npm/x_ite@16.2.0/dist/x_ite.min.js\"></script>")
+
+   ;; the whole scene as one standing X3D document, served beside
+   ;; the page (see xr-scene-responder): every piece the x3dom page
+   ;; carries except the RenderedTexture eye feeds
+   (xr-scene-document
+    (string-append
+     "<?xml version=\"1.0\" encoding=\"UTF-8\"?><X3D profile=\"Immersive\" version=\"4.0\"><Scene>"
+     "<Background skyColor=\"0 0 0.012\"></Background>"
+     (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
+     (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"sky-drift\">~a</Transform></Transform>"
+             (- (the sky-authored-heading-rad))
+             (starfield-x3d :radius 5000.0d0))
+     *sky-drift-x3d*
+     (the bodies-x3d)
+     (cockpit-x3d)
+     (dice-x3d (the dice-lean))
+     (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055)
+     (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042)
+     (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
+     (dash-radio-x3d (the cadence-control value)
+                     (the transport-control value))
+     "</Scene></X3D>"))
+
+   (body
+    (with-lhtml-string ()
+      (:div :style "position:fixed;inset:0;background:#000;"
+        ;; the param is "ship", NOT "iid": the transporter's
+        ;; gwl-query-affinity module claims any iid-bearing query
+        ;; and blackholes the ones without an affinity record --
+        ;; the pt-20 gotcha, met again in the wild
+        (:|x3d-canvas|
+          :src (format nil "/xr-scene.x3d?ship=~a" (the instance-id))
+          :style "width:100%;height:100%;display:block;"))
+      (:style (str "
+#helm-body select { background:rgba(16,16,16,0.6); color:#e8c839; border:1px solid #7a6a1f; border-radius:6px; padding:2px 4px; font-size:12px; }
+#helm-body select option { background:#1a1a1a; color:#e8c839; }
+#helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
+#helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
+      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
+        (:div :style "font-size:14px;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+          (:span "THE HELM")
+          (:span :id "helm-readout"
+            :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
+            (str (the helm-readout-html))))
+        (:div :id "helm-body" :style "margin-top:8px;"
+          (str (the helm-form-html))
+          (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+            (:div (if (the landed?)
+                      (fmt "down on: ~a" (the world-name))
+                      (fmt "falling around: ~a" (the world-name))))
+            (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
+            (:div (fmt "speed: ~,2f km/s" (the speed)))
+            (:div :id "coords-line" :style "font-size:11px;color:#c9a227;"
+              (str (the coords-line-html)))
+            (:div (fmt "moves made: ~d" (the moves-count)))
+            (:div :id "move-note"
+              :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
+              (str (the last-move-note))))))
+      (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "togglePlot()"
+          (:span "THE PLOT")
+          (:span :id "plot-caret" "▾"))
+        (:div :id "plot-body" :style "margin-top:6px;"
+          (:canvas :id "plot-canvas"
+            :width (format nil "~d" (the plot-size))
+            :height (format nil "~d" (the plot-size))
+            :style "display:block;")
+          (:div :id "plot-coords"
+            :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
+          (:div :id "plot-frame-label"
+            :style "font-size:10px;color:#c9a227;margin-top:2px;")))
+      (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
+        "Galaxy World — the cockpit, under X_ITE (scout)"
+        (:a :href "/" :style "color:#e8c839;margin-left:10px;" "back to x3dom"))
+      (:script
+        (str (format nil "var GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;"
+                     (the plan-json)
+                     (if (the transit-samples) "Date.now() + 2000" "null")))
+        (str *plan-view-js*)
+        (str *helm-hands-js*)
+        (str *voyage-beats-js*)
+        (str *xr-sai-js*))))))
