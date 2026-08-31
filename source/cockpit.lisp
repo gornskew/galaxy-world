@@ -1025,12 +1025,14 @@ window.togglePlot = function () {
     ctx.fillStyle = fill; ctx.fill();
   }
   function ship (x, y, hRad, s) {
+    // nose first, dot on top: the tick reads as a pointer out of
+    // the bow, not a spike through the ship
     var px = cx + x*s, py = cy - y*s;
+    ctx.beginPath(); ctx.moveTo(px, py);
+    ctx.lineTo(px + 9*Math.cos(hRad), py - 9*Math.sin(hRad));
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
     ctx.beginPath(); ctx.arc(px, py, 3, 0, 2*Math.PI);
     ctx.fillStyle = '#ffffff'; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(px, py);
-    ctx.lineTo(px + 8*Math.cos(hRad), py - 8*Math.sin(hRad));
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
   }
   var O = P.orbit;
   function drawOrbit () {
@@ -1047,7 +1049,19 @@ window.togglePlot = function () {
     ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(232,200,57,0.45)';
     ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
     disk(0, 0, O.worldR, s, col(O.color), 2.5);
-    if (O.moon && Math.abs(O.moon.x)*s < W/2) disk(O.moon.x, O.moon.y, O.moon.r, s, '#9a9a94', 2);
+    if (O.moon && Math.abs(O.moon.x)*s < W/2) {
+      disk(O.moon.x, O.moon.y, O.moon.r, s, '#c8c8c2', 3);
+      // close aboard the moon, the watch shows itself: a faint
+      // ring of exactly her standoff radius, the ship dot on it
+      var dxm = O.x - O.moon.x, dym = O.y - O.moon.y;
+      var dm = Math.sqrt(dxm*dxm + dym*dym);
+      if (dm < 30000) {
+        ctx.beginPath();
+        ctx.arc(cx + O.moon.x*s, cy - O.moon.y*s, dm*s, 0, 2*Math.PI);
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(200,200,194,0.5)';
+        ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
     if (O.a !== null && O.a !== undefined && !O.landed) {
       var p = O.a * (1 - O.e*O.e);
       ctx.beginPath(); var started = false;
@@ -1061,6 +1075,32 @@ window.togglePlot = function () {
       ctx.strokeStyle = '#e8c839'; ctx.lineWidth = 1.2; ctx.stroke();
     }
     ship(O.x, O.y, O.heading * Math.PI/180, s);
+    // close aboard the moon the main view cannot separate ship and
+    // moon (the standoff is a few px); a magnifier inset shows the
+    // neighborhood -- moon to scale, the watch ring, the nose on him
+    if (O.moon) {
+      var dxm = O.x - O.moon.x, dym = O.y - O.moon.y;
+      var dm = Math.sqrt(dxm*dxm + dym*dym);
+      if (dm < 30000) {
+        var icx = W - 46, icy = 46, ir = 40, si = 26 / dm;
+        ctx.beginPath(); ctx.arc(icx, icy, ir, 0, 2*Math.PI);
+        ctx.fillStyle = 'rgba(6,6,10,0.92)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(232,200,57,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(icx, icy, Math.max(O.moon.r*si, 2), 0, 2*Math.PI);
+        ctx.fillStyle = '#c8c8c2'; ctx.fill();
+        ctx.beginPath(); ctx.arc(icx, icy, dm*si, 0, 2*Math.PI);
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(200,200,194,0.5)';
+        ctx.stroke(); ctx.setLineDash([]);
+        var sx = icx + dxm*si, sy = icy - dym*si;
+        var hh = O.heading * Math.PI/180;
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + 8*Math.cos(hh), sy - 8*Math.sin(hh));
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, 2*Math.PI);
+        ctx.fillStyle = '#ffffff'; ctx.fill();
+      }
+    }
     label(O.frame + ' frame \\u2014 km');
     coords(O.x, O.y, false, O.frame);
   }
