@@ -962,9 +962,11 @@ near ring arc lost the draw and hid behind the globe."
 ;; dark glass; solid=false spares us the winding argument.
 (defun eye-feed-x3d (camera-position orientation y-left y-right)
   ;; the render's dimensions match the screen's own 1.6:1 aspect --
-  ;; a square render on this quad stretched every world it caught
+  ;; a square render on this quad stretched every world it caught.
+  ;; Kept small: each feed re-renders the scene every frame, and
+  ;; the wheel's smoothness pays for every extra pixel.
   (format nil
-   "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"512 320 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
+   "<Shape><Appearance><RenderedTexture update=\"always\" dimensions=\"320 200 4\"><Viewpoint position=\"~a\" orientation=\"~a\" fieldOfView=\"0.9\" zNear=\"0.05\" zFar=\"8000\" containerField=\"viewpoint\"></Viewpoint></RenderedTexture></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7135 ~,3f 0.345, 0.7135 ~,3f 0.345, 0.7135 ~,3f 0.495, 0.7135 ~,3f 0.495\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
    camera-position orientation y-left y-right y-right y-left))
 
 (defun port-eye-feed-x3d ()
@@ -985,10 +987,12 @@ near ring arc lost the draw and hid behind the globe."
 ;; -- and the page's script wires the clicks into the same hidden
 ;; form controls everything else drives.
 (defun dash-radio-x3d (cadence transport)
-  (labels ((key-x3d (id mat-id y z len lit? label-color)
-             (declare (ignore label-color))
-             (format nil "<Transform id=\"~a\" DEF=\"~a\"><Transform translation=\"0.7185 ~,4f ~,4f\"><Shape><Appearance><Material id=\"~a\" DEF=\"~a\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Box size=\"0.009 ~,4f 0.028\"></Box></Shape></Transform></Transform>"
-                     id id y z mat-id mat-id
+  (labels ((key-x3d (id mat-id y z len lit? description)
+             ;; every key carries its own TouchSensor: sensor
+             ;; output events are the reliable interaction channel
+             ;; in x3dom, and the forgiving one under a touchpad
+             (format nil "<Transform id=\"~a\" DEF=\"~a\"><TouchSensor id=\"~a-touch\" DEF=\"~a-touch\" description=\"~a\"></TouchSensor><Transform translation=\"0.7185 ~,4f ~,4f\"><Shape><Appearance><Material id=\"~a\" DEF=\"~a\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Box size=\"0.009 ~,4f 0.028\"></Box></Shape></Transform></Transform>"
+                     id id id id (or description "") y z mat-id mat-id
                      (if lit? "0.91 0.78 0.22" "0.13 0.15 0.17")
                      (if lit? "0.55 0.45 0.10" "0.05 0.06 0.07")
                      len)))
@@ -998,20 +1002,22 @@ near ring arc lost the draw and hid behind the globe."
      ;; the four channel keys, slow to fastest, port to starboard
      (with-output-to-string (out)
        (loop for val in '(:slow :medium :fast :fastest)
+             for label in '("slow — a minute a turn" "medium — ten minutes"
+                            "fast — an hour" "fastest — a day (goa 145)")
              for i from 0
              for y in '(0.09 0.03 -0.03 -0.09)
              do (format out "~a"
                         (key-x3d (format nil "radio-preset-~d" i)
                                  (format nil "radio-preset-mat-~d" i)
-                                 y 0.331 0.048 (eql cadence val) nil))))
+                                 y 0.331 0.048 (eql cadence val) label))))
      ;; the transport: rewind to port, play to starboard
      (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.035 0.292 0.05
-              (eql transport :rewind) nil)
+              (eql transport :rewind) "rewind — the turn falls into the past")
      (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.035 0.292 0.05
-              (eql transport :play) nil)
+              (eql transport :play) "play — the turn runs forward")
      ;; the starter, under the climb gauge: press it and the move
      ;; is made
-     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030 \" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
+     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
 
 ;; One hidden leaf, cut through the same lens the cab tree uses, so
 ;; a rig's geometry matches the cab's finish exactly.
@@ -1041,7 +1047,7 @@ near ring arc lost the draw and hid behind the globe."
          (phi (acos (get-y a))))
     (string-append
      ;; the wheel rig
-     (format nil "<Transform translation=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f ~,5f\"><CylinderSensor DEF=\"wheel-sensor\" id=\"wheel-sensor\" diskAngle=\"1.2\" autoOffset=\"true\" description=\"the wheel\"></CylinderSensor><Transform DEF=\"wheel-turn\" id=\"wheel-turn\"><Transform rotation=\"~,5f ~,5f ~,5f ~,5f\"><Transform translation=\"~,4f ~,4f ~,4f\">~a<Group DEF=\"horn-hit\" id=\"horn-hit\">~a</Group>~a~a</Transform></Transform></Transform></Transform><ROUTE fromNode=\"wheel-sensor\" fromField=\"rotation_changed\" toNode=\"wheel-turn\" toField=\"set_rotation\"></ROUTE>"
+     (format nil "<Transform translation=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f ~,5f\"><CylinderSensor DEF=\"wheel-sensor\" id=\"wheel-sensor\" diskAngle=\"1.2\" autoOffset=\"true\" description=\"the wheel\"></CylinderSensor><Transform DEF=\"wheel-turn\" id=\"wheel-turn\"><Transform rotation=\"~,5f ~,5f ~,5f ~,5f\"><Transform translation=\"~,4f ~,4f ~,4f\">~a<Group DEF=\"horn-hit\" id=\"horn-hit\"><TouchSensor id=\"horn-touch\" DEF=\"horn-touch\" description=\"the horn — wheel amidships\"></TouchSensor>~a</Group>~a~a</Transform></Transform></Transform></Transform><ROUTE fromNode=\"wheel-sensor\" fromField=\"rotation_changed\" toNode=\"wheel-turn\" toField=\"set_rotation\"></ROUTE>"
              (get-x wc) (get-y wc) (get-z wc)
              (get-x u) (get-y u) (get-z u) phi
              (get-x u) (get-y u) (get-z u) (- phi)
@@ -1063,17 +1069,23 @@ near ring arc lost the draw and hid behind the globe."
                 (format nil "<TimeSensor DEF=\"brody-pulse\" cycleInterval=\"2.6\" loop=\"true\"></TimeSensor><ColorInterpolator DEF=\"brody-glow\" key=\"0 0.5 1\" keyValue=\"0.45 0.10 0.06 0.95 0.42 0.18 0.45 0.10 0.06\"></ColorInterpolator><Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material DEF=\"brody-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.45 0.10 0.06\" specularColor=\"0.6 0.4 0.3\" shininess=\"0.5\"></Material></Appearance><Sphere radius=\"0.022\"></Sphere></Shape></Transform><ROUTE fromNode=\"brody-pulse\" fromField=\"fraction_changed\" toNode=\"brody-glow\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"brody-glow\" fromField=\"value_changed\" toNode=\"brody-mat\" toField=\"set_emissiveColor\"></ROUTE>"
                         (get-x kc) (get-y kc) (get-z kc))))
              (the-object cab wheel-rim-x3d))
-     ;; the shifter rig: swings about the column axis at the pivot
-     (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\">~a~a</Transform>"
+     ;; the shifter rig: swings about the column axis at the pivot.
+     ;; A TouchSensor makes the grab RELIABLE -- x3dom's bare DOM
+     ;; click dispatch on scene elements is best-effort, but sensor
+     ;; output events are first-class, the same channel the wheel's
+     ;; CylinderSensor speaks.
+     (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\"><TouchSensor DEF=\"shifter-touch\" id=\"shifter-touch\" description=\"the shifter: forward, neutral, reverse\"></TouchSensor>~a~a</Transform>"
              (get-x sp) (get-y sp) (get-z sp)
              (get-x a) (get-y a) (get-z a)
              (leaf-x3d (the-object cab shifter-lever))
              (leaf-x3d (the-object cab shifter-knob)))
-     ;; the pedal rigs: clutch, brake, gas
+     ;; the pedal rigs, each with its own touch
      (apply #'string-append
             (mapcar (lambda (i)
-                      (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\">~a~a</Transform>"
-                              i i
+                      (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\"><TouchSensor DEF=\"pedal-touch-~d\" id=\"pedal-touch-~d\" description=\"~a\"></TouchSensor>~a~a</Transform>"
+                              i i i i
+                              (ecase i (0 "feather — a breath of gas")
+                                       (1 "the brake") (2 "gas — burn"))
                               (leaf-x3d (the-object cab (pedal-plates i)))
                               (leaf-x3d (the-object cab (pedal-stalks i)))))
                     (list 0 1 2))))))
@@ -1427,29 +1439,65 @@ window.togglePlot = function () {
     if (d.fieldName === 'rotation_changed') { lastAng = rotAngle(d.value); }
     else if (d.fieldName === 'isActive' &&
              (d.value === false || d.value === 'false')) {
-      if (Date.now() < suppress) return;
-      if (wheelSel) wheelSel.value = bandFor(lastAng);
+      // commit a beat late: a horn press releases through this
+      // same event, and its suppress must land first
+      setTimeout(function () {
+        if (Date.now() < suppress) return;
+        if (wheelSel) { wheelSel.value = bandFor(lastAng); readout(); }
+      }, 60);
     }
   });
-  function hook (id, fn) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('click', fn);
+  // sensor output events are the reliable interaction channel:
+  // x3dom's synthetic clicks on scene elements die to pointer
+  // jitter (a touchpad tap rarely survives its movement
+  // threshold), but TouchSensor state is first-class.  Firing on
+  // the RELEASE transition is the forgiving semantic: it lands
+  // even when the pointer wandered a few pixels mid-press.
+  function touch (sensorId, fn) {
+    var s = document.getElementById(sensorId);
+    if (!s) return;
+    s.addEventListener('outputchange', function (e) {
+      var d = e.detail; if (!d) return;
+      if (d.fieldName === 'isActive' &&
+          (d.value === false || d.value === 'false')) fn();
+    });
   }
-  hook('horn-hit', function () {
+  // the big readout in the title bar: gear letter, steerage band,
+  // and the rewind arrows when the tape runs backward
+  function readout () {
+    var el = document.getElementById('helm-readout');
+    if (!el) return;
+    var gmap = { ':FORWARD': 'D', ':NEUTRAL': 'N', ':REVERSE': 'R' };
+    var wmap = { ':HARD-PORT': 'hard port', ':EASY-PORT': 'easy port',
+                 ':AMIDSHIPS': 'amidships', ':EASY-STARBOARD': 'easy stbd',
+                 ':HARD-STARBOARD': 'hard stbd' };
+    var rw = false;
+    var tb = document.querySelectorAll('.transport-btn.lit');
+    for (var i = 0; i < tb.length; i++)
+      if (tb[i].getAttribute('data-val') === ':REWIND') rw = true;
+    el.textContent = (gearSel ? (gmap[gearSel.value] || '·') : '·')
+      + ' · ' + (wheelSel ? (wmap[wheelSel.value] || '') : '')
+      + (rw ? ' ◀◀' : '');
+  }
+  if (wheelSel) wheelSel.addEventListener('change', readout);
+  if (gearSel) gearSel.addEventListener('change', readout);
+  touch('horn-touch', function () {
     suppress = Date.now() + 400;
     lastAng = 0;
     setWheelPose(0);
     if (wheelSel) wheelSel.value = ':AMIDSHIPS';
+    readout();
   });
-  hook('shifter-rig', function () {
+  touch('shifter-touch', function () {
     if (!gearSel) return;
     var next = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
     gearSel.value = next;
     setShifterPose(gearPose[next]);
+    readout();
   });
   var pedalVals = [':FEATHER', ':BRAKE', ':BURN'];
   [0, 1, 2].forEach(function (i) {
-    hook('pedal-rig-' + i, function () {
+    touch('pedal-touch-' + i, function () {
       var rig = document.getElementById('pedal-rig-' + i);
       if (rig) {
         rig.setAttribute('translation', '0.025 0 -0.012');
@@ -1504,21 +1552,25 @@ window.togglePlot = function () {
   });
   wireFace('.transport-btn', function (b) {
     relight3d('radio-tpt', tptVals, b.getAttribute('data-val'));
+    readout();
   });
+  readout();
   function faceClick (cls, val) {
     var btns = document.querySelectorAll(cls);
     for (var i = 0; i < btns.length; i++)
       if (btns[i].getAttribute('data-val') === val) { btns[i].click(); return; }
   }
   cadVals.forEach(function (v, i) {
-    hook('radio-preset-' + i, function () { faceClick('.cadence-btn', v); });
+    touch('radio-preset-' + i + '-touch',
+          function () { faceClick('.cadence-btn', v); });
   });
   tptVals.forEach(function (v, i) {
-    hook('radio-tpt-' + i, function () { faceClick('.transport-btn', v); });
+    touch('radio-tpt-' + i + '-touch',
+          function () { faceClick('.transport-btn', v); });
   });
   // the starter posts the move -- the whole turn drives from
   // inside the scene
-  hook('starter-hit', function () {
+  touch('starter-touch', function () {
     var st = document.getElementById('starter-mat');
     if (st) st.setAttribute('emissiveColor', '0.75 0.25 0.12');
     var f = document.querySelector('#helm-body form');
@@ -1526,9 +1578,9 @@ window.togglePlot = function () {
     var sub = f.querySelector('input[type=submit]');
     if (f.requestSubmit) f.requestSubmit(sub || undefined); else f.submit();
   });
-  // what is grabbable says so: an arrow everywhere, the grab hand
-  // over the wheel, the shifter, the pedals and the horn, the
-  // plain pointer over the dash keys and the starter
+  // what is grabbable says so, straight from the sensors' own
+  // isOver: an arrow everywhere, the grab hand over wheel,
+  // shifter, pedals and horn, the plain pointer over the keys
   function setCur (c) {
     var x = document.querySelector('x3d'); if (!x) return;
     x.style.cursor = c;
@@ -1537,19 +1589,23 @@ window.togglePlot = function () {
   window.addEventListener('load', function () {
     setTimeout(function () { setCur('default'); }, 600);
   });
-  function cursorOver (ids, cur) {
-    ids.forEach(function (id) {
-      var el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('mouseover', function () { setCur(cur); });
-      el.addEventListener('mouseout', function () { setCur('default'); });
+  function overCursor (sensorId, cur) {
+    var s = document.getElementById(sensorId);
+    if (!s) return;
+    s.addEventListener('outputchange', function (e) {
+      var d = e.detail; if (!d || d.fieldName !== 'isOver') return;
+      setCur((d.value === true || d.value === 'true') ? cur : 'default');
     });
   }
-  cursorOver(['wheel-turn', 'shifter-rig', 'pedal-rig-0', 'pedal-rig-1',
-              'pedal-rig-2', 'horn-hit'], 'grab');
-  cursorOver(['radio-preset-0', 'radio-preset-1', 'radio-preset-2',
-              'radio-preset-3', 'radio-tpt-0', 'radio-tpt-1',
-              'starter-hit'], 'pointer');
+  ['wheel-sensor', 'shifter-touch', 'pedal-touch-0', 'pedal-touch-1',
+   'pedal-touch-2', 'horn-touch'].forEach(function (id) {
+    overCursor(id, 'grab');
+  });
+  ['radio-preset-0-touch', 'radio-preset-1-touch', 'radio-preset-2-touch',
+   'radio-preset-3-touch', 'radio-tpt-0-touch', 'radio-tpt-1-touch',
+   'starter-touch'].forEach(function (id) {
+    overCursor(id, 'pointer');
+  });
 })();")
 
 ;; The cab is the same for every session, so like the starfield its
@@ -1935,6 +1991,22 @@ window.togglePlot = function () {
                                    0.46 0.22)
                      (port-eye-feed-x3d)))
 
+   ;; the big readout in the helm's title bar: gear letter and
+   ;; steerage at a glance, visible even with the card folded.
+   ;; The five wheel bands are finite in-place orientation calls
+   ;; (the nose swings before the burn, no propellant charged),
+   ;; and the driver should never need a popup to know which one
+   ;; stands.
+   (helm-readout-html
+    (format nil "~a · ~a~a"
+            (case (the shifter-control value)
+              (:forward "D") (:reverse "R") (otherwise "N"))
+            (case (the wheel-control value)
+              (:hard-port "hard port") (:easy-port "easy port")
+              (:easy-starboard "easy stbd") (:hard-starboard "hard stbd")
+              (otherwise "amidships"))
+            (if (eql (the transport-control value) :rewind) " ◀◀" "")))
+
    (helm-form-html
     (with-form-string ()
       (:div :style "display:flex;flex-direction:column;gap:4px;"
@@ -2065,6 +2137,9 @@ window.togglePlot = function () {
         (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "toggleHelm()"
           (:span "THE HELM")
+          (:span :id "helm-readout"
+            :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
+            (str (the helm-readout-html)))
           (:span :id "helm-caret" "▾"))
         (:div :id "helm-body" :style "margin-top:8px;"
         (str (the helm-form-html))
