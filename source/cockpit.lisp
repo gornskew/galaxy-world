@@ -3435,6 +3435,12 @@ function toggleHelm () {
     if (!canvas) return;
     var browser = canvas.browser;
     if (!browser) { setTimeout(start, 250); return; }
+    // the worlds are unit spheres scaled enormous, and X_ITE's
+    // default MEDIUM primitive quality shows its polygons on the
+    // limb where x3dom cut finer.  Set quality before the scene
+    // builds so the first tessellation is the good one.
+    try { browser.setBrowserOption('PrimitiveQuality', 'HIGH'); } catch (e) {}
+    try { browser.setBrowserOption('TextureQuality', 'HIGH'); } catch (e) {}
     // NO early bind: asserting against the half-initialized
     // scene poisons the bind stack (see bindSeat)
     var tries = 0;
