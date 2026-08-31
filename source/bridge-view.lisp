@@ -12,8 +12,8 @@
 document order at load, so callers control binding by emission order.
 The default clip planes suit the orbital scenes; a room-sized scene
 passes its own, along with an UP to keep its floor down."
-  (format nil "<Viewpoint id=\"~a\" description=\"~a\" position=\"~a\" orientation=\"~a\" fieldOfView=\"~a\" zNear=\"~a\" zFar=\"~a\"></Viewpoint>"
-          id description (point-string position)
+  (format nil "<Viewpoint DEF=\"~a\" id=\"~a\" description=\"~a\" position=\"~a\" orientation=\"~a\" fieldOfView=\"~a\" zNear=\"~a\" zFar=\"~a\"></Viewpoint>"
+          id id description (point-string position)
           (if up
               (look-at-orientation direction up)
               (look-orientation direction))

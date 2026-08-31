@@ -3269,6 +3269,21 @@ function toggleHelm () {
         });
       } catch (e) {}
     }
+    // X_ITE's initial bind is not landing on the first viewpoint;
+    // force the driver's seat once the scene stands, and say so
+    // where a headless capture can read it
+    var dv = named('drivers-seat');
+    var note = document.getElementById('plot-frame-label');
+    if (dv) {
+      var bound = false;
+      try { dv.set_bind = true; bound = true; } catch (e) {
+        try { dv.getField('set_bind').setValue(true); bound = true; } catch (e2) {}
+      }
+      if (note) note.textContent = bound ? 'bound: drivers-seat (forced)'
+                                         : 'bind failed on drivers-seat';
+    } else if (note) {
+      note.textContent = 'no DEF drivers-seat in scene';
+    }
   }
   function start () {
     var canvas = document.querySelector('x3d-canvas');
@@ -3324,6 +3339,12 @@ function toggleHelm () {
     (string-append
      "<?xml version=\"1.0\" encoding=\"UTF-8\"?><X3D profile=\"Immersive\" version=\"4.0\"><Scene>"
      "<Background skyColor=\"0 0 0.012\"></Background>"
+     ;; the whole world rides one wrapper that stands our z-up cab
+     ;; into X3D's y-up convention: X_ITE straightens the horizon
+     ;; to +Y (x3dom never cared), and WebXR headsets are y-up by
+     ;; decree -- viewpoints rotate with everything else, so every
+     ;; relationship inside stands
+     "<Transform rotation=\"1 0 0 -1.5708\">"
      (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
      (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"sky-drift\">~a</Transform></Transform>"
              (- (the sky-authored-heading-rad))
@@ -3337,7 +3358,7 @@ function toggleHelm () {
      (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
-     "</Scene></X3D>"))
+     "</Transform></Scene></X3D>"))
 
    (body
     (with-lhtml-string ()
