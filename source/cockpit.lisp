@@ -2070,6 +2070,7 @@ function toggleHelm () {
                   :default :coast
                   :choice-plist (list :coast "clutch in — coast"
                                       :gas "gas — burn"
+                                      :feather "feather — a breath of gas"
                                       :brake "brake")))
 
   :functions
@@ -2380,7 +2381,9 @@ function toggleHelm () {
                (heading (mod (+ (the heading-deg) turn) 360))
                (rad (deg->rad heading))
                (flip (if (eql gear :reverse) -1 1))
-               (dv (if (eql pedal :gas) 0.5 0))
+               ;; the full pedal is a real kick; feather is the
+               ;; light foot close work needs
+               (dv (case pedal (:gas 0.5) (:feather 0.1) (t 0)))
                ;; the scope of a move: a minute of close work up to
                ;; a full day in overdrive -- Space Travel's lesson
                ;; that scale and clock are one lever
@@ -2425,11 +2428,11 @@ function toggleHelm () {
                                     contact-speed +landing-speed-cap+))
                            ((eql pedal :brake)
                             "the brake presses beautifully and does nothing — space doesn't brake")
-                           ((and (eql pedal :gas) (> alignment 0.5))
+                           ((and (plusp dv) (> alignment 0.5))
                             "burn along the road — more speed, and the far side of the orbit rises")
-                           ((and (eql pedal :gas) (< alignment -0.5))
+                           ((and (plusp dv) (< alignment -0.5))
                             "burn against the road — less speed, and the far side falls")
-                           ((eql pedal :gas)
+                           ((plusp dv)
                             "a sideways shove — the road tilts; speed hardly changes")
                            (t "coasting — falling around the world; that curve IS the orbit"))))
           (cond (down?
@@ -2454,13 +2457,14 @@ function toggleHelm () {
                  (the (set-slot! :vel-y (second state)))
                  (the (set-slot! :pos-x (third state)))
                  (the (set-slot! :pos-y (fourth state)))))
-          (the (set-slot! :last-burn (cond ((or contact? (not (eql pedal :gas))) :none)
+          (the (set-slot! :last-burn (cond ((or contact? (zerop dv)) :none)
                                            ((eql gear :reverse) :retro)
                                            (t :forward))))
           (the (set-slot! :moves-count (1+ (the moves-count))))
           (the (set-slot! :last-move-note note))
           (tally! :moves)
-          (tally! (ecase pedal (:gas :burns) (:coast :coasts) (:brake :brakes)))
+          (tally! (ecase pedal (:gas :burns) (:feather :feathers)
+                         (:coast :coasts) (:brake :brakes)))
           (when crashed? (tally! :crashes))
           (when down?
             (tally! :landings)
@@ -2529,6 +2533,8 @@ function toggleHelm () {
              (the (set-slot! :last-move-note
                              (cond ((eql pedal :brake)
                                     "the brake presses beautifully, and he is already stopped")
+                                   ((eql pedal :feather)
+                                    "a breath of gas stirs the dust -- it takes the full pedal to climb")
                                    (t (format nil "down on ~a, engines cold -- the world turns under him.  Gas to climb"
                                               (the world-name))))))))
       (the (set-slot! :moves-count (1+ (the moves-count))))
