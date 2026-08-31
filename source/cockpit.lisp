@@ -31,11 +31,13 @@
   (;; the column's axis, pointing up and back toward the driver
    (column-axis (let ((theta +wheel-rake+))
                   (make-vector (- (cos theta)) 0 (sin theta))))
-   (wheel-center (make-point 0.42 0 0.44))
+   ;; the wheel sits smaller and lower than the classic it started
+   ;; as: the dials read through it and the glass gets its vertical
+   (wheel-center (make-point 0.42 0 0.41))
    ;; in-plane frame of the wheel: across, and up-forward
    (wheel-across (make-vector 0 1 0))
    (wheel-up (cross-vectors (the wheel-across) (the column-axis)))
-   (wheel-radius 0.20)
+   (wheel-radius 0.16)
    (shifter-pivot (add-vectors (the wheel-center)
                                (scalar*vector -0.14 (the column-axis))))
 
@@ -86,18 +88,18 @@
     (theta)  ; horizontal tangent along the sweep
     (make-vector (- (sin theta)) (cos theta) 0))
 
-   ;; the leather-wrapped rim: cut as a fine smooth-shaded mesh
-   ;; rather than the stock faceted torus, so the wrap can carry a
-   ;; grain and the silhouette stays round
+   ;; the rim, translucent now: the leather wrap is gone so the
+   ;; gauges read straight through the wheel.  Still a fine
+   ;; smooth-shaded mesh so the silhouette stays round.
    (wheel-rim-x3d
     ()
     (torus-x3d :center (the wheel-center)
                :axis (the column-axis)
                :across (the wheel-across)
                :major-radius (the wheel-radius)
-               :minor-radius 0.013
-               :texture-id "leather-tex"
-               :fallback-color "0.42 0.27 0.14")))
+               :minor-radius 0.011
+               :fallback-color "0.72 0.82 0.88"
+               :transparency 0.55)))
 
   :objects
   (;; the shell of the room: floor, bench, instrument panel
@@ -173,11 +175,9 @@
                          :radius 0.047
                     :number-of-sections 24
                          :display-controls (list :color +gauge-face+))
-   (starboard-gauge-needle :type 'c-cylinder
-                           :start (make-point 0.715 -0.19 0.452)
-                           :end (make-point 0.715 -0.218 0.486)
-                           :radius 0.0025
-                           :display-controls (list :color +needle+))
+   ;; the starboard gauge's needle is NOT here any more: it is the
+   ;; climb gauge now, reading the session's own radial speed, so
+   ;; like the speedo and compass needles it renders per cockpit
 
    ;; the eye displays: two flatscreens in the instrument panel,
    ;; fed by the basilisk's own port and starboard reptile eyes.
@@ -378,6 +378,17 @@
              :height 0.63
              :display-controls (list :color +paint+))
 
+   ;; the cowl closeout: the sheet metal between the firewall top
+   ;; and the windshield sill.  Without it the front corners past
+   ;; the panel's ends opened straight to the stars -- the void
+   ;; that looked like a malformed third flatscreen.
+   (cowl-closeout :type 'box
+                  :center (make-point 0.90 -0.36 0.415)
+                  :width 0.11
+                  :length 1.70
+                  :height 0.28
+                  :display-controls (list :color +paint+))
+
    ;; the rear window: no truck bed back there -- the rest of him,
    ;; one day, looming
    (rear-sill :type 'c-cylinder
@@ -448,6 +459,21 @@
                                   (2 pi))))
            :radius 0.008
            :display-controls (list :color +chrome+))
+
+   ;; the brody knob: the one-handed way to spin her, riding the
+   ;; rim at the upper port quarter.  It turns with the wheel and
+   ;; grabs like the wheel -- it lives inside the same sensor rig.
+   (brody-stalk :type 'c-cylinder
+                :start (the (rim-point (deg->rad 45)))
+                :end (add-vectors (the (rim-point (deg->rad 45)))
+                                  (scalar*vector 0.035 (the column-axis)))
+                :radius 0.005
+                :display-controls (list :color +chrome+))
+   (brody-knob :type 'sphere
+               :center (add-vectors (the (rim-point (deg->rad 45)))
+                                    (scalar*vector 0.045 (the column-axis)))
+               :radius 0.021
+               :display-controls (list :color +needle+))
 
    ;; three on the tree, honestly now: forward, neutral, reverse.
    ;; The clutch lives up here since neutral took over its work.
@@ -789,7 +815,8 @@ near ring arc lost the draw and hid behind the globe."
 (defun torus-x3d (&key center axis across major-radius minor-radius
                        (major-sections 96) (minor-sections 20)
                        (u-repeats 8) texture-id
-                       (fallback-color "0.8 0.8 0.8"))
+                       (fallback-color "0.8 0.8 0.8")
+                       (transparency 0))
   (let* ((a (unitize-vector axis))
          (u (unitize-vector across))
          (v (cross-vectors u a))
@@ -815,8 +842,14 @@ near ring arc lost the draw and hid behind the globe."
       (dotimes (j m)
         (let ((p00 (+ (* i (1+ m)) j)))
           (format idx "~d ~d ~d ~d -1 " p00 (+ p00 m 1) (+ p00 m 2) (1+ p00)))))
-    (format nil "<Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\"></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
-            texture-id fallback-color
+    (format nil "<Shape><Appearance>~a<Material diffuseColor=\"~a\"~a></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate><TextureCoordinate point=\"~a\"></TextureCoordinate></IndexedFaceSet></Shape>"
+            (if texture-id
+                (format nil "<ImageTexture id=\"~a\" url=\"\"></ImageTexture>" texture-id)
+                "")
+            fallback-color
+            (if (plusp transparency)
+                (format nil " transparency=\"~,2f\" specularColor=\"0.5 0.55 0.6\" shininess=\"0.6\"" transparency)
+                "")
             (get-output-stream-string idx)
             (get-output-stream-string points)
             (get-output-stream-string texs))))
@@ -981,9 +1014,12 @@ near ring arc lost the draw and hid behind the globe."
              (- (get-x wc)) (- (get-y wc)) (- (get-z wc))
              (leaf-x3d (the-object cab wheel-hub))
              (leaf-x3d (the-object cab horn-button))
-             (apply #'string-append
-                    (mapcar #'leaf-x3d
-                            (list-elements (the-object cab spokes))))
+             (string-append
+              (apply #'string-append
+                     (mapcar #'leaf-x3d
+                             (list-elements (the-object cab spokes))))
+              (leaf-x3d (the-object cab brody-stalk))
+              (leaf-x3d (the-object cab brody-knob)))
              (the-object cab wheel-rim-x3d))
      ;; the shifter rig: swings about the column axis at the pivot
      (format nil "<Transform DEF=\"shifter-rig\" id=\"shifter-rig\" center=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f 0\">~a~a</Transform>"
@@ -1124,6 +1160,49 @@ window.togglePlot = function () {
         ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, 2*Math.PI);
         ctx.fillStyle = '#ffffff'; ctx.fill();
       }
+    }
+    // on final the whole-world view has no pixels for the last few
+    // hundred km -- the landing inset zooms on the neighborhood:
+    // the surface, the sky line, the nose, and the velocity arrow
+    // (green while she is under the speed the surface forgives)
+    if (!O.landed && O.alt !== undefined && O.alt < O.closeAlt) {
+      var lr = Math.round(W * 0.26), lcx = lr + 8, lcy = lr + 8;
+      var lview = Math.max(O.alt * 2.5, 150);
+      var ls = (lr - 8) / lview;
+      function lpx (x) { return lcx + (x - O.x) * ls; }
+      function lpy (y) { return lcy - (y - O.y) * ls; }
+      ctx.save();
+      ctx.beginPath(); ctx.arc(lcx, lcy, lr, 0, 2*Math.PI);
+      ctx.fillStyle = 'rgba(6,6,10,0.92)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(232,200,57,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.save(); ctx.clip();
+      ctx.beginPath(); ctx.arc(lpx(0), lpy(0), O.worldR * ls, 0, 2*Math.PI);
+      ctx.fillStyle = col(O.color); ctx.fill();
+      ctx.beginPath(); ctx.arc(lpx(0), lpy(0), O.skyR * ls, 0, 2*Math.PI);
+      ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(224,112,80,0.8)';
+      ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+      var spd = Math.sqrt(O.vx*O.vx + O.vy*O.vy);
+      if (spd > 0.001) {
+        var al = 10 + Math.min(26, spd * 24);
+        var ux = O.vx / spd, uy = O.vy / spd;
+        ctx.beginPath(); ctx.moveTo(lcx, lcy);
+        ctx.lineTo(lcx + al*ux, lcy - al*uy);
+        ctx.strokeStyle = spd <= O.capKps ? '#5fbf6f' : '#e07050';
+        ctx.lineWidth = 2; ctx.stroke();
+      }
+      var lh = O.heading * Math.PI/180;
+      ctx.beginPath(); ctx.moveTo(lcx, lcy);
+      ctx.lineTo(lcx + 9*Math.cos(lh), lcy - 9*Math.sin(lh));
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(lcx, lcy, 2.5, 0, 2*Math.PI);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#e8c839'; ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.round(O.alt).toLocaleString('en-US') + ' km up, ' +
+                   spd.toFixed(2) + ' km/s', lcx, lcy + lr - 6);
+      ctx.textAlign = 'start';
+      ctx.restore();
     }
     label(O.frame + ' frame \\u2014 km');
     coords(O.x, O.y, false, O.frame);
@@ -1366,6 +1445,23 @@ window.togglePlot = function () {
     if (s) s.textContent = stations[b.getAttribute('data-val')] || '';
   });
   wireFace('.transport-btn');
+  // what is grabbable says so: an arrow everywhere, the grab hand
+  // only over the wheel, the shifter, the pedals and the horn
+  function setCur (c) {
+    var x = document.querySelector('x3d'); if (!x) return;
+    x.style.cursor = c;
+    var cv = x.querySelector('canvas'); if (cv) cv.style.cursor = c;
+  }
+  window.addEventListener('load', function () {
+    setTimeout(function () { setCur('default'); }, 600);
+  });
+  ['wheel-turn', 'shifter-rig', 'pedal-rig-0', 'pedal-rig-1',
+   'pedal-rig-2', 'horn-hit'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('mouseover', function () { setCur('grab'); });
+    el.addEventListener('mouseout', function () { setCur('default'); });
+  });
 })();")
 
 ;; The cab is the same for every session, so like the starfield its
@@ -1487,9 +1583,12 @@ window.togglePlot = function () {
    ;; sun's for the outbound legs).
    (plan-json
     (with-output-to-string (out)
-      (format out "{\"orbit\":{\"frame\":~s,\"worldR\":~,1f,\"skyR\":~,1f,\"ringR\":~,1f,\"x\":~,1f,\"y\":~,1f,\"heading\":~,2f,\"landed\":~a,\"color\":~s"
+      (format out "{\"orbit\":{\"frame\":~s,\"worldR\":~,1f,\"skyR\":~,1f,\"ringR\":~,1f,\"x\":~,1f,\"y\":~,1f,\"vx\":~,4f,\"vy\":~,4f,\"alt\":~,1f,\"closeAlt\":~,1f,\"capKps\":~,2f,\"heading\":~,2f,\"landed\":~a,\"color\":~s"
               (the world-name) (the world-radius) (the world-sky)
-              (the world-ring) (the pos-x) (the pos-y) (the heading-deg)
+              (the world-ring) (the pos-x) (the pos-y)
+              (the vel-x) (the vel-y) (the altitude)
+              (* 0.5 (the world-radius)) +landing-speed-cap+
+              (the heading-deg)
               (if (the landed?) "true" "false")
               (world-figure (the world) :diffuse))
       (if (and (the semi-major) (the eccentricity))
@@ -1717,6 +1816,37 @@ window.togglePlot = function () {
    (speedo-phi (+ -120 (* 240 (min 1 (/ (the speed)
                                         (the speedo-full-scale))))))
 
+   ;; the climb gauge (the starboard dial): radial speed, signed --
+   ;; level rides 9 o'clock, climb swings toward noon, descent
+   ;; toward the floor.  The landing instrument: hold the fall
+   ;; gentle and the surface forgives the rest.
+   (radial-speed (if (or (the landed?) (< (the radius) 1))
+                     0
+                     (/ (+ (* (the pos-x) (the vel-x))
+                           (* (the pos-y) (the vel-y)))
+                        (the radius))))
+   (vario-phi (+ -90 (* 60 (min 1 (max -1 (/ (the radial-speed) 1.5))))))
+
+   ;; close aboard: under half a world-radius of altitude the plot
+   ;; grows and gains its landing inset, and the port flatscreen
+   ;; becomes the landing eye
+   (plot-close? (and (not (the landed?))
+                     (< (the altitude) (* 0.5 (the world-radius)))))
+   (plot-size (if (the plot-close?) 340 210))
+
+   ;; the port flatscreen: the port reptile eye on the open road;
+   ;; on final -- and on the ground -- it gazes at the world
+   ;; instead, the landing eye watching the surface come up
+   (port-feed-x3d (if (or (the plot-close?) (the landed?))
+                     (eye-feed-x3d "0 0 0.6"
+                                   (look-at-orientation
+                                    (make-vector (cos (the planet-bearing))
+                                                 (sin (the planet-bearing))
+                                                 0)
+                                    (make-vector 0 0 1))
+                                   0.46 0.22)
+                     (port-eye-feed-x3d)))
+
    (helm-form-html
     (with-form-string ()
       (:div :style "display:flex;flex-direction:column;gap:4px;"
@@ -1767,7 +1897,10 @@ window.togglePlot = function () {
              (cons :drivers-seat
                    (viewpoint-x3d "drivers-seat" "Driver's seat"
                                   (make-point -0.02 0 0.78)
-                                  (make-vector 0.97 0 -0.24)
+                                  ;; lifted from -0.24: the wheel is
+                                  ;; smaller and lower now, so the
+                                  ;; glass gets the vertical back
+                                  (make-vector 0.99 0 -0.15)
                                   "1.15" :z-near "0.05" :z-far "8000" :up up))
              (cons :jump-seat
                    (viewpoint-x3d "jump-seat" "Jump seat"
@@ -1810,7 +1943,8 @@ window.togglePlot = function () {
             (str (dice-x3d (the dice-lean)))
             (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
             (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-            (str (port-eye-feed-x3d))
+            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+            (str (the port-feed-x3d))
             (str (starboard-eye-feed-x3d)))))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "port-lookout-btn" :type "button" :onclick "bindEye('port-lookout')"
@@ -1881,7 +2015,9 @@ window.togglePlot = function () {
           (:span "THE PLOT")
           (:span :id "plot-caret" "▾"))
         (:div :id "plot-body" :style "margin-top:6px;"
-          (:canvas :id "plot-canvas" :width "210" :height "210"
+          (:canvas :id "plot-canvas"
+            :width (format nil "~d" (the plot-size))
+            :height (format nil "~d" (the plot-size))
             :style "display:block;")
           (:div :id "plot-coords"
             :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
