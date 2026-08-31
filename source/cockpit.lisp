@@ -642,12 +642,17 @@ pole-spin clock.  SCALE-OVERRIDE authors a different scale than the
 subtended one -- a voyage page hides a body until its clock's first
 key sets the true size.  ADORNMENT is extra markup riding the frame
 in body-radius units (Saturn's rings), and TILT leans body and
-adornment together so a ring plane shows itself from the cockpit."
+adornment together so a ring plane shows itself from the cockpit.
+The sphere's appearance declares itself opaque: the painted canvas
+faces are RGBA data urls, and without the declaration the renderer
+sorts the globe among the transparent shapes -- whose order goes by
+shape center, and a ring's center IS the globe's center, so the
+near ring arc lost the draw and hid behind the globe."
   (multiple-value-bind (tx ty s)
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
              prefix texture-id diffuse emissive
