@@ -1009,9 +1009,11 @@ window.togglePlot = function () {
     return Math.round(v).toLocaleString('en-US') + ' km';
   }
   function coords (x, y, mkm, frame) {
-    var el = document.getElementById('coords-line'); if (!el) return;
-    el.textContent = 'x ' + fmtKm(x, mkm) + ' \\u00b7 y ' + fmtKm(y, mkm) +
-                     ' \\u2014 ' + frame + ' frame';
+    var line = 'x ' + fmtKm(x, mkm) + ' \\u00b7 y ' + fmtKm(y, mkm);
+    var pc = document.getElementById('plot-coords');
+    if (pc) pc.textContent = line;
+    var el = document.getElementById('coords-line');
+    if (el) el.textContent = line + ' \\u2014 ' + frame + ' frame';
   }
   function label (t) {
     var el = document.getElementById('plot-frame-label');
@@ -1703,8 +1705,10 @@ window.togglePlot = function () {
         (:div :id "plot-body" :style "margin-top:6px;"
           (:canvas :id "plot-canvas" :width "210" :height "210"
             :style "display:block;")
+          (:div :id "plot-coords"
+            :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
           (:div :id "plot-frame-label"
-            :style "font-size:10px;color:#c9a227;margin-top:3px;")))
+            :style "font-size:10px;color:#c9a227;margin-top:2px;")))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit")
       ;; the paint shop: the world's face, the leather, and the wood
