@@ -976,6 +976,175 @@ near ring arc lost the draw and hid behind the globe."
                               (leaf-x3d (the-object cab (pedal-stalks i)))))
                     (list 0 1 2))))))
 
+;; The plot: draws GW_PLAN on the plan-view canvas.  Orbit pages
+;; draw the world, the ring, the road's conic and the ship once;
+;; voyage pages fly the dot along the sampled road, following the
+;; scene's own voyage clock, and write the ship's coordinates onto
+;; the helm as they change -- then settle onto the arrival orbit.
+(defparameter *plan-view-js* "
+window.togglePlot = function () {
+  var b = document.getElementById('plot-body');
+  var collapsed = b.style.display === 'none';
+  b.style.display = collapsed ? '' : 'none';
+  document.getElementById('plot-caret').textContent = collapsed ? '\\u25be' : '\\u25b8';
+  try { sessionStorage.setItem('gw-plot-collapsed', collapsed ? '0' : '1'); } catch (e) {}
+};
+(function () {
+  try {
+    if (sessionStorage.getItem('gw-plot-collapsed') === '1') {
+      document.getElementById('plot-body').style.display = 'none';
+      document.getElementById('plot-caret').textContent = '\\u25b8';
+    }
+  } catch (e) {}
+  var P = window.GW_PLAN; if (!P) return;
+  var cv = document.getElementById('plot-canvas'); if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
+  function col (s) {
+    var p = s.split(/\\s+/).map(parseFloat);
+    return 'rgb(' + Math.round(p[0]*255) + ',' + Math.round(p[1]*255) + ',' + Math.round(p[2]*255) + ')';
+  }
+  function fmtKm (v, mkm) {
+    if (mkm) return (v / 1e6).toFixed(2) + ' Mkm';
+    return Math.round(v).toLocaleString('en-US') + ' km';
+  }
+  function coords (x, y, mkm, frame) {
+    var el = document.getElementById('coords-line'); if (!el) return;
+    el.textContent = 'x ' + fmtKm(x, mkm) + ' \\u00b7 y ' + fmtKm(y, mkm) +
+                     ' \\u2014 ' + frame + ' frame';
+  }
+  function label (t) {
+    var el = document.getElementById('plot-frame-label');
+    if (el) el.textContent = t;
+  }
+  function disk (x, y, r, s, fill, minPx) {
+    ctx.beginPath();
+    ctx.arc(cx + x*s, cy - y*s, Math.max(r*s, minPx || 1.5), 0, 2*Math.PI);
+    ctx.fillStyle = fill; ctx.fill();
+  }
+  function ship (x, y, hRad, s) {
+    var px = cx + x*s, py = cy - y*s;
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, 2*Math.PI);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px, py);
+    ctx.lineTo(px + 8*Math.cos(hRad), py - 8*Math.sin(hRad));
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  var O = P.orbit;
+  function drawOrbit () {
+    ctx.clearRect(0, 0, W, H);
+    var ext = O.ringR * 1.15;
+    if (O.a !== null && O.a !== undefined) {
+      var apo = O.a * (1 + O.e);
+      if (apo > 0 && apo * 1.08 > ext) ext = apo * 1.08;
+    }
+    var rr = Math.sqrt(O.x*O.x + O.y*O.y);
+    if (rr * 1.15 > ext) ext = rr * 1.15;
+    var s = (W/2 - 8) / ext;
+    ctx.beginPath(); ctx.arc(cx, cy, O.ringR*s, 0, 2*Math.PI);
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(232,200,57,0.45)';
+    ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+    disk(0, 0, O.worldR, s, col(O.color), 2.5);
+    if (O.moon && Math.abs(O.moon.x)*s < W/2) disk(O.moon.x, O.moon.y, O.moon.r, s, '#9a9a94', 2);
+    if (O.a !== null && O.a !== undefined && !O.landed) {
+      var p = O.a * (1 - O.e*O.e);
+      ctx.beginPath(); var started = false;
+      for (var nu = 0; nu <= 2*Math.PI + 0.001; nu += 0.02) {
+        var denom = 1 + O.e * Math.cos(nu);
+        if (denom <= 0.05) { started = false; continue; }
+        var r = p / denom, th = O.peri + nu;
+        var px = cx + r*Math.cos(th)*s, py = cy - r*Math.sin(th)*s;
+        if (started) ctx.lineTo(px, py); else { ctx.moveTo(px, py); started = true; }
+      }
+      ctx.strokeStyle = '#e8c839'; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    ship(O.x, O.y, O.heading * Math.PI/180, s);
+    label(O.frame + ' frame \\u2014 km');
+    coords(O.x, O.y, false, O.frame);
+  }
+  var V = P.voyage;
+  if (!V) { drawOrbit(); return; }
+  // frame the whole road and every rider: the view centers on the
+  // track's own bounding box, not the frame's origin
+  var S = V.samples;
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  function grow (x, y) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  S.forEach(function (sm) { grow(sm[2], sm[3]); });
+  V.bodies.forEach(function (b) {
+    b.targets.forEach(function (t) { grow(t[0], t[1]); });
+  });
+  var oxW = (minX + maxX) / 2, oyW = (minY + maxY) / 2;
+  var span = Math.max(maxX - minX, maxY - minY, 1) / 2;
+  var vs = (W/2 - 10) / (span * 1.12), mkm = span > 2.5e6;
+  function vpx (x) { return cx + (x - oxW) * vs; }
+  function vpy (y) { return cy - (y - oyW) * vs; }
+  function vDisk (x, y, r, fill, minPx) {
+    ctx.beginPath();
+    ctx.arc(vpx(x), vpy(y), Math.max(r * vs, minPx || 1.5), 0, 2*Math.PI);
+    ctx.fillStyle = fill; ctx.fill();
+  }
+  function seg (f) {
+    if (f <= S[0][0]) return { i: 0, t: 0 };
+    for (var i = 0; i < S.length - 1; i++) {
+      if (f <= S[i+1][0]) {
+        var span = S[i+1][0] - S[i][0];
+        return { i: i, t: span < 1e-9 ? 0 : (f - S[i][0]) / span };
+      }
+    }
+    return { i: S.length - 2, t: 1 };
+  }
+  function drawVoyage (f) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath();
+    S.forEach(function (sm, i) {
+      if (i) ctx.lineTo(vpx(sm[2]), vpy(sm[3]));
+      else ctx.moveTo(vpx(sm[2]), vpy(sm[3]));
+    });
+    ctx.strokeStyle = 'rgba(232,200,57,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+    if (mkm) vDisk(0, 0, 1, '#ffd76a', 2.5);
+    var st = seg(f);
+    V.bodies.forEach(function (b) {
+      var t0 = b.targets[st.i],
+          t1 = b.targets[Math.min(st.i + 1, b.targets.length - 1)];
+      vDisk(t0[0] + (t1[0]-t0[0])*st.t, t0[1] + (t1[1]-t0[1])*st.t,
+            b.r, '#9a9a94', 2.2);
+    });
+    var s0 = S[st.i], s1 = S[Math.min(st.i + 1, S.length - 1)];
+    var x = s0[2] + (s1[2]-s0[2])*st.t, y = s0[3] + (s1[3]-s0[3])*st.t,
+        h = s0[1] + (s1[1]-s0[1])*st.t;
+    var px = vpx(x), py = vpy(y);
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, 2*Math.PI);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px, py);
+    ctx.lineTo(px + 8*Math.cos(h), py - 8*Math.sin(h));
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+    label(V.frame + ' frame \\u2014 ' + (mkm ? 'Mkm' : 'km'));
+    coords(x, y, mkm, V.frame);
+  }
+  // ride the same wall clock the voyage script starts the scene's
+  // TimeSensor on: GW_VOYAGE_T0 appears at window load on a fresh
+  // voyage, and is null when the scene snapped to arrival
+  function animate () {
+    function step () {
+      var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
+      if (f >= 1) { drawVoyage(1); setTimeout(drawOrbit, 900); return; }
+      drawVoyage(f < 0 ? 0 : f);
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var polled = Date.now();
+  drawVoyage(1);
+  (function waitClock () {
+    if (typeof window.GW_VOYAGE_T0 === 'number') { animate(); return; }
+    if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { drawOrbit(); return; }
+    setTimeout(waitClock, 100);
+  })();
+})();")
+
 ;; The hands on the helm: drags and clicks on the rigs mirror into
 ;; the form controls, which stay the readout and the fallback -- the
 ;; move still posts through make the move and the same after-set!
@@ -1175,6 +1344,67 @@ near ring arc lost the draw and hid behind the globe."
                              (deg->rad (the heading-deg)) +moon-x+ 0))
    (moon-distance (dist-to (the pos-x) (the pos-y) +moon-x+ 0))
 
+   ;; where periapsis points: the eccentricity vector's angle, so
+   ;; the plot can lay the road's true shape on the table
+   (peri-angle (let* ((x (the pos-x)) (y (the pos-y))
+                      (vx (the vel-x)) (vy (the vel-y))
+                      (mu (the world-mu)) (r (the radius))
+                      (v2 (+ (* vx vx) (* vy vy)))
+                      (rv (+ (* x vx) (* y vy)))
+                      (ex (/ (- (* (- v2 (/ mu r)) x) (* rv vx)) mu))
+                      (ey (/ (- (* (- v2 (/ mu r)) y) (* rv vy)) mu))
+                      (em (sqrt (+ (* ex ex) (* ey ey)))))
+                 (if (< em 1e-6) 0.0 (atan ey ex))))
+
+   ;; the plot's data, one JSON object per page: the orbit block is
+   ;; the ship's state in the world's frame (Cartesian km, origin at
+   ;; the world's center -- the truth the game integrates); a voyage
+   ;; page adds the sampled road and every riding body's track in
+   ;; the frame the road was cut in (home's for the moon road, the
+   ;; sun's for the outbound legs).
+   (plan-json
+    (with-output-to-string (out)
+      (format out "{\"orbit\":{\"frame\":~s,\"worldR\":~,1f,\"skyR\":~,1f,\"ringR\":~,1f,\"x\":~,1f,\"y\":~,1f,\"heading\":~,2f,\"landed\":~a,\"color\":~s"
+              (the world-name) (the world-radius) (the world-sky)
+              (the world-ring) (the pos-x) (the pos-y) (the heading-deg)
+              (if (the landed?) "true" "false")
+              (world-figure (the world) :diffuse))
+      (if (and (the semi-major) (the eccentricity))
+          (format out ",\"a\":~,1f,\"e\":~,5f,\"peri\":~,5f"
+                  (the semi-major) (the eccentricity) (the peri-angle))
+          (format out ",\"a\":null"))
+      (when (eql (the world) :home)
+        (format out ",\"moon\":{\"x\":~,1f,\"y\":0,\"r\":~,1f}"
+                +moon-x+ +moon-radius+))
+      (format out "}")
+      (when (the transit-samples)
+        (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~d,\"samples\":["
+                (if (eql (the transit-target) :moon) "home" "the sun's")
+                (if (eql (the transit-target) :moon) 90 120))
+        (loop for s in (the transit-samples)
+              for first = t then nil
+              do (destructuring-bind (k h px py) s
+                   (format out "~:[,~;~][~,4f,~,4f,~,1f,~,1f]"
+                           first k h px py)))
+        (format out "],\"bodies\":[")
+        (loop for b in (the transit-bodies)
+              for first = t then nil
+              do (format out "~:[,~;~]{\"name\":~s,\"r\":~,1f,\"targets\":["
+                         first (getf b :prefix) (getf b :radius))
+                 (loop for tg in (getf b :targets)
+                       for f2 = t then nil
+                       do (format out "~:[,~;~][~,1f,~,1f]"
+                                  f2 (first tg) (second tg)))
+                 (format out "]}"))
+        (format out "]}"))
+      (format out "}")))
+
+   ;; the coordinates line the helm carries at all times; the plot
+   ;; script rewrites it live while a voyage flies
+   (coords-line-html
+    (format nil "x ~:d km &middot; y ~:d km &mdash; ~a frame"
+            (round (the pos-x)) (round (the pos-y)) (the world-name)))
+
    ;; the sampled road of a just-flown programmed voyage, or nil.
    ;; Set by the road functions, cleared by the next hand-flown
    ;; move; while set, the page carries the voyage animation.
@@ -1293,6 +1523,7 @@ near ring arc lost the draw and hid behind the globe."
   var key = 'gw-voyage-~a-~d', played = false;
   try { played = !!sessionStorage.getItem(key); } catch (e) {}
   if (played) {
+    window.GW_VOYAGE_T0 = null;
     var fin = ~a;
     fin.forEach(function (f) {
       var el = document.getElementById(f[0]);
@@ -1310,6 +1541,7 @@ near ring arc lost the draw and hid behind the globe."
     window.addEventListener('load', function () {
       var ts = document.getElementById('voyage-clock');
       if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
+      window.GW_VOYAGE_T0 = Date.now() + 1000;
       setTimeout(function () {
         var amb = document.getElementById('ambient-clock');
         if (amb) {
@@ -1423,7 +1655,7 @@ near ring arc lost the draw and hid behind the globe."
       (:style (str "
 #helm-body select { background:rgba(16,16,16,0.6); color:#e8c839; border:1px solid #7a6a1f; border-radius:6px; padding:2px 4px; font-size:12px; }
 #helm-body select option { background:#1a1a1a; color:#e8c839; }"))
-      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;"
+      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
         (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "toggleHelm()"
           (:span "THE HELM")
@@ -1436,6 +1668,8 @@ near ring arc lost the draw and hid behind the globe."
                     (fmt "falling around: ~a" (the world-name))))
           (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
           (:div (fmt "speed: ~,2f km/s" (the speed)))
+          (:div :id "coords-line" :style "font-size:11px;color:#c9a227;"
+            (str (the coords-line-html)))
           ;; on the ground there is no road to describe -- the world
           ;; itself holds him
           (if (the landed?)
@@ -1456,6 +1690,21 @@ near ring arc lost the draw and hid behind the globe."
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
             (str (the last-move-note))))))
+      ;; THE PLOT: the plan view every real ship keeps beside the
+      ;; glass -- the world's frame from above, the road's true
+      ;; shape, the ship a point with her nose drawn on.  A voyage
+      ;; page flies the dot along the sampled road in step with the
+      ;; scene's own clock.
+      (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "togglePlot()"
+          (:span "THE PLOT")
+          (:span :id "plot-caret" "▾"))
+        (:div :id "plot-body" :style "margin-top:6px;"
+          (:canvas :id "plot-canvas" :width "210" :height "210"
+            :style "display:block;")
+          (:div :id "plot-frame-label"
+            :style "font-size:10px;color:#c9a227;margin-top:3px;")))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit")
       ;; the paint shop: the world's face, the leather, and the wood
@@ -1673,6 +1922,8 @@ function toggleHelm () {
     });
   });
 })();")
+        (str (format nil "var GW_PLAN = ~a;" (the plan-json)))
+        (str *plan-view-js*)
         (str *helm-hands-js*)
         (str (the voyage-script-js)))))
 
