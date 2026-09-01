@@ -1253,6 +1253,19 @@ window.GW_DRAW = function () {
     pc.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:9;background:rgba(8,10,16,0.5);border:1px solid rgba(232,200,57,0.85);border-radius:12px;padding:10px 14px;font-family:sans-serif;color:#e8c839;';
     var s = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.6);
     cv.width = cv.height = Math.max(300, Math.min(640, s));
+    // the state block describes the road's END while the clip
+    // flies: dim it and say so, in the plotted blue -- gold and
+    // full strength come back with the arrival
+    var hs = document.getElementById('helm-state');
+    if (hs && !document.getElementById('gw-anticipated')) {
+      GW_DRAW.hud.hsOp = hs.style.opacity;
+      hs.style.opacity = '0.55';
+      var tag = document.createElement('div');
+      tag.id = 'gw-anticipated';
+      tag.style.cssText = 'font-size:10px;letter-spacing:0.08em;color:#8ea0cf;font-style:italic;';
+      tag.textContent = '\\u2014 the road\\u2019s end, as plotted \\u2014';
+      hs.insertBefore(tag, hs.firstChild);
+    }
   }
   function hudOff () {
     var hstate = GW_DRAW.hud; if (!hstate) return;
@@ -1262,6 +1275,10 @@ window.GW_DRAW = function () {
     if (pc) pc.style.cssText = hstate.css;
     if (b) b.style.display = hstate.bodyDisp;
     if (hstate.cv === cv) { cv.width = hstate.w; cv.height = hstate.h; }
+    var hs = document.getElementById('helm-state');
+    if (hs) hs.style.opacity = hstate.hsOp || '';
+    var tag = document.getElementById('gw-anticipated');
+    if (tag && tag.parentNode) tag.parentNode.removeChild(tag);
   }
   function col (s) {
     var p = s.split(/\\s+/).map(parseFloat);
@@ -2803,7 +2820,11 @@ function toggleHelm () {
           (:span :id "helm-caret" "▾"))
         (:div :id "helm-body" :style "margin-top:8px;"
         (str (the helm-form-html))
-        (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+        ;; the state block: DIMMED and tagged "as plotted" while a
+        ;; voyage clip flies (the figures describe the road's END,
+        ;; not the road), full gold again the moment the clip lands
+        ;; -- see hudOn/hudOff in the plot script
+        (:div :id "helm-state" :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
           (:div (if (the landed?)
                     (fmt "down on: ~a" (the world-name))
                     (fmt "falling around: ~a" (the world-name))))
