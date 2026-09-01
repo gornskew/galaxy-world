@@ -3575,9 +3575,14 @@ function toggleHelm () {
       try {
         ok = browser.currentScene &&
              browser.currentScene.getNamedNode('shifter-touch');
-      } catch (e) {}
+        // after a move, only the freshly generated scene will do:
+        // the canvas holds the OLD scene until the new document
+        // arrives and parses, and wiring that one replays the past
+        if (ok && window.GW_XR_EXPECT != null)
+          ok = browser.currentScene.getNamedNode('gw-gen-' + window.GW_XR_EXPECT);
+      } catch (e) { ok = false; }
       if (ok) { try { wire(browser); } catch (e) {} return; }
-      if (tries < 60) setTimeout(poll, 500);
+      if (tries < 120) setTimeout(poll, 500);
     })();
   }
   window.GW_XR_WIRE = start;
@@ -3608,8 +3613,8 @@ function toggleHelm () {
    ;; SAI wiring, which re-arms the voyage clock, re-binds the
    ;; seat, and relights the indicators
    (scene-refresh-js
-    (format nil "var cv = document.querySelector('x3d-canvas');~%if (cv) cv.setAttribute('src', '/xr-scene.x3d?ship=~a&bust=' + Date.now());~%if (window.GW_XR_WIRE) setTimeout(window.GW_XR_WIRE, 800);"
-            (the instance-id)))
+    (format nil "window.GW_XR_EXPECT = '~a';~%var cv = document.querySelector('x3d-canvas');~%if (cv) cv.setAttribute('src', '/xr-scene.x3d?ship=~a&bust=' + Date.now());~%if (window.GW_XR_WIRE) setTimeout(window.GW_XR_WIRE, 400);"
+            (the moves-count) (the instance-id)))
    (xr-scene? t)
    (use-x3dom? nil)
    (additional-header-content
@@ -3625,6 +3630,10 @@ function toggleHelm () {
     (string-append
      "<?xml version=\"1.0\" encoding=\"UTF-8\"?><X3D profile=\"Immersive\" version=\"4.0\"><Scene>"
      "<Background skyColor=\"0 0 0.012\"></Background>"
+     ;; the generation stamp: the page's re-wire after a move
+     ;; waits for THIS scene, not whichever scene the canvas still
+     ;; holds -- production latency taught that lesson
+     (format nil "<WorldInfo DEF=\"gw-gen-~a\" title=\"gw-gen-~a\"></WorldInfo>" (the moves-count) (the moves-count))
      ;; transitionTime 0: binds snap instead of touring (the
      ;; visible tumble at load was the transition animation).  NOT
      ;; transitionType TELEPORT -- under X_ITE that mode reported
