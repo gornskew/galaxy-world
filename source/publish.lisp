@@ -92,7 +92,13 @@
   (dolist (spec '(("/gw-tex/earth.jpg" "earth.jpg")
                   ("/galaxy-world/gw-tex/earth.jpg" "earth.jpg")
                   ("/gw-tex/moon.jpg" "moon.jpg")
-                  ("/galaxy-world/gw-tex/moon.jpg" "moon.jpg")))
+                  ("/galaxy-world/gw-tex/moon.jpg" "moon.jpg")
+                  ("/gw-tex/mars.jpg" "mars.jpg")
+                  ("/galaxy-world/gw-tex/mars.jpg" "mars.jpg")
+                  ("/gw-tex/jupiter.jpg" "jupiter.jpg")
+                  ("/galaxy-world/gw-tex/jupiter.jpg" "jupiter.jpg")
+                  ("/gw-tex/saturn.jpg" "saturn.jpg")
+                  ("/galaxy-world/gw-tex/saturn.jpg" "saturn.jpg")))
     (net.aserve:publish-file
      :path (first spec)
      :file (namestring (asdf:system-relative-pathname

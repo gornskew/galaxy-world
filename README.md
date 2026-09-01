@@ -60,10 +60,14 @@ A ship of your own is a clone and a raising: `./basilisk up`.
 
 ## Textures
 
-Home and the moon wear real faces: the Blue Marble land/ocean/ice
-composite (NASA Visible Earth) and the LROC color mosaic (NASA SVS
-CGI Moon Kit), courtesy NASA, public domain (`textures/`). The
-other worlds' faces are painted by the page itself.
+The worlds wear real faces (`textures/`). Home and the moon:
+the Blue Marble land/ocean/ice composite (NASA Visible Earth) and
+the LROC color mosaic (NASA SVS CGI Moon Kit), courtesy NASA,
+public domain. Mars, Jupiter and Saturn: equirectangular maps from
+[Solar System Scope](https://www.solarsystemscope.com/textures/)
+(CC BY 4.0), themselves built on NASA Viking and Cassini imagery.
+The dash wood, the dice, and Saturn's rings remain the page's own
+painted work.
 
 ## License
 

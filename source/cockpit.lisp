@@ -697,7 +697,10 @@ the given heading; positive to port."
 ;; page's own painted faces.
 (defun texture-url-for (texture-id)
   (cond ((equal texture-id "earth-tex") "/gw-tex/earth.jpg")
-        ((equal texture-id "moon-tex") "/gw-tex/moon.jpg")))
+        ((equal texture-id "moon-tex") "/gw-tex/moon.jpg")
+        ((equal texture-id "mars-tex") "/gw-tex/mars.jpg")
+        ((equal texture-id "jupiter-tex") "/gw-tex/jupiter.jpg")
+        ((equal texture-id "saturn-tex") "/gw-tex/saturn.jpg")))
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
                  &key spin? diffuse emissive scale-override tilt adornment)
@@ -1741,59 +1744,6 @@ window.GW_WIRE = function () {
       g.stroke();
     }
     g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
-  });
-  tex(['mars-tex'], 512, 256, function (g, w, h) {
-    var dust = g.createLinearGradient(0, 0, 0, h);
-    dust.addColorStop(0, '#8a4a26'); dust.addColorStop(0.5, '#b06034'); dust.addColorStop(1, '#8a4a26');
-    g.fillStyle = dust; g.fillRect(0, 0, w, h);
-    for (var i = 0; i < 7; i++) {
-      var x = rnd(i + 500) * w, y = (0.25 + 0.5 * rnd(i + 550)) * h, r = 30 + 70 * rnd(i + 600);
-      g.fillStyle = 'rgba(70,35,20,0.35)';
-      g.beginPath(); g.ellipse(x, y, r, r * 0.5, rnd(i + 650) * 3, 0, 6.2832); g.fill();
-    }
-    for (var j = 0; j < 60; j++) {
-      var x = rnd(j + 700) * w, y = rnd(j + 800) * h, r = 1.5 + 6 * rnd(j + 900);
-      g.fillStyle = 'rgba(60,28,14,0.45)';
-      g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
-    }
-    g.fillStyle = '#e8e2d8';
-    g.fillRect(0, 0, w, h * 0.03); g.fillRect(0, h * 0.965, w, h * 0.035);
-  });
-  tex(['jupiter-tex'], 512, 256, function (g, w, h) {
-    var bands = ['#c8a878', '#a67a52', '#e8d8b8', '#b08658', '#d8c098', '#96684a', '#e0cca8', '#a87e56', '#cfae80'];
-    var y = 0;
-    for (var i = 0; i < bands.length; i++) {
-      var bh = h * (0.06 + 0.10 * rnd(i + 30));
-      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
-      y += bh;
-    }
-    g.fillStyle = bands[0]; g.fillRect(0, y, w, h - y);
-    for (var j = 0; j < 240; j++) {
-      var yy = rnd(j + 100) * h, xx = rnd(j + 200) * w, l = 15 + 60 * rnd(j + 300);
-      g.fillStyle = rnd(j + 400) > 0.5 ? 'rgba(255,240,215,0.12)' : 'rgba(90,55,30,0.12)';
-      g.fillRect(xx, yy, l, 1.5 + 2 * rnd(j + 500));
-    }
-    g.fillStyle = 'rgba(190,80,50,0.85)';
-    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.fill();
-    g.strokeStyle = 'rgba(120,45,25,0.6)'; g.lineWidth = 2;
-    g.beginPath(); g.ellipse(w * 0.31, h * 0.63, w * 0.075, h * 0.055, 0, 0, 6.2832); g.stroke();
-  });
-  tex(['saturn-tex'], 512, 256, function (g, w, h) {
-    var bands = ['#d8c49a', '#cbb488', '#e6d6ae', '#c2a878', '#dcc79c', '#cfb98e', '#e2d0a6'];
-    var y = 0;
-    for (var i = 0; i < bands.length; i++) {
-      var bh = h * (0.08 + 0.12 * rnd(i + 60));
-      g.fillStyle = bands[i]; g.fillRect(0, y, w, bh + 2);
-      y += bh;
-    }
-    g.fillStyle = bands[1]; g.fillRect(0, y, w, h - y);
-    for (var j = 0; j < 140; j++) {
-      var yy = rnd(j + 150) * h, xx = rnd(j + 250) * w, l = 20 + 70 * rnd(j + 350);
-      g.fillStyle = rnd(j + 450) > 0.5 ? 'rgba(250,240,215,0.08)' : 'rgba(120,95,55,0.08)';
-      g.fillRect(xx, yy, l, 2 + 2 * rnd(j + 550));
-    }
-    g.fillStyle = 'rgba(190,205,215,0.25)';
-    g.fillRect(0, 0, w, h * 0.06);
   });
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
@@ -3479,7 +3429,7 @@ function toggleHelm () {
     // X_ITE MODULATES texture by diffuse where x3dom replaced
     // it: once a body's face lands, its material goes white so
     // the continents read true
-    ['planet', 'astern', 'moon'].forEach(function (p) {
+    ['planet', 'astern', 'moon', 'home-far'].forEach(function (p) {
       var m = named(p + '-mat');
       if (m) {
         setColor(m, 'diffuseColor', '1 1 1');
