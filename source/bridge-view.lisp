@@ -66,12 +66,13 @@ are parallel -- don't point this straight up or down."
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
 
-   ;; The bridge flies its own colors: a yellow eye, inlined as a
-   ;; data: URI so the icon needs no route and no static asset.
-   ;; Palette matches the page -- iris #e8c839, rim #7a6a1f, sky
-   ;; #000003 (the scene's skyColor).
+   ;; The bridge flies the GALAXY on its tab -- a tiny tilted milky
+   ;; way, bright core and dim arms, inlined as a data: URI so the
+   ;; icon needs no route and no static asset.  The cockpit wears
+   ;; the ship's two-eyed face; the decks tell apart by icon
+   ;; (2026-09-01).
    (favicon-type "image/svg+xml")
-   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cg transform='rotate(-28 16 16)'%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='4.6' fill='%23232c48'/%3E%3Cellipse cx='16' cy='16' rx='9' ry='3.1' fill='%233c4a74'/%3E%3Cellipse cx='16' cy='16' rx='5.5' ry='1.9' fill='%238ea0cf'/%3E%3Cellipse cx='16' cy='16' rx='2.6' ry='1.1' fill='%23e8ecf8'/%3E%3Ccircle cx='16' cy='16' r='1.1' fill='%23fff6d8'/%3E%3C/g%3E%3Ccircle cx='7' cy='8' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='25.5' cy='6.5' r='0.5' fill='%23cfd8ee'/%3E%3Ccircle cx='26.5' cy='25' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='24.5' r='0.45' fill='%23cfd8ee'/%3E%3C/svg%3E")
 
    ;; The ship's ring: circular parking orbit, km / degrees. The
    ;; transfer departs this ring, in this plane.

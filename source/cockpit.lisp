@@ -1911,8 +1911,13 @@ window.GW_WIRE = function () {
    (use-ajax? t)
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
+   ;; the ship's own face on the tab: the great yellow-eyed
+   ;; dirigible head-on against the night, slit pupils and all
+   ;; (Dave's two-eyed candidates, 2026-09-01, set on the night
+   ;; disc so the hull reads on dark tab bars too).  The bridge
+   ;; wears the galaxy instead -- decks tell apart by icon.
    (favicon-type "image/svg+xml")
-   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='31' fill='%23000003'/%3E%3Ccircle cx='32' cy='32' r='24' fill='%23e8c839' stroke='%237a6a1f' stroke-width='2'/%3E%3Cellipse cx='32' cy='32' rx='7' ry='19' fill='%23050505'/%3E%3Ccircle cx='25' cy='23' r='4.5' fill='%23fff8d8' opacity='.75'/%3E%3C/svg%3E")
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='6' fill='%231c2030' stroke='%233c4358' stroke-width='0.8'/%3E%3Ccircle cx='10.4' cy='16' r='2.5' fill='%23ffd000'/%3E%3Ccircle cx='16.6' cy='16' r='2.5' fill='%23ffd000'/%3E%3Cellipse cx='10.8' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Cellipse cx='17' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Ccircle cx='26' cy='7' r='0.7' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='6.4' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='27.5' cy='24' r='0.55' fill='%23cfd8ee'/%3E%3C/svg%3E")
 
    ;; which eye the page binds at load; x3dom binds the first in
    ;; document order.  Nose-in, the world fills the windshield, so
