@@ -1237,6 +1237,32 @@ window.GW_DRAW = function () {
   var cv = document.getElementById('plot-canvas'); if (!cv) return;
   var ctx = cv.getContext('2d');
   var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
+  function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = H / 2; }
+  // THE PLOT promotes to a HEADS-UP while a voyage flies: centered
+  // on the glass, enlarged, translucent -- there is little to see
+  // out the windshield mid-road, and the plot IS the show.  The
+  // card returns to its corner when the clip lands.
+  function hudOn () {
+    if (GW_DRAW.hud) return;
+    var pc = document.getElementById('plot-card');
+    var b = document.getElementById('plot-body');
+    if (!pc) return;
+    GW_DRAW.hud = { css: pc.style.cssText, w: cv.width, h: cv.height,
+                    bodyDisp: b ? b.style.display : '', cv: cv };
+    if (b) b.style.display = '';
+    pc.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:9;background:rgba(8,10,16,0.5);border:1px solid rgba(232,200,57,0.85);border-radius:12px;padding:10px 14px;font-family:sans-serif;color:#e8c839;';
+    var s = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.6);
+    cv.width = cv.height = Math.max(300, Math.min(640, s));
+  }
+  function hudOff () {
+    var hstate = GW_DRAW.hud; if (!hstate) return;
+    GW_DRAW.hud = null;
+    var pc = document.getElementById('plot-card');
+    var b = document.getElementById('plot-body');
+    if (pc) pc.style.cssText = hstate.css;
+    if (b) b.style.display = hstate.bodyDisp;
+    if (hstate.cv === cv) { cv.width = hstate.w; cv.height = hstate.h; }
+  }
   function col (s) {
     var p = s.split(/\\s+/).map(parseFloat);
     return 'rgb(' + Math.round(p[0]*255) + ',' + Math.round(p[1]*255) + ',' + Math.round(p[2]*255) + ')';
@@ -1273,6 +1299,7 @@ window.GW_DRAW = function () {
   }
   var O = P.orbit;
   function drawOrbit () {
+    dims();
     ctx.clearRect(0, 0, W, H);
     var ext = O.ringR * 1.15;
     if (O.a !== null && O.a !== undefined) {
@@ -1385,7 +1412,7 @@ window.GW_DRAW = function () {
     coords(O.x, O.y, false, O.frame);
   }
   var V = P.voyage;
-  if (!V) { drawOrbit(); return; }
+  if (!V) { hudOff(); drawOrbit(); return; }
   // frame the whole road and every rider: the view centers on the
   // track's own bounding box, not the frame's origin
   var S = V.samples;
@@ -1395,8 +1422,18 @@ window.GW_DRAW = function () {
     if (y < minY) minY = y; if (y > maxY) maxY = y;
   }
   S.forEach(function (sm) { grow(sm[2], sm[3]); });
+  // off-chart riders must not flatten the road to a speck: the
+  // moon rides along during a home climb at 396,000 km out, and
+  // framing him would shrink a 14,000 km lift-off to nothing.
+  // Only bodies near the road stretch the frame; the far ones
+  // still ride the SCENE, just off this chart's edge.
+  var rcx = (minX + maxX) / 2, rcy = (minY + maxY) / 2;
+  var rspan = Math.max(maxX - minX, maxY - minY, 1);
   V.bodies.forEach(function (b) {
-    b.targets.forEach(function (t) { grow(t[0], t[1]); });
+    b.targets.forEach(function (t) {
+      if (Math.abs(t[0] - rcx) < rspan * 4 && Math.abs(t[1] - rcy) < rspan * 4)
+        grow(t[0], t[1]);
+    });
   });
   var oxW = (minX + maxX) / 2, oyW = (minY + maxY) / 2;
   var span = Math.max(maxX - minX, maxY - minY, 1) / 2;
@@ -1419,6 +1456,7 @@ window.GW_DRAW = function () {
     return { i: S.length - 2, t: 1 };
   }
   function drawVoyage (f) {
+    dims();
     ctx.clearRect(0, 0, W, H);
     ctx.beginPath();
     S.forEach(function (sm, i) {
@@ -1445,16 +1483,19 @@ window.GW_DRAW = function () {
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
     label(V.frame + ' frame \\u2014 ' + (mkm ? 'Mkm' : 'km'));
     coords(x, y, mkm, V.frame);
-    // the descent's live readout: altitude off the ground datum
-    // and vis-viva speed off the flown conic, appended to the
-    // coordinate lines as the clip flies -- watch the fall GAIN
-    // the speed the big brake must shed
+    // the live readout on the vertical clips: altitude off the
+    // ground datum always; vis-viva speed only where a coasting
+    // conic stands behind the road (the descent -- watch the fall
+    // GAIN the speed the big brake must shed; the powered climb
+    // carries altitude alone)
     if (V.live) {
       var rr = Math.sqrt(x*x + y*y);
-      var vv = Math.sqrt(Math.max(0, V.live.mu * (2/rr - 1/V.live.a)));
       var alt = Math.max(0, rr - V.live.ground);
-      var suffix = ' \\u00b7 ' + Math.round(alt).toLocaleString('en-US')
-                 + ' km up \\u00b7 ' + vv.toFixed(2) + ' km/s';
+      var suffix = ' \\u00b7 ' + Math.round(alt).toLocaleString('en-US') + ' km up';
+      if (V.live.a) {
+        var vv = Math.sqrt(Math.max(0, V.live.mu * (2/rr - 1/V.live.a)));
+        suffix += ' \\u00b7 ' + vv.toFixed(2) + ' km/s';
+      }
       var cl = document.getElementById('coords-line');
       if (cl) cl.textContent += suffix;
       var pc = document.getElementById('plot-coords');
@@ -1465,10 +1506,17 @@ window.GW_DRAW = function () {
   // TimeSensor on: GW_VOYAGE_T0 appears at window load on a fresh
   // voyage, and is null when the scene snapped to arrival
   function animate () {
+    hudOn();
     function step () {
       if (gen !== GW_DRAW.gen) return;
       var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
-      if (f >= 1) { drawVoyage(1); setTimeout(drawOrbit, 900); return; }
+      if (f >= 1) {
+        drawVoyage(1);
+        setTimeout(function () {
+          if (gen === GW_DRAW.gen) { hudOff(); drawOrbit(); }
+        }, 1200);
+        return;
+      }
       drawVoyage(f < 0 ? 0 : f);
       requestAnimationFrame(step);
     }
@@ -1479,7 +1527,7 @@ window.GW_DRAW = function () {
   (function waitClock () {
     if (gen !== GW_DRAW.gen) return;
     if (typeof window.GW_VOYAGE_T0 === 'number') { animate(); return; }
-    if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { drawOrbit(); return; }
+    if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { hudOff(); drawOrbit(); return; }
     setTimeout(waitClock, 100);
   })();
 };
@@ -2044,7 +2092,7 @@ window.GW_WIRE = function () {
         (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~d,\"samples\":["
                 (case (the transit-target)
                   ((:moon :homeward) "home")
-                  ((:down) (the world-name))
+                  ((:down :up) (the world-name))
                   (t "the sun's"))
                 (the transit-duration))
         (loop for s in (the transit-samples)
@@ -2073,13 +2121,17 @@ window.GW_WIRE = function () {
         ;; speed onto the helm as the clip flies -- the falling
         ;; ship visibly gaining the speed the big brake must shed.
         ;; Ground datum is the sky: 0 km up at the touch.
-        (when (eql (the transit-target) :down)
-          (destructuring-bind (key h px py) (first (the transit-samples))
-            (declare (ignore key h))
-            (let* ((r1 (sqrt (+ (* px px) (* py py))))
-                   (a (* 0.5 (+ r1 (the world-sky)))))
-              (format out ",\"live\":{\"mu\":~,4f,\"a\":~,1f,\"ground\":~,1f}"
-                      (the world-mu) a (the world-sky)))))
+        (case (the transit-target)
+          (:down
+           (destructuring-bind (key h px py) (first (the transit-samples))
+             (declare (ignore key h))
+             (let* ((r1 (sqrt (+ (* px px) (* py py))))
+                    (a (* 0.5 (+ r1 (the world-sky)))))
+               (format out ",\"live\":{\"mu\":~,4f,\"a\":~,1f,\"ground\":~,1f}"
+                       (the world-mu) a (the world-sky)))))
+          ;; the climb is powered, so vis-viva has nothing to say
+          ;; -- altitude alone rides the live line
+          (:up (format out ",\"live\":{\"ground\":~,1f}" (the world-sky))))
         (format out "}"))
       (format out "}")))
 
@@ -2100,10 +2152,12 @@ window.GW_WIRE = function () {
    (transit-target nil :settable)
 
    ;; how long the scene takes to fly it, seconds: the moon legs at
-   ;; 90, the descent a tighter 45, the sun's roads at 120
+   ;; 90, the descent a tighter 45, the lift-off 30, the sun's
+   ;; roads at 120
    (transit-duration (case (the transit-target)
                        ((:moon :homeward) 90)
                        ((:down) 45)
+                       ((:up) 30)
                        (t 120)))
 
    ;; the bodies riding the voyage page: specs for body-x3d and
@@ -2173,14 +2227,22 @@ window.GW_WIRE = function () {
                                    (- (deg->rad (the heading-deg)))
                                    :enabled? nil)
                  "")
-             ;; the yard's descent ends ON the ground: the plain
-             ;; rides up under the cab over the last tenth of the
-             ;; clip, taking the view as the swelling globe swallows
-             ;; the camera -- the ground literally comes up to meet
-             ;; her.  Parked far below until the clock nears home.
-             (if (eql (the transit-target) :down)
-                 (format nil "<Transform DEF=\"ground-lift\" id=\"ground-lift\" translation=\"0 0 -6000\">~a</Transform><PositionInterpolator DEF=\"vy-ground-lift\" key=\"0 0.88 0.97 1\" keyValue=\"0 0 -6000 0 0 -1800 0 0 -60 0 0 0\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-ground-lift\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-ground-lift\" fromField=\"value_changed\" toNode=\"ground-lift\" toField=\"set_translation\"></ROUTE>"
-                         (ground-x3d (the world)))
+             ;; the ground rides the clip's ends: the yard's
+             ;; descent finishes ON the plain (it rises under the
+             ;; cab over the last tenth, taking the view as the
+             ;; swelling globe swallows the camera -- the ground
+             ;; literally comes up to meet her), and the lift-off
+             ;; STARTS on it (the plain falls away over the first
+             ;; sixth while the globe emerges below).
+             (if (member (the transit-target) '(:down :up))
+                 (let ((down? (eql (the transit-target) :down)))
+                   (format nil "<Transform DEF=\"ground-lift\" id=\"ground-lift\" translation=\"0 0 ~a\">~a</Transform><PositionInterpolator DEF=\"vy-ground-lift\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-ground-lift\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-ground-lift\" fromField=\"value_changed\" toNode=\"ground-lift\" toField=\"set_translation\"></ROUTE>"
+                           (if down? "-6000" "0")
+                           (ground-x3d (the world))
+                           (if down? "0 0.88 0.97 1" "0 0.05 0.16 1")
+                           (if down?
+                               "0 0 -6000 0 0 -1800 0 0 -60 0 0 0"
+                               "0 0 0 0 0 -80 0 0 -6000 0 0 -6000")))
                  "")))
           (string-append
            ;; parked, the world is the GROUND, not a globe: at
@@ -2265,7 +2327,7 @@ window.GW_WIRE = function () {
       if (el) { el.setAttribute('translation', f[1]); el.setAttribute('scale', f[2]); }
     });
     var gl = document.getElementById('ground-lift');
-    if (gl) gl.setAttribute('translation', '0 0 0');
+    if (gl) gl.setAttribute('translation', '~a');
     var sky = document.getElementById('sky-heading');
     if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
     var amb = document.getElementById('ambient-clock');
@@ -2291,6 +2353,9 @@ window.GW_WIRE = function () {
 })();"
                 (or (the instance-id) "local") (the moves-count)
                 (the voyage-fin-js)
+                ;; where the ground stands when the clip is snapped
+                ;; past: home for a landing, struck for a lift-off
+                (if (eql (the transit-target) :up) "0 0 -6000" "0 0 0")
                 (- (deg->rad (the heading-deg)))
                 (* 1000 (+ 2 (the transit-duration))))
         ""))
@@ -2865,16 +2930,19 @@ function toggleHelm () {
    (after-set!
     ()
     (let* ((choice (the voyage-control value))
-           (road? (not (member choice '(:hand :down))))
-           ;; a road chosen from the ground PAYS THE CLIMB FIRST:
-           ;; the yard stands her up to the world's ring -- the
-           ;; same gift the gas-pedal climb is -- and the road
-           ;; departs the ring it was cut from.  One move, both
-           ;; legs; the note carries the climb.
-           (climbed-off (when (and road? (the landed?))
-                          (the world-name))))
-      (when climbed-off (the climb-to-ring!))
-      (cond ((and (eql choice :down) (not (the landed?)))
+           (road? (not (member choice '(:hand :down)))))
+      (cond ;; a road bought from the ground buys THE CLIMB first,
+            ;; and the climb is FLOWN: this move is the lift-off
+            ;; -- the plain falls away, the globe emerges, the
+            ;; ring takes him -- and the bought road STAYS on the
+            ;; select, standing ready for the next press of the
+            ;; starter (ruled 2026-09-01: the climb must be seen,
+            ;; not just paid; supersedes pt 58's one-move fold)
+            ((and road? (the landed?))
+             (the (fly-climb-road!
+                   :road-standing (getf (the voyage-control choice-plist)
+                                        choice))))
+            ((and (eql choice :down) (not (the landed?)))
              (the fly-landing-road!))
             ((and (eql choice :moon) (eql (the world) :home))
              (the fly-moon-road!))
@@ -2887,25 +2955,90 @@ function toggleHelm () {
                   (world-figure (the world) :sun-radius)
                   (not (eql choice (the world))))
              (the (fly-sun-road! choice)))
-            (t (the make-helm-move!)))
-      (when climbed-off
-        (the (set-slot! :last-move-note
-              (format nil "first the engines light for the long climb off ~a -- the ring takes him -- and then ~a"
-                      climbed-off (the last-move-note)))))))
+            (t (the make-helm-move!)))))
 
-   ;; The parked state stood up to the world's ring: the yard's
-   ;; gift, shared by the gas-pedal climb and any road bought from
-   ;; the ground.
-   (climb-to-ring!
-    ()
-    (the (set-slot! :landed? nil))
-    (the (set-slot! :heading-deg 180))
-    (the (set-slot! :vel-x 0))
-    (the (set-slot! :vel-y (the world-ring-speed)))
-    (the (set-slot! :pos-x (the world-ring)))
-    (the (set-slot! :pos-y 0))
-    (the (set-slot! :last-burn :forward))
-    (tally! :takeoffs))
+   ;; The lift-off, FLOWN: straight up off the pad at her parked
+   ;; seat -- the plain falling away, the globe emerging below --
+   ;; the nose leaning prograde over the climb's back half, and the
+   ;; ring takes him at his seat's own bearing.  The yard's gift,
+   ;; shared by the gas-pedal climb and any road bought from the
+   ;; ground; ROAD-STANDING (a label) says a bought road waits on
+   ;; the select for the next move.
+   (fly-climb-road!
+    (&key road-standing)
+    (let* ((sky (the world-sky))
+           (ring (the world-ring))
+           (phi0 (atan (the pos-y) (the pos-x)))
+           (h-up phi0)                       ; nose away from the center
+           (h-pro (+ phi0 (/ pi 2)))        ; prograde on the ring
+           (n 24)
+           (samples (list (list 0.0 h-up (the pos-x) (the pos-y)))))
+      (dotimes (i (1+ n))
+        (let* ((f (/ i n))
+               ;; ease the radius: slow off the pad, fast at the top
+               (r (+ sky (* (- ring sky) (* f f))))
+               ;; the lean from straight-up to prograde rides the
+               ;; climb's back half
+               (lean (max 0.0 (/ (- f 0.5) 0.5)))
+               (h (+ h-up (* lean (- h-pro h-up)))))
+          (push (list (+ 0.05 (* 0.90 f)) h
+                      (* r (cos phi0)) (* r (sin phi0)))
+                samples)))
+      (push (list 1.0 h-pro (* ring (cos phi0)) (* ring (sin phi0)))
+            samples)
+      (setq samples (nreverse samples))
+      (the (set-slot! :landed? nil))
+      (the (set-slot! :heading-deg (mod (round (* h-pro (/ 180 pi))) 360)))
+      (the (set-slot! :pos-x (* ring (cos phi0))))
+      (the (set-slot! :pos-y (* ring (sin phi0))))
+      (the (set-slot! :vel-x (* (the world-ring-speed) (- (sin phi0)))))
+      (the (set-slot! :vel-y (* (the world-ring-speed) (cos phi0))))
+      (the (set-slot! :last-burn :forward))
+      (the (set-slot! :moon-orbit? nil))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-target :up))
+      (the (set-slot! :transit-bodies
+            (append
+             (list (list :prefix "planet"
+                         :texture (world-figure (the world) :texture)
+                         :radius (the world-radius)
+                         :targets (make-list (length samples)
+                                             :initial-element (list 0 0))
+                         :spin? t
+                         :diffuse (world-figure (the world) :diffuse)
+                         :emissive (world-figure (the world) :emissive)
+                         :tilt (world-figure (the world) :tilt)
+                         :adornment (world-figure (the world) :adornment)))
+             (when (eql (the world) :home)
+               (list (list :prefix "moon" :texture "moon-tex"
+                           :radius +moon-radius+
+                           :targets (make-list (length samples)
+                                               :initial-element
+                                               (list +moon-x+ 0))
+                           :diffuse "0.75 0.74 0.70"
+                           :emissive "0.10 0.10 0.09")))
+             (when (eql (the world) :moon)
+               (list (list :prefix "home-far" :texture "earth-tex"
+                           :radius +planet-radius+
+                           :targets (make-list (length samples)
+                                               :initial-element
+                                               (list (- +moon-x+) 0))
+                           :diffuse "0.10 0.18 0.85"
+                           :emissive "0.05 0.07 0.12"))))))
+      (the (set-slot! :transit-beats
+            (list (cons 0.02 "the engines light -- the long climb begins")
+                  (cons 0.10 "the ground falls away")
+                  (cons 0.55 "the nose leans down the road -- building the ring's pace")
+                  (cons 0.95 "the ring takes him"))))
+      (the (set-slot! :last-move-note
+            (if road-standing
+                (format nil "the long climb off ~a, and the ring takes him.  ~a stands ready on the select -- make the move, and she flies"
+                        (the world-name) road-standing)
+                (format nil "the engines light -- the long climb off ~a, and the ring takes him back"
+                        (the world-name)))))
+      (tally! :moves)
+      (tally! :takeoffs)))
 
    ;; The programmed landing: the yard takes the helm and FLIES the
    ;; descent -- the scene rides the whole road down: a retro kick
@@ -2956,15 +3089,19 @@ function toggleHelm () {
             (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
           (setq prev-h h)
           (let ((ang (+ (* sense theta) alpha)))
-            (push (list (+ 0.06 (* 0.90 (/ i n)))
+            (push (list (+ 0.06 (* 0.84 (/ i n)))
                         (+ h alpha)
                         (* r (cos ang))
                         (* r (sin ang)))
                   samples))))
-      ;; the closing beat holds the touchdown pose
+      ;; the flip for the brake: the nose swings RETROGRADE over
+      ;; the last beats -- she brakes tail-first, the way the big
+      ;; brake must be pointed -- and holds the pose through the
+      ;; touch while the ground rises to meet her
       (destructuring-bind (key fh fx fy) (first samples)
         (declare (ignore key))
-        (push (list 1.0 fh fx fy) samples))
+        (push (list 0.95 (+ fh pi) fx fy) samples)
+        (push (list 1.0 (+ fh pi) fx fy) samples))
       (setq samples (nreverse samples))
       (destructuring-bind (key fh fx fy) (car (last samples))
         (declare (ignore key))
@@ -3572,17 +3709,9 @@ function toggleHelm () {
           (pedal (the pedal-control value))
           (rewind? (eql (the transport-control value) :rewind)))
       (cond ((and (not rewind?) (eql shifter :forward) (eql pedal :burn))
-             (the (set-slot! :landed? nil))
-             (the (set-slot! :heading-deg 180))
-             (the (set-slot! :vel-x 0))
-             (the (set-slot! :vel-y (the world-ring-speed)))
-             (the (set-slot! :pos-x (the world-ring)))
-             (the (set-slot! :pos-y 0))
-             (the (set-slot! :last-burn :forward))
-             (the (set-slot! :last-move-note
-                             (format nil "the engines light -- the long climb off ~a, and the ring takes him back"
-                                     (the world-name))))
-             (tally! :takeoffs))
+             ;; the gas-pedal climb flies the same lift-off clip a
+             ;; bought road does (it counts its own move)
+             (the fly-climb-road!))
             (t
              (the (set-slot! :last-burn :none))
              (the (set-slot! :last-move-note
@@ -3600,9 +3729,9 @@ function toggleHelm () {
                                    ((eql pedal :feather)
                                     "a breath of gas stirs the dust -- it takes the full pedal to climb")
                                    (t (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
-                                              (the world-name))))))))
-      (the (set-slot! :moves-count (1+ (the moves-count))))
-      (tally! :moves)))))
+                                              (the world-name))))))
+             (the (set-slot! :moves-count (1+ (the moves-count))))
+             (tally! :moves)))))))
 
 ;; ============================================================
 ;; THE X_ITE SCOUT: the same cockpit under the other X3D browser.
