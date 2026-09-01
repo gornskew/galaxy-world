@@ -649,13 +649,90 @@
 (defun world-figure (world key)
   (getf (cdr (assoc world *worlds*)) key))
 
+;; The view from the ground: parked, the world is not a sphere in
+;; the glass any more -- it is the GROUND, a plain out to the
+;; horizon in the world's own colors, the stars standing above it.
+;; A disk under the cab does the whole job at this grain: wide
+;; enough that its rim rides the eye's own horizon, inside the
+;; starfield so the night still wraps the upper bowl.  A dim
+;; horizon band ties ground to sky the way dusty air does.
+(defun ground-x3d (world)
+  (let ((diffuse (world-figure world :diffuse))
+        (emissive (world-figure world :emissive)))
+    (string-append
+     ;; the plain itself, just under the cab's floor
+     (format nil "<Transform translation=\"0 0 -0.55\"><Transform rotation=\"1 0 0 1.5708\"><Shape><Appearance sortType=\"opaque\"><Material diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Cylinder radius=\"4800\" height=\"0.2\"></Cylinder></Shape></Transform></Transform>"
+             diffuse emissive)
+     ;; the horizon band: a faint ring standing on the rim
+     (format nil "<Transform translation=\"0 0 -0.4\">~a</Transform>"
+             (ring-annulus-x3d 4400 4790 diffuse emissive 0.45
+                               :sectors 64)))))
+
 ;; The berth keeps a tally of what the helms aboard actually do --
 ;; the seed of the play-feeds-the-buildout channel.  One image, one
-;; table, every cockpit.
+;; table, every cockpit.  The table mirrors to the host bind mount
+;; (the /projects/.state convention), so a container recreate hands
+;; the running totals to its successor instead of zeroing the log.
 (defvar *helm-tallies* (make-hash-table :test 'eq))
 
+(defparameter *tallies-file* #P"/projects/.state/galaxy-world-tallies.sexp"
+  "Host-side (survives container recreate, unlike /tmp).  Absent on
+first boot ever, or where /projects/.state doesn't exist -- both read
+as \"nothing to restore\", not an error.")
+
+(defparameter *tallies-min-interval* 15
+  "Floor between disk writes, seconds -- moves are human-paced, but a
+full cockpit deck shouldn't turn every click into a write.")
+
+(defvar *tallies-last-persisted* 0)
+
+(defun persist-tallies! (&optional force?)
+  "Mirror *HELM-TALLIES* to *TALLIES-FILE*, throttled.  Errors are
+swallowed -- a failed save must never cost a player his move."
+  (ignore-errors
+    (let ((now (get-universal-time)))
+      (when (or force? (>= (- now *tallies-last-persisted*)
+                           *tallies-min-interval*))
+        (ensure-directories-exist *tallies-file*)
+        ;; self-healing 1777: /projects/.state is shared across
+        ;; different-uid containers -- whoever creates it first
+        ;; otherwise locks the others out (see eyes-only
+        ;; persistence.lisp for the full story)
+        (ignore-errors
+          (uiop:run-program
+           (list "chmod" "1777" (namestring (truename "/projects/.state/")))
+           :ignore-error-status t))
+        (let ((entries nil))
+          (maphash (lambda (key count) (push (cons key count) entries))
+                   *helm-tallies*)
+          (with-open-file (out *tallies-file* :direction :output
+                               :if-exists :supersede
+                               :if-does-not-exist :create)
+            (let ((*print-length* nil) (*print-level* nil))
+              (prin1 (list :version 1 :saved-at now :tallies entries) out))))
+        (setq *tallies-last-persisted* now)))))
+
+(defun restore-tallies! ()
+  "Repopulate *HELM-TALLIES* from *TALLIES-FILE* at boot, or leave it
+empty when the file is absent or unreadable -- a corrupt file should
+degrade to a fresh log, never a failed boot."
+  (ignore-errors
+    (when (probe-file *tallies-file*)
+      (let* ((*read-eval* nil)
+             (saved (with-open-file (in *tallies-file*) (read in)))
+             (entries (and (eql (getf saved :version) 1)
+                           (getf saved :tallies))))
+        (when entries
+          (clrhash *helm-tallies*)
+          (dolist (entry entries)
+            (setf (gethash (car entry) *helm-tallies*) (cdr entry)))
+          (format *trace-output*
+                  "~&[galaxy-world] restored helm tallies: ~a keys~%"
+                  (length entries)))))))
+
 (defun tally! (key)
-  (incf (gethash key *helm-tallies* 0)))
+  (incf (gethash key *helm-tallies* 0))
+  (persist-tallies!))
 
 ;; The heavenly bodies as seen from the ship: each drawn at a fixed
 ;; scene distance with the scale that subtends its true angle, so he
@@ -1446,7 +1523,53 @@ window.GW_WIRE = function () {
   }
   var wheelSel = findSel(':AMIDSHIPS'),
       gearSel  = findSel(':NEUTRAL'),
-      pedalSel = findSel(':BURN');
+      pedalSel = findSel(':BURN'),
+      roadSel  = findSel(':HAND');
+  // The lockouts: what the move ignores, the helm greys.  Neutral
+  // clutches the pedal out; rewind cools pedal and shifter both
+  // (the engines don't light, the sign of dv is moot); a programmed
+  // road takes every hand off the wheel; on the ground the wheel
+  // steers nothing (takeoff sets its own heading).  The wheel stays
+  // LIVE in neutral -- turning in neutral spins the ship, which is
+  // its own lesson.  The road select is never locked: it is the way
+  // back.  Server truth is unchanged; the greys just say it.
+  function lockState () {
+    var road = roadSel && roadSel.value !== ':HAND';
+    var rw = false;
+    var tb = document.querySelectorAll('.transport-btn.lit');
+    for (var i = 0; i < tb.length; i++)
+      if (tb[i].getAttribute('data-val') === ':REWIND') rw = true;
+    var neutral = gearSel && gearSel.value === ':NEUTRAL';
+    var landed = false;
+    try { landed = !!(window.GW_PLAN && GW_PLAN.orbit && GW_PLAN.orbit.landed); } catch (e) {}
+    return { wheel: road || landed,
+             gear:  road || rw,
+             pedal: road || rw || neutral,
+             radio: road };
+  }
+  function sensorEnable (id, on) {
+    var s = document.getElementById(id);
+    if (s) s.setAttribute('enabled', on ? 'true' : 'false');
+  }
+  function dimSel (sel, off) {
+    if (!sel) return;
+    sel.disabled = off;
+    sel.style.opacity = off ? '0.35' : '';
+  }
+  function applyLockouts () {
+    var L = lockState();
+    dimSel(wheelSel, L.wheel);
+    dimSel(gearSel, L.gear);
+    dimSel(pedalSel, L.pedal);
+    sensorEnable('wheel-sensor', !L.wheel);
+    sensorEnable('horn-touch', !L.wheel);
+    sensorEnable('shifter-touch', !L.gear);
+    [0, 1, 2].forEach(function (i) { sensorEnable('pedal-touch-' + i, !L.pedal); });
+    Array.prototype.forEach.call(
+      document.querySelectorAll('.cadence-btn, .transport-btn'),
+      function (b) { b.disabled = L.radio; b.style.opacity = L.radio ? '0.35' : ''; });
+  }
+  window.GW_LOCKS = lockState;
   var wheelPose = { ':HARD-PORT': 1.3, ':EASY-PORT': 0.55, ':AMIDSHIPS': 0,
                     ':EASY-STARBOARD': -0.55, ':HARD-STARBOARD': -1.3 };
   var gearPose  = { ':FORWARD': 0.5, ':NEUTRAL': 0, ':REVERSE': -0.5 };
@@ -1500,6 +1623,7 @@ window.GW_WIRE = function () {
       // same event, and its suppress must land first
       setTimeout(function () {
         if (Date.now() < suppress) return;
+        if (lockState().wheel) return;
         if (wheelSel) { wheelSel.value = bandFor(lastAng); readout(); }
       }, 60);
     }
@@ -1551,10 +1675,13 @@ window.GW_WIRE = function () {
         lm.setAttribute('emissiveColor', i === idx ? '0.55 0.45 0.10' : '0.04 0.04 0.05');
       }
     }
+    applyLockouts();
   }
   if (wheelSel) wheelSel.addEventListener('change', readout);
   if (gearSel) gearSel.addEventListener('change', readout);
+  if (roadSel) roadSel.addEventListener('change', readout);
   touch('horn-touch', function () {
+    if (lockState().wheel) return;
     suppress = Date.now() + 400;
     lastAng = 0;
     setWheelPose(0);
@@ -1562,7 +1689,7 @@ window.GW_WIRE = function () {
     readout();
   });
   touch('shifter-touch', function () {
-    if (!gearSel) return;
+    if (!gearSel || lockState().gear) return;
     var next = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
     gearSel.value = next;
     setShifterPose(gearPose[next]);
@@ -1571,6 +1698,7 @@ window.GW_WIRE = function () {
   var pedalVals = [':FEATHER', ':BRAKE', ':BURN'];
   [0, 1, 2].forEach(function (i) {
     touch('pedal-touch-' + i, function () {
+      if (lockState().pedal) return;
       var rig = document.getElementById('pedal-rig-' + i);
       if (rig) {
         rig.setAttribute('translation', '0.025 0 -0.012');
@@ -2000,12 +2128,19 @@ window.GW_WIRE = function () {
                                    :enabled? nil)
                  "")))
           (string-append
-           (body-x3d "planet" (world-figure (the world) :texture)
-                     (the planet-bearing) (the radius) (the world-radius)
-                     :spin? t :diffuse (world-figure (the world) :diffuse)
-                     :emissive (world-figure (the world) :emissive)
-                     :tilt (world-figure (the world) :tilt)
-                     :adornment (world-figure (the world) :adornment))
+           ;; parked, the world is the GROUND, not a globe: at
+           ;; touchdown the subtended sphere swallowed the camera
+           ;; (backface-culled from inside), so the landed page
+           ;; stands on a plain instead, stars above, the sky's
+           ;; other riders hanging at the horizon
+           (if (the landed?)
+               (ground-x3d (the world))
+               (body-x3d "planet" (world-figure (the world) :texture)
+                         (the planet-bearing) (the radius) (the world-radius)
+                         :spin? t :diffuse (world-figure (the world) :diffuse)
+                         :emissive (world-figure (the world) :emissive)
+                         :tilt (world-figure (the world) :tilt)
+                         :adornment (world-figure (the world) :adornment)))
            (cond ((eql (the world) :home)
                   (string-append
                    (body-x3d "moon" "moon-tex"
@@ -2451,6 +2586,11 @@ function toggleHelm () {
                    :choice-plist
                    (append
                     (list :hand "fly her by hand")
+                    ;; the yard flies her down on request -- the
+                    ;; staging road for the view from the ground;
+                    ;; the by-hand landing stays the game
+                    (unless (the landed?)
+                      (list :down "the programmed landing"))
                     (when (eql (the world) :home)
                       (list :moon "the programmed road to the moon"))
                     (unless (eql (the world) :home)
@@ -2667,8 +2807,19 @@ function toggleHelm () {
    ;; world and you are set back on the ring.
    (after-set!
     ()
-    (let ((choice (the voyage-control value)))
-      (cond ((and (eql choice :moon) (eql (the world) :home))
+    (let* ((choice (the voyage-control value))
+           (road? (not (member choice '(:hand :down))))
+           ;; a road chosen from the ground PAYS THE CLIMB FIRST:
+           ;; the yard stands her up to the world's ring -- the
+           ;; same gift the gas-pedal climb is -- and the road
+           ;; departs the ring it was cut from.  One move, both
+           ;; legs; the note carries the climb.
+           (climbed-off (when (and road? (the landed?))
+                          (the world-name))))
+      (when climbed-off (the climb-to-ring!))
+      (cond ((and (eql choice :down) (not (the landed?)))
+             (the fly-landing-road!))
+            ((and (eql choice :moon) (eql (the world) :home))
              (the fly-moon-road!))
             ;; the moon rides home, not the sun: his road home is
             ;; the moon road flown back, not a sun's road
@@ -2679,7 +2830,66 @@ function toggleHelm () {
                   (world-figure (the world) :sun-radius)
                   (not (eql choice (the world))))
              (the (fly-sun-road! choice)))
-            (t (the make-helm-move!)))))
+            (t (the make-helm-move!)))
+      (when climbed-off
+        (the (set-slot! :last-move-note
+              (format nil "first the engines light for the long climb off ~a -- the ring takes him -- and then ~a"
+                      climbed-off (the last-move-note)))))))
+
+   ;; The parked state stood up to the world's ring: the yard's
+   ;; gift, shared by the gas-pedal climb and any road bought from
+   ;; the ground.
+   (climb-to-ring!
+    ()
+    (the (set-slot! :landed? nil))
+    (the (set-slot! :heading-deg 180))
+    (the (set-slot! :vel-x 0))
+    (the (set-slot! :vel-y (the world-ring-speed)))
+    (the (set-slot! :pos-x (the world-ring)))
+    (the (set-slot! :pos-y 0))
+    (the (set-slot! :last-burn :forward))
+    (tally! :takeoffs))
+
+   ;; The programmed landing: the yard takes the helm and flies the
+   ;; descent between frames -- a retro kick dropping the low point
+   ;; onto the sky, the fall, and the big brake at the touch.  The
+   ;; staging road for the view from the ground; the BY-HAND landing
+   ;; stays the game (the doctrine: shed the road's speed before the
+   ;; surface has to).  Figures at teaching grain: the descent conic
+   ;; is cut from her current radius as if the road were round.
+   (fly-landing-road!
+    ()
+    (the (set-slot! :transit-samples nil))
+    (the (set-slot! :transit-target nil))
+    (the (set-slot! :transit-bodies nil))
+    (the (set-slot! :transit-beats nil))
+    (the (set-slot! :moon-orbit? nil))
+    (let* ((mu (the world-mu))
+           (sky (the world-sky))
+           (r1 (max (the radius) (+ sky 1.0)))
+           (a (* 0.5 (+ r1 sky)))
+           ;; the retro kick off a round road at r1, onto the
+           ;; descent ellipse
+           (dv1 (- (sqrt (/ mu r1))
+                   (sqrt (* mu (- (/ 2 r1) (/ 1 a))))))
+           ;; the big brake at the sky: the descent's periapsis
+           ;; speed, all of it shed at the touch
+           (dv2 (sqrt (* mu (- (/ 2 sky) (/ 1 a)))))
+           ;; set down at the point under her now
+           (scale (/ sky (max (the radius) 1.0))))
+      (the (set-slot! :pos-x (* (the pos-x) scale)))
+      (the (set-slot! :pos-y (* (the pos-y) scale)))
+      (the (set-slot! :vel-x 0))
+      (the (set-slot! :vel-y 0))
+      (the (set-slot! :landed? t))
+      (the (set-slot! :last-burn :none))
+      (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :last-move-note
+            (format nil "the yard takes the helm for the descent: a retro kick (-~,2f km/s) drops the low point onto the sky, the long fall, and the big brake (-~,2f) at the touch -- DOWN on ~a, engines cold.  The by-hand landing is the real game; forward and the full pedal to climb"
+                    dv1 dv2 (the world-name))))
+      (the voyage-control (set-slot! :value :hand))
+      (tally! :moves)
+      (tally! :yard-landings)))
 
    ;; The programmed road to the moon: the least-fuel two-burn
    ;; Hohmann from the home ring to the moon-road.  The ship's state
@@ -3314,19 +3524,29 @@ function toggleHelm () {
       } catch (e) {}
     }
     var wheelSel = findSel(':AMIDSHIPS'), gearSel = findSel(':NEUTRAL'),
-        pedalSel = findSel(':BURN');
+        pedalSel = findSel(':BURN'), roadSel = findSel(':HAND');
+    // the same lockout truth GW_WIRE computes; sensors here are
+    // scene-document nodes, so the greys travel by SAI instead of
+    // setAttribute
+    function locks () {
+      try { return window.GW_LOCKS ? GW_LOCKS() : {}; } catch (e) { return {}; }
+    }
     function changed (sel) {
       try { sel.dispatchEvent(new Event('change')); } catch (e) {}
     }
     onRelease('shifter-touch', function () {
-      if (!gearSel) return;
+      if (!gearSel || locks().gear) return;
       gearSel.value = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
       changed(gearSel);
     });
     [':FEATHER', ':BRAKE', ':BURN'].forEach(function (v, i) {
-      onRelease('pedal-touch-' + i, function () { if (pedalSel) pedalSel.value = v; });
+      onRelease('pedal-touch-' + i, function () {
+        if (locks().pedal) return;
+        if (pedalSel) pedalSel.value = v;
+      });
     });
     onRelease('horn-touch', function () {
+      if (locks().wheel) return;
       if (wheelSel) { wheelSel.value = ':AMIDSHIPS'; changed(wheelSel); }
     });
     [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'].forEach(function (v, i) {
@@ -3352,7 +3572,7 @@ function toggleHelm () {
           } catch (e) {}
         });
         wheel.getField('isActive').addFieldCallback('gw-wact', function (v) {
-          if ((v === false || v === 'false') && wheelSel) {
+          if ((v === false || v === 'false') && wheelSel && !locks().wheel) {
             wheelSel.value = bandFor(lastAng);
             changed(wheelSel);
           }
@@ -3405,9 +3625,25 @@ function toggleHelm () {
       }
       litSet('radio-preset', [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'], '.cadence-btn');
       litSet('radio-tpt', [':REWIND', ':PLAY'], '.transport-btn');
+      // the greys reach the scene's own sensors: a locked control
+      // refuses the grab at the sensor, both renderers agreeing
+      var L = locks();
+      function en (def, on) {
+        var n = named(def); if (!n) return;
+        try { n.getField('enabled').setValue(!!on); } catch (e) {
+          try { n.enabled = !!on; } catch (e2) {}
+        }
+      }
+      en('wheel-sensor', !L.wheel);
+      en('horn-touch', !L.wheel);
+      en('shifter-touch', !L.gear);
+      en('pedal-touch-0', !L.pedal);
+      en('pedal-touch-1', !L.pedal);
+      en('pedal-touch-2', !L.pedal);
     }
     if (gearSel) gearSel.addEventListener('change', indicators);
     if (wheelSel) wheelSel.addEventListener('change', indicators);
+    if (roadSel) roadSel.addEventListener('change', indicators);
     Array.prototype.forEach.call(
       document.querySelectorAll('.cadence-btn, .transport-btn'),
       function (b) {

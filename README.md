@@ -69,6 +69,14 @@ public domain. Mars, Jupiter and Saturn: equirectangular maps from
 The dash wood, the dice, and Saturn's rings remain the page's own
 painted work.
 
+## The name
+
+The repo is `galaxy-world`; the property is
+[galaxyworld.space](https://galaxyworld.space) (and
+`galaxy-world.space` stands as a redirect onto it).  The hyphen
+lives with the Lisp — the package, the system, the repo — and the
+domain flattens it, the way domains do.  Same world either way.
+
 ## License
 
 AGPL-3.0-or-later, © 2026 Gornskew Enterprises. See `LICENSE`.

@@ -19,7 +19,7 @@
   (format nil "User-agent: *~%Disallow: /sessions/~%Disallow: /answer~%~%Sitemap: https://galaxyworld.space/sitemap.xml~%"))
 
 (defparameter *sitemap-xml*
-  (format nil "<?xml version=\"1.0\" encoding=\"UTF-8\"?>~%<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">~%  <url>~%    <loc>https://galaxyworld.space/</loc>~%    <lastmod>2026-08-29</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%  <url>~%    <loc>https://galaxyworld.space/bridge</loc>~%    <lastmod>2026-08-29</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%</urlset>~%"))
+  (format nil "<?xml version=\"1.0\" encoding=\"UTF-8\"?>~%<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">~%  <url>~%    <loc>https://galaxyworld.space/</loc>~%    <lastmod>2026-09-01</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%  <url>~%    <loc>https://galaxyworld.space/bridge</loc>~%    <lastmod>2026-09-01</lastmod>~%    <changefreq>weekly</changefreq>~%  </url>~%</urlset>~%"))
 
 ;; The X_ITE scout's scene road: the standing X3D document for one
 ;; session's cockpit, looked up by instance id.  The page at /xr
@@ -42,6 +42,10 @@
       (net.aserve:with-http-body (req ent)
         (when doc
           (write-string doc (net.aserve:request-reply-stream req)))))))
+
+;; the helm tallies survive a recreate: read the predecessor's
+;; totals off the host mount before the doors open
+(restore-tallies!)
 
 (gwl:with-all-servers (server)
   ;; the front door is the DRIVER'S SEAT: the public "/" (which the
