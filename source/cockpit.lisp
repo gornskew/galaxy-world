@@ -1445,6 +1445,21 @@ window.GW_DRAW = function () {
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
     label(V.frame + ' frame \\u2014 ' + (mkm ? 'Mkm' : 'km'));
     coords(x, y, mkm, V.frame);
+    // the descent's live readout: altitude off the ground datum
+    // and vis-viva speed off the flown conic, appended to the
+    // coordinate lines as the clip flies -- watch the fall GAIN
+    // the speed the big brake must shed
+    if (V.live) {
+      var rr = Math.sqrt(x*x + y*y);
+      var vv = Math.sqrt(Math.max(0, V.live.mu * (2/rr - 1/V.live.a)));
+      var alt = Math.max(0, rr - V.live.ground);
+      var suffix = ' \\u00b7 ' + Math.round(alt).toLocaleString('en-US')
+                 + ' km up \\u00b7 ' + vv.toFixed(2) + ' km/s';
+      var cl = document.getElementById('coords-line');
+      if (cl) cl.textContent += suffix;
+      var pc = document.getElementById('plot-coords');
+      if (pc) pc.textContent += suffix;
+    }
   }
   // ride the same wall clock the voyage script starts the scene's
   // TimeSensor on: GW_VOYAGE_T0 appears at window load on a fresh
@@ -1911,13 +1926,12 @@ window.GW_WIRE = function () {
    (use-ajax? t)
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
-   ;; the ship's own face on the tab: the great yellow-eyed
-   ;; dirigible head-on against the night, slit pupils and all
-   ;; (Dave's two-eyed candidates, 2026-09-01, set on the night
-   ;; disc so the hull reads on dark tab bars too).  The bridge
-   ;; wears the galaxy instead -- decks tell apart by icon.
+   ;; the GALAXY on the cockpit's tab (swapped by ruling,
+   ;; 2026-09-01 -- the cockpit looks OUT at the galaxy; the
+   ;; bridge wears the ship's own two-eyed face): a tiny tilted
+   ;; milky way, bright core, dim arms, field stars.
    (favicon-type "image/svg+xml")
-   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='6' fill='%231c2030' stroke='%233c4358' stroke-width='0.8'/%3E%3Ccircle cx='10.4' cy='16' r='2.5' fill='%23ffd000'/%3E%3Ccircle cx='16.6' cy='16' r='2.5' fill='%23ffd000'/%3E%3Cellipse cx='10.8' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Cellipse cx='17' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Ccircle cx='26' cy='7' r='0.7' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='6.4' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='27.5' cy='24' r='0.55' fill='%23cfd8ee'/%3E%3C/svg%3E")
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cg transform='rotate(-28 16 16)'%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='4.6' fill='%23232c48'/%3E%3Cellipse cx='16' cy='16' rx='9' ry='3.1' fill='%233c4a74'/%3E%3Cellipse cx='16' cy='16' rx='5.5' ry='1.9' fill='%238ea0cf'/%3E%3Cellipse cx='16' cy='16' rx='2.6' ry='1.1' fill='%23e8ecf8'/%3E%3Ccircle cx='16' cy='16' r='1.1' fill='%23fff6d8'/%3E%3C/g%3E%3Ccircle cx='7' cy='8' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='25.5' cy='6.5' r='0.5' fill='%23cfd8ee'/%3E%3Ccircle cx='26.5' cy='25' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='24.5' r='0.45' fill='%23cfd8ee'/%3E%3C/svg%3E")
 
    ;; which eye the page binds at load; x3dom binds the first in
    ;; document order.  Nose-in, the world fills the windshield, so
@@ -2053,7 +2067,20 @@ window.GW_WIRE = function () {
               for first = t then nil
               do (format out "~:[,~;~][~,3f,~s]"
                          first (car beat) (cdr beat)))
-        (format out "]}"))
+        (format out "]")
+        ;; the descent carries a LIVE readout: the conic's own
+        ;; figures, so the plot can write altitude and vis-viva
+        ;; speed onto the helm as the clip flies -- the falling
+        ;; ship visibly gaining the speed the big brake must shed.
+        ;; Ground datum is the sky: 0 km up at the touch.
+        (when (eql (the transit-target) :down)
+          (destructuring-bind (key h px py) (first (the transit-samples))
+            (declare (ignore key h))
+            (let* ((r1 (sqrt (+ (* px px) (* py py))))
+                   (a (* 0.5 (+ r1 (the world-sky)))))
+              (format out ",\"live\":{\"mu\":~,4f,\"a\":~,1f,\"ground\":~,1f}"
+                      (the world-mu) a (the world-sky)))))
+        (format out "}"))
       (format out "}")))
 
    ;; the coordinates line the helm carries at all times; the plot

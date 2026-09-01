@@ -66,13 +66,14 @@ are parallel -- don't point this straight up or down."
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
 
-   ;; The bridge flies the GALAXY on its tab -- a tiny tilted milky
-   ;; way, bright core and dim arms, inlined as a data: URI so the
-   ;; icon needs no route and no static asset.  The cockpit wears
-   ;; the ship's two-eyed face; the decks tell apart by icon
-   ;; (2026-09-01).
+   ;; The bridge wears the SHIP'S OWN FACE on its tab (swapped by
+   ;; ruling, 2026-09-01 -- the bridge is where you meet the ship;
+   ;; the cockpit looks out at the galaxy): the great yellow-eyed
+   ;; dirigible head-on, slit pupils, on the night disc so the
+   ;; dark hull reads on dark tab bars.  Inlined as a data: URI so
+   ;; the icon needs no route and no static asset.
    (favicon-type "image/svg+xml")
-   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cg transform='rotate(-28 16 16)'%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='4.6' fill='%23232c48'/%3E%3Cellipse cx='16' cy='16' rx='9' ry='3.1' fill='%233c4a74'/%3E%3Cellipse cx='16' cy='16' rx='5.5' ry='1.9' fill='%238ea0cf'/%3E%3Cellipse cx='16' cy='16' rx='2.6' ry='1.1' fill='%23e8ecf8'/%3E%3Ccircle cx='16' cy='16' r='1.1' fill='%23fff6d8'/%3E%3C/g%3E%3Ccircle cx='7' cy='8' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='25.5' cy='6.5' r='0.5' fill='%23cfd8ee'/%3E%3Ccircle cx='26.5' cy='25' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='24.5' r='0.45' fill='%23cfd8ee'/%3E%3C/svg%3E")
+   (favicon-path "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23000008'/%3E%3Cellipse cx='16' cy='16' rx='12.5' ry='6' fill='%231c2030' stroke='%233c4358' stroke-width='0.8'/%3E%3Ccircle cx='10.4' cy='16' r='2.5' fill='%23ffd000'/%3E%3Ccircle cx='16.6' cy='16' r='2.5' fill='%23ffd000'/%3E%3Cellipse cx='10.8' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Cellipse cx='17' cy='16' rx='0.65' ry='1.1' fill='%2312141c'/%3E%3Ccircle cx='26' cy='7' r='0.7' fill='%23cfd8ee'/%3E%3Ccircle cx='6' cy='6.4' r='0.55' fill='%23cfd8ee'/%3E%3Ccircle cx='27.5' cy='24' r='0.55' fill='%23cfd8ee'/%3E%3C/svg%3E")
 
    ;; The ship's ring: circular parking orbit, km / degrees. The
    ;; transfer departs this ring, in this plane.
