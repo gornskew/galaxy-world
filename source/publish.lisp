@@ -46,15 +46,24 @@
 (gwl:with-all-servers (server)
   ;; the front door is the DRIVER'S SEAT: the public "/" (which the
   ;; proxy hands through as "/galaxy-world") lands you in the
-  ;; cockpit, hands on the wheel.  The bridge stands one deck up at
-  ;; /bridge; the old /cockpit route stays good for bookmarks.
-  (gwl:publish-gwl-app "/galaxy-world" 'galaxy-world:cockpit-view
+  ;; cockpit, hands on the wheel -- UNDER X_ITE, the default
+  ;; renderer as of 2026-08-31 (true no-reload turns, WebXR button
+  ;; where a headset offers).  The x3dom build stands at /x3dom;
+  ;; the bridge one deck up at /bridge; the old /cockpit route
+  ;; stays good for bookmarks and rides the default too.
+  (gwl:publish-gwl-app "/galaxy-world" 'galaxy-world::cockpit-xr-view
                        :host *galaxy-world-hosts*
                        :server server)
   (gwl:publish-gwl-app "/galaxy-world/bridge" 'galaxy-world:bridge-view
                        :host *galaxy-world-hosts*
                        :server server)
-  (gwl:publish-gwl-app "/galaxy-world/cockpit" 'galaxy-world:cockpit-view
+  (gwl:publish-gwl-app "/galaxy-world/cockpit" 'galaxy-world::cockpit-xr-view
+                       :host *galaxy-world-hosts*
+                       :server server)
+  (gwl:publish-gwl-app "/x3dom" 'galaxy-world:cockpit-view
+                       :host *galaxy-world-hosts*
+                       :server server)
+  (gwl:publish-gwl-app "/galaxy-world/x3dom" 'galaxy-world:cockpit-view
                        :host *galaxy-world-hosts*
                        :server server)
   ;; the X_ITE scout rides at /xr -- the second renderer of the

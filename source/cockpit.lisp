@@ -1817,7 +1817,7 @@ window.GW_WIRE = function () {
 (define-object cockpit-view (session-control-mixin base-html-page)
 
   :input-slots
-  ((title "Galaxy World — the cockpit")
+  ((title "Galaxy World — the cockpit (x3dom build)")
    ;; t on the X_ITE scout: the scene renders as a standalone X3D
    ;; document (self-igniting voyage clock, no x3dom extensions)
    (xr-scene? nil)
@@ -2397,7 +2397,8 @@ window.GW_WIRE = function () {
           (:span :id "plot-caret" "▾"))
         (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
-        "Galaxy World — the cockpit")
+        "Galaxy World — the cockpit (x3dom build)"
+        (:a :href "/" :style "color:#e8c839;margin-left:10px;" "back to the main cockpit"))
       ;; the paint shop: the world's face, the leather, and the wood
       ;; are all painted onto canvases here and handed to the scene's
       ;; ImageTextures as data URLs.  This inline script runs before
@@ -3601,7 +3602,7 @@ function toggleHelm () {
 (define-object cockpit-xr-view (cockpit-view)
 
   :computed-slots
-  ((title "Galaxy World — the cockpit, under X_ITE")
+  ((title "Galaxy World — the cockpit")
    ;; the xr renderer takes a new scene by re-pointing the canvas
    ;; at the session's document (cache-busted) and re-running the
    ;; SAI wiring, which re-arms the voyage clock, re-binds the
@@ -3676,8 +3677,9 @@ function toggleHelm () {
           (:span :id "plot-caret" "▾"))
         (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
-        "Galaxy World — the cockpit, under X_ITE (scout)"
-        (:a :href "/" :style "color:#e8c839;margin-left:10px;" "back to x3dom"))
+        "Galaxy World — the cockpit"
+        (:a :href "/x3dom" :style "color:#e8c839;margin-left:10px;" "x3dom build")
+        (:a :href "/bridge" :style "color:#e8c839;margin-left:10px;" "⊙ to the bridge"))
       (:script
         (str "
 function toggleHelm () {
