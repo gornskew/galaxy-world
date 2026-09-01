@@ -1146,6 +1146,10 @@ window.togglePlot = function () {
       document.getElementById('plot-caret').textContent = '\\u25b8';
     }
   } catch (e) {}
+})();
+window.GW_DRAW = function () {
+  GW_DRAW.gen = (GW_DRAW.gen || 0) + 1;
+  var gen = GW_DRAW.gen;
   var P = window.GW_PLAN; if (!P) return;
   var cv = document.getElementById('plot-canvas'); if (!cv) return;
   var ctx = cv.getContext('2d');
@@ -1364,6 +1368,7 @@ window.togglePlot = function () {
   // voyage, and is null when the scene snapped to arrival
   function animate () {
     function step () {
+      if (gen !== GW_DRAW.gen) return;
       var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
       if (f >= 1) { drawVoyage(1); setTimeout(drawOrbit, 900); return; }
       drawVoyage(f < 0 ? 0 : f);
@@ -1374,24 +1379,37 @@ window.togglePlot = function () {
   var polled = Date.now();
   drawVoyage(1);
   (function waitClock () {
+    if (gen !== GW_DRAW.gen) return;
     if (typeof window.GW_VOYAGE_T0 === 'number') { animate(); return; }
     if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { drawOrbit(); return; }
     setTimeout(waitClock, 100);
   })();
-})();")
+};
+if (!window.GW_AUTOED && (location.search + location.hash).indexOf('gwauto') > -1) {
+  window.GW_AUTOED = true;
+  setTimeout(function () {
+    var b = document.getElementById('gw-move-btn');
+    if (window.GW_DIAG) GW_DIAG('gwauto: btn=' + !!b + ' gdlAjax=' + (typeof gdlAjax) + ' onclick=' + (b && (b.getAttribute('onclick') || '').slice(0, 40)));
+    if (b) b.click();
+    if (window.GW_DIAG) GW_DIAG('gwauto: clicked');
+  }, 9000);
+}")
 
 ;; The voice of the road: while a programmed voyage flies, the beats
 ;; speak into the move-note line in step with the scene's own clock
 ;; -- the window, the kicks, the long coast -- and the full arrival
 ;; note returns when the road is flown.
 (defparameter *voyage-beats-js* "
-(function () {
+window.GW_BEATS = function () {
+  GW_BEATS.gen = (GW_BEATS.gen || 0) + 1;
+  var gen = GW_BEATS.gen;
   var V = (typeof GW_PLAN === 'object' && GW_PLAN && GW_PLAN.voyage) || null;
   if (!V || !V.beats || !V.beats.length) return;
   var el = document.getElementById('move-note');
   if (!el) return;
   var finale = el.textContent;
   function step () {
+    if (gen !== GW_BEATS.gen) return;
     if (typeof window.GW_VOYAGE_T0 !== 'number') {
       if (window.GW_VOYAGE_T0 === null) return;
       setTimeout(step, 100); return;
@@ -1405,7 +1423,7 @@ window.togglePlot = function () {
     setTimeout(step, 250);
   }
   step();
-})();")
+};")
 
 ;; The hands on the helm: drags and clicks on the rigs mirror into
 ;; the form controls, which stay the readout and the fallback -- the
@@ -1416,7 +1434,7 @@ window.togglePlot = function () {
 ;; reverse; press a pedal and it gives under the click.  The brake
 ;; presses beautifully.
 (defparameter *helm-hands-js* "
-(function () {
+window.GW_WIRE = function () {
   function findSel (opt) {
     var sels = document.querySelectorAll('#helm-body select');
     for (var i = 0; i < sels.length; i++)
@@ -1625,10 +1643,7 @@ window.togglePlot = function () {
   touch('starter-touch', function () {
     var st = document.getElementById('starter-mat');
     if (st) st.setAttribute('emissiveColor', '0.75 0.25 0.12');
-    var f = document.querySelector('#helm-body form');
-    if (!f) return;
-    var sub = f.querySelector('input[type=submit]');
-    if (f.requestSubmit) f.requestSubmit(sub || undefined); else f.submit();
+    var b = document.getElementById('gw-move-btn'); if (b) b.click();
   });
   // what is grabbable says so, straight from the sensors' own
   // isOver: an arrow everywhere, the grab hand over wheel,
@@ -1658,7 +1673,7 @@ window.togglePlot = function () {
    'starter-touch'].forEach(function (id) {
     overCursor(id, 'pointer');
   });
-})();")
+};")
 
 ;; The cab is the same for every session, so like the starfield its
 ;; markup is cut once and shared across all cockpits.
@@ -1806,7 +1821,11 @@ window.togglePlot = function () {
    ;; t on the X_ITE scout: the scene renders as a standalone X3D
    ;; document (self-igniting voyage clock, no x3dom extensions)
    (xr-scene? nil)
-   (use-ajax? nil)
+   ;; the console tap: scene and script complaints land on the
+   ;; plot's frame label, where a headless webshot can read them
+   (additional-header-content
+    "<script>(function () { function diag (s) { try { if (!window.GW_DIAG_ON) return; var d = document.getElementById('gw-diag'); if (!d) { d = document.createElement('div'); d.id = 'gw-diag'; d.style.cssText = 'position:fixed;top:60px;left:14px;z-index:99;color:#ff9090;font:11px monospace;background:rgba(0,0,0,0.75);padding:4px;max-width:1100px;'; document.body.appendChild(d); } d.textContent = (d.textContent + ' || ' + s).slice(-500); } catch (e) {} } window.GW_DIAG = diag; window.GW_DIAG_ON = (location.hash + location.search).indexOf('gwauto') > -1 || (location.hash + location.search).indexOf('gwdiag') > -1; var orig = console.error; console.error = function () { try { diag('ERR ' + Array.prototype.join.call(arguments, ' ')); } catch (e) {} orig.apply(console, arguments); }; window.addEventListener('error', function (ev) { try { diag('THROW ' + ev.message + ' @' + (ev.filename || '').split('/').pop() + ':' + ev.lineno); } catch (e) {} }); var oOpen = XMLHttpRequest.prototype.open, oSend = XMLHttpRequest.prototype.send; XMLHttpRequest.prototype.open = function (m, u) { this._gwu = m + ' ' + u; return oOpen.apply(this, arguments); }; XMLHttpRequest.prototype.send = function () { var x = this; if ((x._gwu || '').indexOf('gdlAjax') > -1) { x.addEventListener('loadend', function () { var len = -1; try { if (!x.responseType || x.responseType === 'text') len = (x.responseText || '').length; } catch (e) {} diag('AJAX ' + x._gwu + ' -> ' + x.status + ' len ' + len); }); } return oSend.apply(this, arguments); }; })();</script>")
+   (use-ajax? t)
    (use-svgpanzoom? nil)
    (use-tailwind? nil)
    (favicon-type "image/svg+xml")
@@ -2178,6 +2197,55 @@ window.togglePlot = function () {
    ;; (the nose swings before the burn, no propellant charged),
    ;; and the driver should never need a popup to know which one
    ;; stands.
+   ;; the per-turn state script: rides at the tail of the helm
+   ;; section, so the stock section swap re-runs it after every
+   ;; move (and once at load, where the guards no-op until the
+   ;; library definitions at the body's tail have run).  Scene
+   ;; refresh fires only on swaps.
+   ;; the one source for the scene's children: the live x3d
+   ;; renders it at load, the template section carries it per move
+   (scene-contents-x3d
+    (with-lhtml-string ()
+            (:|Background| :|skyColor| "0 0 0.012")
+            (str (the viewpoints-x3d))
+            ;; the universe turns around the ship, never the ship
+            ;; around the universe -- and inside the heading, the
+            ;; night drifts on its own clock
+            (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
+              :rotation (format nil "0 0 1 ~,5f"
+                                (- (the sky-authored-heading-rad)))
+              (:|Transform| :|DEF| "sky-drift"
+                (str (starfield-x3d :radius 5000.0d0))))
+            (str *sky-drift-x3d*)
+            (str (the bodies-x3d))
+            (str (cockpit-x3d))
+            (str (dice-x3d (the dice-lean)))
+            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
+            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+            (str (dash-radio-x3d (the cadence-control value)
+                                 (the transport-control value)))
+            (str (the port-feed-x3d))
+            (str (starboard-eye-feed-x3d))))
+
+   (section-state-js
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_LOADED) { ~a }~%window.GW_LOADED = true;~%}, 60);"
+            (the plan-json)
+            (if (the transit-samples) "Date.now() + 2000" "null")
+            (the scene-refresh-js)))
+
+   ;; how this renderer takes the new scene after a move: the
+   ;; scene-section was just swapped in place, so re-init x3dom
+   ;; and arm the voyage clock the way the load path does
+(scene-refresh-js
+    ;; x3dom's GL disposal crashes on every scene-teardown path this
+    ;; build offers (x3dom.reload, live transplant, with and without
+    ;; the RenderedTexture feeds) -- benchmark datum and an upstream
+    ;; candidate.  Until then the x3dom page takes the new scene the
+    ;; classic way, while the card machinery and the X_ITE page keep
+    ;; the true no-reload turn.
+    "location.reload();")
+
    (helm-readout-html
     (format nil "~a · ~a~a"
             (case (the shifter-control value)
@@ -2220,8 +2288,20 @@ window.togglePlot = function () {
           (:div :style "display:none;"
             (str (the cadence-control html-string))
             (str (the transport-control html-string)))))
-      (:input :type "submit" :value "make the move"
-       :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;")))
+      ;; the move posts through the stock gdlAjax pipe: the six
+      ;; controls bash, after-set! runs, and the page's sections
+      ;; re-render in place -- no reload, no splash, no re-init
+      (:button :type "button" :id "gw-move-btn"
+       :onclick (the (gdl-ajax-call
+                      :form-controls (list (the voyage-control)
+                                           (the wheel-control)
+                                           (the shifter-control)
+                                           (the pedal-control)
+                                           (the cadence-control)
+                                           (the transport-control))
+                      :function-key :after-set!))
+       :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;"
+       "make the move")))
 
    (viewpoints-x3d
     (let* ((up (make-vector 0 0 1))
@@ -2269,29 +2349,18 @@ window.togglePlot = function () {
     (with-lhtml-string ()
       (:div :style "position:fixed;inset:0;background:#000;"
         (:|x3d| :id "cockpit-x3d" :width "100%" :height "100%"
-          :style "width:100%;height:100%;display:block;"
+          :style "width:100vw;height:100vh;display:block;"
           (:|Scene|
-            (:|Background| :|skyColor| "0 0 0.012")
-            (str (the viewpoints-x3d))
-            ;; the universe turns around the ship, never the ship
-            ;; around the universe -- and inside the heading, the
-            ;; night drifts on its own clock
-            (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
-              :rotation (format nil "0 0 1 ~,5f"
-                                (- (the sky-authored-heading-rad)))
-              (:|Transform| :|DEF| "sky-drift"
-                (str (starfield-x3d :radius 5000.0d0))))
-            (str *sky-drift-x3d*)
-            (str (the bodies-x3d))
-            (str (cockpit-x3d))
-            (str (dice-x3d (the dice-lean)))
-            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
-            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
-            (str (dash-radio-x3d (the cadence-control value)
-                                 (the transport-control value)))
+            ;; the dynamic group is what a move transplants; the
+            ;; eye feeds stand OUTSIDE it, because disposing a
+            ;; RenderedTexture detonates this x3dom build's GL
+            ;; teardown (deleteFramebuffer on the render loop)
+            (:|Group| :id "gw-dynamic"
+              (str (the scene-contents-x3d)))
             (str (the port-feed-x3d))
             (str (starboard-eye-feed-x3d)))))
+      (:div :style "display:none;"
+        (str (the scene-section main-div)))
       (:div :style "position:fixed;top:14px;left:14px;z-index:10;display:flex;gap:10px;font-family:sans-serif;"
         (:button :id "port-lookout-btn" :type "button" :onclick "bindEye('port-lookout')"
           :style (the eye-button-style) "◐ port lookout")
@@ -2315,44 +2384,7 @@ window.togglePlot = function () {
 #helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
 #helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
-        (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
-              :onclick "toggleHelm()"
-          (:span "THE HELM")
-          (:span :id "helm-readout"
-            :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
-            (str (the helm-readout-html)))
-          (:span :id "helm-caret" "▾"))
-        (:div :id "helm-body" :style "margin-top:8px;"
-        (str (the helm-form-html))
-        (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
-          (:div (if (the landed?)
-                    (fmt "down on: ~a" (the world-name))
-                    (fmt "falling around: ~a" (the world-name))))
-          (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
-          (:div (fmt "speed: ~,2f km/s" (the speed)))
-          (:div :id "coords-line" :style "font-size:11px;color:#c9a227;"
-            (str (the coords-line-html)))
-          ;; on the ground there is no road to describe -- the world
-          ;; itself holds him
-          (if (the landed?)
-              (htm (:div "engines cold — forward and the full pedal to climb"))
-              (htm
-               (:div (fmt "altitude: ~,0f km" (the altitude)))
-               (if (the semi-major)
-                   (htm
-                    (:div (fmt "high point of the road: ~,0f km" (the apoapsis-alt)))
-                    (if (< (the periapsis-alt) 100)
-                        (htm (:div :style "color:#e07050;"
-                               (fmt "low point: ~,0f km — this road meets the sky"
-                                    (the periapsis-alt))))
-                        (htm (:div (fmt "low point of the road: ~,0f km"
-                                        (the periapsis-alt))))))
-                   (htm (:div :style "color:#e07050;"
-                          "the road is unbound — the deep dark has you")))))
-          (:div (fmt "moves made: ~d" (the moves-count)))
-          (:div :id "move-note"
-            :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
-            (str (the last-move-note))))))
+        (str (the helm-section main-div)))
       ;; THE PLOT: the plan view every real ship keeps beside the
       ;; glass -- the world's frame from above, the road's true
       ;; shape, the ship a point with her nose drawn on.  A voyage
@@ -2363,15 +2395,7 @@ window.togglePlot = function () {
               :onclick "togglePlot()"
           (:span "THE PLOT")
           (:span :id "plot-caret" "▾"))
-        (:div :id "plot-body" :style "margin-top:6px;"
-          (:canvas :id "plot-canvas"
-            :width (format nil "~d" (the plot-size))
-            :height (format nil "~d" (the plot-size))
-            :style "display:block;")
-          (:div :id "plot-coords"
-            :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
-          (:div :id "plot-frame-label"
-            :style "font-size:10px;color:#c9a227;margin-top:2px;")))
+        (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit")
       ;; the paint shop: the world's face, the leather, and the wood
@@ -2447,10 +2471,12 @@ function toggleHelm () {
     });
   });
 })();")
-        (str (format nil "var GW_PLAN = ~a;" (the plan-json)))
         (str *plan-view-js*)
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
+        ;; the definitions just landed; give the section's state
+        ;; script its first real run
+        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS();")
         (str (the voyage-script-js)))))
 
    (eye-button-style
@@ -2541,6 +2567,106 @@ function toggleHelm () {
                       :default :play
                       :choice-plist (list :play "play"
                                           :rewind "rewind")))
+
+  :hidden-objects
+  (;; the no-reload machinery: the page's moving parts are stock
+   ;; sheet-sections, swapped in place through the gdlAjax pipe
+   ;; when the move button's gdl-ajax-call runs after-set!.
+   ;; :js-to-eval :parse evaluates each section's scripts on
+   ;; arrival -- the helm section's state script re-draws the
+   ;; plot, re-wires the hands, and refreshes the scene per
+   ;; renderer, every turn.
+   (helm-section
+    :type 'sheet-section
+    :js-to-eval :parse
+    :inner-html
+    (with-lhtml-string ()
+      (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleHelm()"
+          (:span "THE HELM")
+          (:span :id "helm-readout"
+            :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
+            (str (the helm-readout-html)))
+          (:span :id "helm-caret" "▾"))
+        (:div :id "helm-body" :style "margin-top:8px;"
+        (str (the helm-form-html))
+        (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
+          (:div (if (the landed?)
+                    (fmt "down on: ~a" (the world-name))
+                    (fmt "falling around: ~a" (the world-name))))
+          (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
+          (:div (fmt "speed: ~,2f km/s" (the speed)))
+          (:div :id "coords-line" :style "font-size:11px;color:#c9a227;"
+            (str (the coords-line-html)))
+          ;; on the ground there is no road to describe -- the world
+          ;; itself holds him
+          (if (the landed?)
+              (htm (:div "engines cold — forward and the full pedal to climb"))
+              (htm
+               (:div (fmt "altitude: ~,0f km" (the altitude)))
+               (if (the semi-major)
+                   (htm
+                    (:div (fmt "high point of the road: ~,0f km" (the apoapsis-alt)))
+                    (if (< (the periapsis-alt) 100)
+                        (htm (:div :style "color:#e07050;"
+                               (fmt "low point: ~,0f km — this road meets the sky"
+                                    (the periapsis-alt))))
+                        (htm (:div (fmt "low point of the road: ~,0f km"
+                                        (the periapsis-alt))))))
+                   (htm (:div :style "color:#e07050;"
+                          "the road is unbound — the deep dark has you")))))
+          (:div (fmt "moves made: ~d" (the moves-count)))
+          (:div :id "move-note"
+            :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
+            (str (the last-move-note)))))
+      (:script (str (the section-state-js)))))
+
+   (plot-section
+    :type 'sheet-section
+    :js-to-eval :parse
+    :inner-html
+    (with-lhtml-string ()
+      (:div :id "plot-body" :style "margin-top:6px;"
+          (:canvas :id "plot-canvas"
+            :width (format nil "~d" (the plot-size))
+            :height (format nil "~d" (the plot-size))
+            :style "display:block;")
+          (:div :id "plot-coords"
+            :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
+          (:div :id "plot-frame-label"
+            :style "font-size:10px;color:#c9a227;margin-top:2px;"))))
+
+(scene-section
+    :type 'sheet-section
+    :js-to-eval :parse
+    :inner-html
+    ;; a hidden TEMPLATE, not the live scene: x3dom's reload-after-
+    ;; swap crashed tearing down the orphaned GL context, so the
+    ;; live x3d element never leaves the page -- the refresh
+    ;; transplants these children into the LIVE Scene, which x3dom
+    ;; applies incrementally under a living context
+    (with-lhtml-string ()
+      (:div :id "gw-scene-template"
+            (:|Background| :|skyColor| "0 0 0.012")
+            (str (the viewpoints-x3d))
+            ;; the universe turns around the ship, never the ship
+            ;; around the universe -- and inside the heading, the
+            ;; night drifts on its own clock
+            (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
+              :rotation (format nil "0 0 1 ~,5f"
+                                (- (the sky-authored-heading-rad)))
+              (:|Transform| :|DEF| "sky-drift"
+                (str (starfield-x3d :radius 5000.0d0))))
+            (str *sky-drift-x3d*)
+            (str (the bodies-x3d))
+            (str (cockpit-x3d))
+            (str (dice-x3d (the dice-lean)))
+            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
+            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+            (str (dash-radio-x3d (the cadence-control value)
+                                 (the transport-control value)))
+))))
 
   :functions
   (;; Fall through DT seconds of gravity: velocity Verlet in
@@ -3259,9 +3385,7 @@ function toggleHelm () {
       onRelease('radio-tpt-' + i + '-touch', function () { faceClick('.transport-btn', v); });
     });
     onRelease('starter-touch', function () {
-      var f = document.querySelector('#helm-body form'); if (!f) return;
-      var sub = f.querySelector('input[type=submit]');
-      if (f.requestSubmit) f.requestSubmit(sub || undefined); else f.submit();
+      var b = document.getElementById('gw-move-btn'); if (b) b.click();
     });
     var wheel = named('wheel-sensor');
     if (wheel) {
@@ -3455,6 +3579,7 @@ function toggleHelm () {
       if (tries < 60) setTimeout(poll, 500);
     })();
   }
+  window.GW_XR_WIRE = start;
   window.addEventListener('load', function () { setTimeout(start, 100); });
 })();")
 
@@ -3477,6 +3602,13 @@ function toggleHelm () {
 
   :computed-slots
   ((title "Galaxy World — the cockpit, under X_ITE")
+   ;; the xr renderer takes a new scene by re-pointing the canvas
+   ;; at the session's document (cache-busted) and re-running the
+   ;; SAI wiring, which re-arms the voyage clock, re-binds the
+   ;; seat, and relights the indicators
+   (scene-refresh-js
+    (format nil "var cv = document.querySelector('x3d-canvas');~%if (cv) cv.setAttribute('src', '/xr-scene.x3d?ship=~a&bust=' + Date.now());~%if (window.GW_XR_WIRE) setTimeout(window.GW_XR_WIRE, 800);"
+            (the instance-id)))
    (xr-scene? t)
    (use-x3dom? nil)
    (additional-header-content
@@ -3536,41 +3668,13 @@ function toggleHelm () {
 #helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
 #helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
-        (:div :style "font-size:14px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
-              :onclick "toggleHelm()"
-          (:span "THE HELM")
-          (:span :id "helm-readout"
-            :style "font-weight:bold;letter-spacing:0.08em;color:#f4dc6a;"
-            (str (the helm-readout-html)))
-          (:span :id "helm-caret" "▾"))
-        (:div :id "helm-body" :style "margin-top:8px;"
-          (str (the helm-form-html))
-          (:div :style "margin-top:10px;border-top:1px solid #7a6a1f;padding-top:8px;line-height:1.5;"
-            (:div (if (the landed?)
-                      (fmt "down on: ~a" (the world-name))
-                      (fmt "falling around: ~a" (the world-name))))
-            (:div (fmt "heading: ~3,'0d" (mod (round (the heading-deg)) 360)))
-            (:div (fmt "speed: ~,2f km/s" (the speed)))
-            (:div :id "coords-line" :style "font-size:11px;color:#c9a227;"
-              (str (the coords-line-html)))
-            (:div (fmt "moves made: ~d" (the moves-count)))
-            (:div :id "move-note"
-              :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
-              (str (the last-move-note))))))
+        (str (the helm-section main-div)))
       (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
           (:span "THE PLOT")
           (:span :id "plot-caret" "▾"))
-        (:div :id "plot-body" :style "margin-top:6px;"
-          (:canvas :id "plot-canvas"
-            :width (format nil "~d" (the plot-size))
-            :height (format nil "~d" (the plot-size))
-            :style "display:block;")
-          (:div :id "plot-coords"
-            :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
-          (:div :id "plot-frame-label"
-            :style "font-size:10px;color:#c9a227;margin-top:2px;")))
+        (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
         "Galaxy World — the cockpit, under X_ITE (scout)"
         (:a :href "/" :style "color:#e8c839;margin-left:10px;" "back to x3dom"))
@@ -3592,10 +3696,11 @@ function toggleHelm () {
   } catch (e) {}
 })();")
         (str *paint-shop-js*)
-        (str (format nil "var GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;"
-                     (the plan-json)
-                     (if (the transit-samples) "Date.now() + 2000" "null")))
         (str *plan-view-js*)
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
+        ;; the definitions just landed; give the section's state
+        ;; script its first real run (the xr wiring arms itself on
+        ;; window load)
+        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS();")
         (str *xr-sai-js*))))))
