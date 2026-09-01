@@ -5,9 +5,11 @@
 
 ;; The cockpit: the room the player plays from, holding the HELM.
 ;; The idiom is a concours-kept classic pickup cab -- stitched bench,
-;; painted metal and chrome instrument panel, thin-rim wheel, three
-;; on the tree.  How the hull achieves steering and propulsion stays
-;; unsaid; the truck needs no explanation.
+;; painted metal and chrome instrument panel, thin-rim wheel, column
+;; shift.  She is an AUTOMATIC (ruled 2026-09-01): no clutch anywhere
+;; on this truck, the way American pickups actually are.  How the
+;; hull achieves steering and propulsion stays unsaid; the truck
+;; needs no explanation.
 ;;
 ;; Frame: meters, origin at the driver's hip point.  x runs forward
 ;; toward the windshield, y to port (the driver's left), z up.
@@ -470,8 +472,9 @@
                 :radius 0.005
                 :display-controls (list :color +chrome+))
 
-   ;; three on the tree, honestly now: forward, neutral, reverse.
-   ;; The clutch lives up here since neutral took over its work.
+   ;; the column shift of an automatic: forward, neutral, reverse
+   ;; -- down for forward, up for reverse, the way the lever falls
+   ;; in a real truck.  No clutch on this vessel.
    (shifter-lever :type 'c-cylinder
                   :start (the shifter-pivot)
                   :end (add-vectors (the shifter-pivot)
@@ -484,13 +487,13 @@
                  :radius 0.018
                  :display-controls (list :color +gauge-face+))
 
-   ;; the pedals: feather, brake, gas.  The clutch moved up the
-   ;; column when neutral joined the shifter, and the light foot
-   ;; got the freed pedal.  They HANG from the dash now, the way a
-   ;; real truck hangs them -- floor-mounted they sat below the
-   ;; glass line and no pointer could reach them.  The brake is
-   ;; fully present and does nothing whatsoever -- space doesn't
-   ;; brake, and the pedal is how the cockpit says so.
+   ;; the pedals: feather, brake, gas -- no clutch, she's an
+   ;; automatic, and the light foot gets the third pedal instead.
+   ;; They HANG from the dash, the way a real truck hangs them --
+   ;; floor-mounted they sat below the glass line and no pointer
+   ;; could reach them.  The brake is fully present and does
+   ;; nothing whatsoever -- space doesn't brake, and the pedal is
+   ;; how the cockpit says so.
    (pedal-plates :type 'box
                  :sequence (:size 3)
                  :center (make-point 0.695
@@ -1526,7 +1529,7 @@ window.GW_WIRE = function () {
       pedalSel = findSel(':BURN'),
       roadSel  = findSel(':HAND');
   // The lockouts: what the move ignores, the helm greys.  Neutral
-  // clutches the pedal out; rewind cools pedal and shifter both
+  // sends no pedal to the engines; rewind cools pedal and shifter both
   // (the engines don't light, the sign of dv is moot); a programmed
   // road takes every hand off the wheel; on the ground the wheel
   // steers nothing (takeoff sets its own heading).  The wheel stays
@@ -1572,7 +1575,9 @@ window.GW_WIRE = function () {
   window.GW_LOCKS = lockState;
   var wheelPose = { ':HARD-PORT': 1.3, ':EASY-PORT': 0.55, ':AMIDSHIPS': 0,
                     ':EASY-STARBOARD': -0.55, ':HARD-STARBOARD': -1.3 };
-  var gearPose  = { ':FORWARD': 0.5, ':NEUTRAL': 0, ':REVERSE': -0.5 };
+  // down for forward, up for reverse -- the way a column shift
+  // falls in a real truck
+  var gearPose  = { ':FORWARD': -0.5, ':NEUTRAL': 0, ':REVERSE': 0.5 };
   var gearCycle = [':FORWARD', ':NEUTRAL', ':REVERSE'];
   function setWheelPose (ang) {
     var t = document.getElementById('wheel-turn');
@@ -2018,8 +2023,11 @@ window.GW_WIRE = function () {
       (format out "}")
       (when (the transit-samples)
         (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~d,\"samples\":["
-                (if (member (the transit-target) '(:moon :homeward)) "home" "the sun's")
-                (if (member (the transit-target) '(:moon :homeward)) 90 120))
+                (case (the transit-target)
+                  ((:moon :homeward) "home")
+                  ((:down) (the world-name))
+                  (t "the sun's"))
+                (the transit-duration))
         (loop for s in (the transit-samples)
               for first = t then nil
               do (destructuring-bind (k h px py) s
@@ -2055,8 +2063,16 @@ window.GW_WIRE = function () {
    (transit-samples nil :settable)
 
    ;; which road was flown -- :moon, :homeward (the moon road flown
-   ;; back), or a world key on the sun's road -- while samples stand
+   ;; back), :down (the yard's descent), or a world key on the
+   ;; sun's road -- while samples stand
    (transit-target nil :settable)
+
+   ;; how long the scene takes to fly it, seconds: the moon legs at
+   ;; 90, the descent a tighter 45, the sun's roads at 120
+   (transit-duration (case (the transit-target)
+                       ((:moon :homeward) 90)
+                       ((:down) 45)
+                       (t 120)))
 
    ;; the bodies riding the voyage page: specs for body-x3d and
    ;; transit-anim-x3d, set by the road function alongside the
@@ -2105,9 +2121,7 @@ window.GW_WIRE = function () {
                                     :tilt (getf body :tilt)
                                     :adornment (getf body :adornment)))))))
              (transit-anim-x3d samples (the transit-bodies)
-                               :duration (if (member (the transit-target)
-                                                     '(:moon :homeward))
-                                             90 120)
+                               :duration (the transit-duration)
                                ;; a scene document carries its own
                                ;; ignition; the x3dom page lights the
                                ;; clock from script instead
@@ -2126,6 +2140,15 @@ window.GW_WIRE = function () {
                                                (- +moon-x+) 0)
                                    (- (deg->rad (the heading-deg)))
                                    :enabled? nil)
+                 "")
+             ;; the yard's descent ends ON the ground: the plain
+             ;; rides up under the cab over the last tenth of the
+             ;; clip, taking the view as the swelling globe swallows
+             ;; the camera -- the ground literally comes up to meet
+             ;; her.  Parked far below until the clock nears home.
+             (if (eql (the transit-target) :down)
+                 (format nil "<Transform DEF=\"ground-lift\" id=\"ground-lift\" translation=\"0 0 -6000\">~a</Transform><PositionInterpolator DEF=\"vy-ground-lift\" key=\"0 0.88 0.97 1\" keyValue=\"0 0 -6000 0 0 -1800 0 0 -60 0 0 0\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-ground-lift\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-ground-lift\" fromField=\"value_changed\" toNode=\"ground-lift\" toField=\"set_translation\"></ROUTE>"
+                         (ground-x3d (the world)))
                  "")))
           (string-append
            ;; parked, the world is the GROUND, not a globe: at
@@ -2209,6 +2232,8 @@ window.GW_WIRE = function () {
       var el = document.getElementById(f[0]);
       if (el) { el.setAttribute('translation', f[1]); el.setAttribute('scale', f[2]); }
     });
+    var gl = document.getElementById('ground-lift');
+    if (gl) gl.setAttribute('translation', '0 0 0');
     var sky = document.getElementById('sky-heading');
     if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
     var amb = document.getElementById('ambient-clock');
@@ -2235,7 +2260,7 @@ window.GW_WIRE = function () {
                 (or (the instance-id) "local") (the moves-count)
                 (the voyage-fin-js)
                 (- (deg->rad (the heading-deg)))
-                (if (member (the transit-target) '(:moon :homeward)) 92000 122000))
+                (* 1000 (+ 2 (the transit-duration))))
         ""))
    ;; the speedo sweeps 8 o'clock to 4 o'clock; full scale reads the
    ;; world -- 8 km/s over home and Mars, opened up over a giant
@@ -2619,14 +2644,14 @@ function toggleHelm () {
                                       :hard-starboard "hard over, to starboard"))
 
    ;; the shifter carries direction and nothing else: forward,
-   ;; neutral, reverse.  Neutral IS the clutch -- clutched out, no
-   ;; pedal reaches the engines, and she coasts.
+   ;; neutral, reverse.  In neutral no pedal reaches the engines,
+   ;; and she coasts -- an automatic's N, not a clutch.
    (shifter-control :type 'gwl:menu-form-control
                     :prompt "shifter: "
                     :size 1
                     :default :neutral
                     :choice-plist (list :forward "forward"
-                                        :neutral "neutral — clutched out, coasting"
+                                        :neutral "neutral — coasting"
                                         :reverse "reverse — nose-about"))
 
    (pedal-control :type 'gwl:menu-form-control
@@ -2800,8 +2825,8 @@ function toggleHelm () {
    ;; helm form posts.  With the programmed road selected, the move
    ;; IS the voyage; otherwise turn the wheel, then burn (or don't),
    ;; then FALL as long as the radio plays -- a minute on the slow
-   ;; channel, a day on the fastest.  The shifter's neutral is the
-   ;; clutch: clutched out, no pedal reaches the engines.  The brake
+   ;; channel, a day on the fastest.  In neutral no pedal reaches
+   ;; the engines -- an automatic's N.  The brake
    ;; is heard and changes nothing.  Rewind on the tape transport
    ;; runs the turn backward, engines cold.  Meet the sky of the
    ;; world and you are set back on the ring.
@@ -2850,42 +2875,115 @@ function toggleHelm () {
     (the (set-slot! :last-burn :forward))
     (tally! :takeoffs))
 
-   ;; The programmed landing: the yard takes the helm and flies the
-   ;; descent between frames -- a retro kick dropping the low point
-   ;; onto the sky, the fall, and the big brake at the touch.  The
-   ;; staging road for the view from the ground; the BY-HAND landing
-   ;; stays the game (the doctrine: shed the road's speed before the
-   ;; surface has to).  Figures at teaching grain: the descent conic
-   ;; is cut from her current radius as if the road were round.
+   ;; The programmed landing: the yard takes the helm and FLIES the
+   ;; descent -- the scene rides the whole road down: a retro kick
+   ;; dropping the low point onto the sky, half a lap falling, and
+   ;; the big brake at the touch, the ground rising to meet her at
+   ;; the clip's end (see the ground-lift in bodies-x3d).  The
+   ;; staging road for the view from the ground; the BY-HAND
+   ;; landing stays the game (the doctrine: shed the road's speed
+   ;; before the surface has to).  Figures at teaching grain: the
+   ;; descent conic is cut from her current radius as if the road
+   ;; were round, its apoapsis at her seat -- and it runs in her
+   ;; orbit's own sense, so the watch's clockwise stays clockwise
+   ;; on the way down.
    (fly-landing-road!
     ()
-    (the (set-slot! :transit-samples nil))
-    (the (set-slot! :transit-target nil))
-    (the (set-slot! :transit-bodies nil))
-    (the (set-slot! :transit-beats nil))
-    (the (set-slot! :moon-orbit? nil))
     (let* ((mu (the world-mu))
            (sky (the world-sky))
-           (r1 (max (the radius) (+ sky 1.0)))
+           (r1 (max (the radius) (* 1.02 sky)))
+           (phi0 (atan (the pos-y) (the pos-x)))
+           (alpha (- phi0 pi))
+           ;; mirror the canonical ellipse when she runs clockwise
+           (sense (if (minusp (the specific-h)) -1 1))
            (a (* 0.5 (+ r1 sky)))
-           ;; the retro kick off a round road at r1, onto the
-           ;; descent ellipse
+           (e (/ (- r1 sky) (+ r1 sky)))
+           (p (* a (- 1 (* e e))))
+           (vcoeff (sqrt (/ mu p)))
            (dv1 (- (sqrt (/ mu r1))
                    (sqrt (* mu (- (/ 2 r1) (/ 1 a))))))
-           ;; the big brake at the sky: the descent's periapsis
-           ;; speed, all of it shed at the touch
            (dv2 (sqrt (* mu (- (/ 2 sky) (/ 1 a)))))
-           ;; set down at the point under her now
-           (scale (/ sky (max (the radius) 1.0))))
-      (the (set-slot! :pos-x (* (the pos-x) scale)))
-      (the (set-slot! :pos-y (* (the pos-y) scale)))
+           (n 32)
+           ;; pre-burn beat: wherever and however she stands
+           (samples (list (list 0.0 (deg->rad (the heading-deg))
+                                (the pos-x) (the pos-y))))
+           (prev-h nil))
+      ;; apo -> peri, the ellipse rotated so its high point sits at
+      ;; her seat; positions and headings mirrored together when
+      ;; the sense runs clockwise
+      (dotimes (i (1+ n))
+        (let* ((ecc-anom (+ pi (* pi (/ i n))))
+               (r (* a (- 1 (* e (cos ecc-anom)))))
+               (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
+                            (- (cos ecc-anom) e)))
+               (h (* sense (atan (* vcoeff (+ e (cos theta)))
+                                 (* vcoeff (- (sin theta)))))))
+          ;; unwrap the heading so the nose track never jumps a lap
+          (when prev-h
+            (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
+            (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
+          (setq prev-h h)
+          (let ((ang (+ (* sense theta) alpha)))
+            (push (list (+ 0.06 (* 0.90 (/ i n)))
+                        (+ h alpha)
+                        (* r (cos ang))
+                        (* r (sin ang)))
+                  samples))))
+      ;; the closing beat holds the touchdown pose
+      (destructuring-bind (key fh fx fy) (first samples)
+        (declare (ignore key))
+        (push (list 1.0 fh fx fy) samples))
+      (setq samples (nreverse samples))
+      (destructuring-bind (key fh fx fy) (car (last samples))
+        (declare (ignore key))
+        (the (set-slot! :heading-deg (mod (round (* fh (/ 180 pi))) 360)))
+        (the (set-slot! :pos-x fx))
+        (the (set-slot! :pos-y fy)))
       (the (set-slot! :vel-x 0))
       (the (set-slot! :vel-y 0))
       (the (set-slot! :landed? t))
       (the (set-slot! :last-burn :none))
+      (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-target :down))
+      (the (set-slot! :transit-bodies
+            (append
+             (list (list :prefix "planet"
+                         :texture (world-figure (the world) :texture)
+                         :radius (the world-radius)
+                         :targets (make-list (length samples)
+                                             :initial-element (list 0 0))
+                         :spin? t
+                         :diffuse (world-figure (the world) :diffuse)
+                         :emissive (world-figure (the world) :emissive)
+                         :tilt (world-figure (the world) :tilt)
+                         :adornment (world-figure (the world) :adornment)))
+             ;; the sky's other rider comes along for the way down
+             (when (eql (the world) :home)
+               (list (list :prefix "moon" :texture "moon-tex"
+                           :radius +moon-radius+
+                           :targets (make-list (length samples)
+                                               :initial-element
+                                               (list +moon-x+ 0))
+                           :diffuse "0.75 0.74 0.70"
+                           :emissive "0.10 0.10 0.09")))
+             (when (eql (the world) :moon)
+               (list (list :prefix "home-far" :texture "earth-tex"
+                           :radius +planet-radius+
+                           :targets (make-list (length samples)
+                                               :initial-element
+                                               (list (- +moon-x+) 0))
+                           :diffuse "0.10 0.18 0.85"
+                           :emissive "0.05 0.07 0.12"))))))
+      (the (set-slot! :transit-beats
+            (list (cons 0.02 "the yard takes the helm -- hands off for the descent")
+                  (cons 0.06 (format nil "the retro kick: -~,2f km/s, and the low point drops onto the sky" dv1))
+                  (cons 0.45 "falling down the well -- the ground coming up to meet her")
+                  (cons 0.90 (format nil "the big brake: -~,2f km/s, shed before the surface has to" dv2))
+                  (cons 0.975 "DOWN -- engines cold, the world turning under him"))))
       (the (set-slot! :last-move-note
-            (format nil "the yard takes the helm for the descent: a retro kick (-~,2f km/s) drops the low point onto the sky, the long fall, and the big brake (-~,2f) at the touch -- DOWN on ~a, engines cold.  The by-hand landing is the real game; forward and the full pedal to climb"
+            (format nil "the yard flew her down: a retro kick (-~,2f km/s) dropped the low point onto the sky, half a lap falling, and the big brake (-~,2f) at the touch -- DOWN on ~a, engines cold.  The by-hand landing is the real game; forward and the full pedal to climb"
                     dv1 dv2 (the world-name))))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
@@ -3292,8 +3390,8 @@ function toggleHelm () {
                (rad (deg->rad heading))
                (flip (if (eql shifter :reverse) -1 1))
                ;; the full pedal is a real kick; feather is the
-               ;; light foot close work needs; neutral clutches
-               ;; every pedal out, and the engines don't light in
+               ;; light foot close work needs; neutral sends no
+               ;; pedal to the engines, and they don't light in
                ;; rewind -- the tape only carries the fall
                (dv (if (or rewind? (eql shifter :neutral))
                        0
@@ -3353,7 +3451,7 @@ function toggleHelm () {
                             "burn against the road — less speed, and the far side falls")
                            ((plusp dv)
                             "a sideways shove — the road tilts; speed hardly changes")
-                           (t "coasting — clutched out in neutral, falling around the world; that curve IS the orbit"))))
+                           (t "coasting in neutral, falling around the world; that curve IS the orbit"))))
           (cond (down?
                  ;; set down at the point of contact, engines cold
                  (let ((scale (/ (the world-sky) (max r 1.0))))
@@ -3464,7 +3562,7 @@ function toggleHelm () {
                                     "reverse on the ground just squats her on her gear -- forward is the way off a world")
                                    ((eql shifter :neutral)
                                     (if (eql pedal :burn)
-                                        "the engines answer -- and neutral holds the clutch out, going nowhere.  Forward, and the full pedal climbs"
+                                        "revving in neutral -- the engines answer and nothing moves.  Forward, and the full pedal climbs"
                                         (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
                                                 (the world-name))))
                                    ((eql pedal :feather)
@@ -3594,7 +3692,7 @@ function toggleHelm () {
       var km = named('shifter-knob-mat');
       if (km && gearSel) setColor(km, 'diffuseColor', kc[gearSel.value] || '0.85 0.87 0.88');
       var rig = named('shifter-rig');
-      var pose = { ':FORWARD': 0.5, ':NEUTRAL': 0, ':REVERSE': -0.5 };
+      var pose = { ':FORWARD': -0.5, ':NEUTRAL': 0, ':REVERSE': 0.5 };
       if (rig && gearSel) {
         try {
           var rf = rig.getField('rotation');
