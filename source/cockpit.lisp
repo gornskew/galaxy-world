@@ -671,71 +671,11 @@
              (ring-annulus-x3d 4400 4790 diffuse emissive 0.45
                                :sectors 64)))))
 
-;; The berth keeps a tally of what the helms aboard actually do --
-;; the seed of the play-feeds-the-buildout channel.  One image, one
-;; table, every cockpit.  The table mirrors to the host bind mount
-;; (the /projects/.state convention), so a container recreate hands
-;; the running totals to its successor instead of zeroing the log.
-(defvar *helm-tallies* (make-hash-table :test 'eq))
-
-(defparameter *tallies-file* #P"/projects/.state/galaxy-world-tallies.sexp"
-  "Host-side (survives container recreate, unlike /tmp).  Absent on
-first boot ever, or where /projects/.state doesn't exist -- both read
-as \"nothing to restore\", not an error.")
-
-(defparameter *tallies-min-interval* 15
-  "Floor between disk writes, seconds -- moves are human-paced, but a
-full cockpit deck shouldn't turn every click into a write.")
-
-(defvar *tallies-last-persisted* 0)
-
-(defun persist-tallies! (&optional force?)
-  "Mirror *HELM-TALLIES* to *TALLIES-FILE*, throttled.  Errors are
-swallowed -- a failed save must never cost a player his move."
-  (ignore-errors
-    (let ((now (get-universal-time)))
-      (when (or force? (>= (- now *tallies-last-persisted*)
-                           *tallies-min-interval*))
-        (ensure-directories-exist *tallies-file*)
-        ;; self-healing 1777: /projects/.state is shared across
-        ;; different-uid containers -- whoever creates it first
-        ;; otherwise locks the others out (see eyes-only
-        ;; persistence.lisp for the full story)
-        (ignore-errors
-          (uiop:run-program
-           (list "chmod" "1777" (namestring (truename "/projects/.state/")))
-           :ignore-error-status t))
-        (let ((entries nil))
-          (maphash (lambda (key count) (push (cons key count) entries))
-                   *helm-tallies*)
-          (with-open-file (out *tallies-file* :direction :output
-                               :if-exists :supersede
-                               :if-does-not-exist :create)
-            (let ((*print-length* nil) (*print-level* nil))
-              (prin1 (list :version 1 :saved-at now :tallies entries) out))))
-        (setq *tallies-last-persisted* now)))))
-
-(defun restore-tallies! ()
-  "Repopulate *HELM-TALLIES* from *TALLIES-FILE* at boot, or leave it
-empty when the file is absent or unreadable -- a corrupt file should
-degrade to a fresh log, never a failed boot."
-  (ignore-errors
-    (when (probe-file *tallies-file*)
-      (let* ((*read-eval* nil)
-             (saved (with-open-file (in *tallies-file*) (read in)))
-             (entries (and (eql (getf saved :version) 1)
-                           (getf saved :tallies))))
-        (when entries
-          (clrhash *helm-tallies*)
-          (dolist (entry entries)
-            (setf (gethash (car entry) *helm-tallies*) (cdr entry)))
-          (format *trace-output*
-                  "~&[galaxy-world] restored helm tallies: ~a keys~%"
-                  (length entries)))))))
-
-(defun tally! (key)
-  (incf (gethash key *helm-tallies* 0))
-  (persist-tallies!))
+;; The berth keeps a LOG BOOK of what the helms aboard actually do
+;; and who flies them -- the play-feeds-the-buildout channel.  The
+;; tallies, the pilot book, and the stats feed all live in
+;; log-book.lisp; the cockpit's whole duty to it is calling TALLY!
+;; on each deed and binding *CURRENT-PILOT* around each move.
 
 ;; The heavenly bodies as seen from the ship: each drawn at a fixed
 ;; scene distance with the scale that subtends its true angle, so he
@@ -2016,6 +1956,10 @@ window.GW_WIRE = function () {
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
+   ;; the pilot this cockpit's hands belong to, once the browser
+   ;; signs the log book at boarding (check-in!).  NIL until then --
+   ;; an unsigned hand flies fine; only the book ignores him.
+   (pilot-id nil :settable)
    ;; down on the world's surface, engines cold.  Landing sets it,
    ;; the climb back to the ring (gas while parked) or a programmed
    ;; road clears it.
@@ -2511,7 +2455,9 @@ window.GW_WIRE = function () {
               :title "play — the turn runs forward" "▶"))
           (:div :style "display:none;"
             (str (the cadence-control html-string))
-            (str (the transport-control html-string)))))
+            (str (the transport-control html-string))
+            (:span :id "gw-signature"
+              (str (the pilot-control html-string))))))
       ;; the move posts through the stock gdlAjax pipe: the six
       ;; controls bash, after-set! runs, and the page's sections
       ;; re-render in place -- no reload, no splash, no re-init
@@ -2525,7 +2471,38 @@ window.GW_WIRE = function () {
                                            (the transport-control))
                       :function-key :after-set!))
        :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;"
-       "make the move")))
+       "make the move")
+      ;; the boarding signature: the browser keeps a pilot token of
+      ;; its own minting (localStorage; a private window simply
+      ;; boards unsigned), writes it on the hidden line, and posts
+      ;; it once through the pipe -- the log book turns to the
+      ;; pilot's page and every tally! of this session lands there.
+      ;; Guarded both ends: the flag here, the pilot-id slot aboard.
+      (:script
+       (str (format nil "window.GW_CHECK_IN = function () {
+  try {
+    if (window.GW_CHECKED_IN) return;
+    var pid = null;
+    try { pid = localStorage.getItem('gw-pilot'); } catch (e) {}
+    if (!pid) {
+      var a = new Uint8Array(12);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+      else for (var j = 0; j < a.length; j++) a[j] = Math.floor(Math.random() * 256);
+      pid = 'p';
+      for (var i = 0; i < a.length; i++) pid += (a[i] < 16 ? '0' : '') + a[i].toString(16);
+      try { localStorage.setItem('gw-pilot', pid); } catch (e) {}
+    }
+    var f = document.querySelector('#gw-signature input');
+    if (!f) return;
+    f.value = pid;
+    window.GW_CHECKED_IN = true;
+    ~a
+  } catch (e) {}
+};
+GW_CHECK_IN();"
+                    (the (gdl-ajax-call
+                          :form-controls (list (the pilot-control))
+                          :function-key :check-in!)))))))
 
    (viewpoints-x3d
     (let* ((up (make-vector 0 0 1))
@@ -2796,7 +2773,15 @@ function toggleHelm () {
    (transport-control :type 'gwl:radio-form-control
                       :default :play
                       :choice-plist (list :play "play"
-                                          :rewind "rewind")))
+                                          :rewind "rewind"))
+
+   ;; the log-book signature line: a hidden field the browser fills
+   ;; with its own pilot token at boarding, posted once through the
+   ;; same gdlAjax pipe the helm uses (check-in!).  Riding the form
+   ;; keeps the token out of every URL.
+   (pilot-control :type 'gwl:text-form-control
+                  :default ""
+                  :size 70))
 
   :hidden-objects
   (;; the no-reload machinery: the page's moving parts are stock
@@ -2948,9 +2933,23 @@ function toggleHelm () {
    ;; is heard and changes nothing.  Rewind on the tape transport
    ;; runs the turn backward, engines cold.  Meet the sky of the
    ;; world and you are set back on the ring.
+   ;; the browser's boarding post (see the signature script by the
+   ;; move button): the hidden line arrives bashed, the token gets
+   ;; the harbor-gate scrub, and the pilot signs the log book once
+   ;; per session -- every later tally! of this cockpit lands on his
+   ;; page through the after-set! binding below.
+   (check-in!
+    ()
+    (unless (the pilot-id)
+      (let ((id (clean-pilot-id (the pilot-control value))))
+        (when id
+          (check-in-pilot! id)
+          (the (set-slot! :pilot-id id))))))
+
    (after-set!
     ()
-    (let* ((choice (the voyage-control value))
+    (let* ((*current-pilot* (the pilot-id))
+           (choice (the voyage-control value))
            (road? (not (member choice '(:hand :down)))))
       (cond ;; a road bought from the ground buys THE CLIMB first,
             ;; and the climb is FLOWN: this move is the lift-off
@@ -3269,7 +3268,8 @@ function toggleHelm () {
                               dv1 tof-days dv2)))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
-      (tally! :voyages)))
+      (tally! :voyages)
+      (tally! :moon-voyages)))
 
    ;; The programmed road home: the moon road flown the other way.
    ;; A kick out of the moon's grip onto the transfer's apogee

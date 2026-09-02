@@ -52,6 +52,19 @@ are conveniences, not authorities: the game works when the lens is
 dark.
 
 
+## The log book
+
+The berth keeps a log book of what the helms aboard actually do:
+tallies of moves, voyages, landings and crashes, and a pilot book
+kept per returning hand.  A pilot is only ever a token the browser
+mints for itself and keeps (localStorage); the book answers with a
+minted **handle** (`Rook-27`), and every published figure wears the
+handle — the token never leaves the book, and no account, name, or
+address is ever asked for.  A browser with scripts off simply flies
+unsigned.  The figures ride a token-gated JSON feed at
+`/galaxy-world-stats` for the watch board, and the handle-only log
+is the seed of a public leaderboard.
+
 ## Getting a ship
 
 The yard is at

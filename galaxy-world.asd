@@ -6,8 +6,9 @@
  "The Gendl™ Galaxy World -- the game the Basilisk-class ships sail in: the world model and the web lens (galaxyworld.space), flown from the First Officer's berth, its charts reckoned on the chartroom engine."
  :author "Gornskew Enterprises" :license
  "Copyright © 2026 Gornskew Enterprises -- AGPL-3.0-or-later" :serial
- t :version "20260828" :depends-on (:chartroom) :components
+ t :version "20260902" :depends-on (:chartroom) :components
  ((:file "source/package") (:file "source/patches")
   (:file "source/sky") (:file "source/catalog")
-  (:file "source/assembly") (:file "source/bridge-view")
-  (:file "source/cockpit") (:file "source/publish")))
+  (:file "source/log-book") (:file "source/assembly")
+  (:file "source/bridge-view") (:file "source/cockpit")
+  (:file "source/publish")))

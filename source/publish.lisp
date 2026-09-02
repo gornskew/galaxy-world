@@ -43,9 +43,10 @@
         (when doc
           (write-string doc (net.aserve:request-reply-stream req)))))))
 
-;; the helm tallies survive a recreate: read the predecessor's
-;; totals off the host mount before the doors open
+;; the log book survives a recreate: read the predecessor's totals
+;; and pilot pages off the host mount before the doors open
 (restore-tallies!)
+(restore-log-book!)
 
 (gwl:with-all-servers (server)
   ;; the front door is the DRIVER'S SEAT: the public "/" (which the
@@ -111,6 +112,17 @@
      :content-type "image/jpeg"
      :host *galaxy-world-hosts*
      :server server))
+  ;; the stats feed: the log book's totals, pilot figures, and the
+  ;; handle-only log as one JSON channel for a watching board --
+  ;; token-gated (log-book.lisp), riding a bare path the proxy
+  ;; hands through unchanged (the robots.txt road) plus the
+  ;; /galaxy-world twin for direct-berth work
+  (dolist (path (list "/galaxy-world-stats" "/galaxy-world/galaxy-world-stats"))
+    (net.aserve:publish :path path
+                        :host *galaxy-world-hosts*
+                        :server server
+                        :content-type "application/json"
+                        :function 'stats-responder))
   (gwl:publish-string-content "/robots.txt" *robots-txt*
                               :host *galaxy-world-hosts*
                               :content-type "text/plain"
