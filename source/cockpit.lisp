@@ -61,12 +61,17 @@
    ;; flatscreens in the instrument panel instead.
    (cowl-center (make-point -1.067 -0.36 0.55))
    (cowl-radius 2.097)
-   ;; the roofline stands at 1.12 (raised from 1.05, 2026-09-03):
-   ;; from the driver's eye the header rail and the front roof
-   ;; strip lay a wide band across the top of the glass, right
-   ;; through the crown of the world nosed-in ahead.  Every roof
-   ;; member reads (the roof-z); the header rail is thinner too.
-   (roof-z 1.12)
+   ;; the roofline stands at 1.16 (raised from 1.05, 2026-09-03,
+   ;; in two steps): from the driver's eye the header rail and the
+   ;; front roof strip lay a wide band across the top of the
+   ;; glass, right through the crown of the world nosed-in ahead.
+   ;; Every roof member reads (the roof-z); the header rail is
+   ;; thinner too.  The second step went with the taller seat (the
+   ;; driver's eye at 0.84, see viewpoints-x3d): the cowl top sat
+   ;; on the world's south limb, and the only way to drop it under
+   ;; the disc without rebuilding the dash was to raise the eye --
+   ;; which put the header back on the crown until it rose too.
+   (roof-z 1.16)
    (header-center (make-point -1.11 -0.36 (the roof-z)))
    (header-radius 2.0)
    (greenhouse-span (deg->rad 48))
@@ -1176,7 +1181,7 @@ X_ITE), because a fresh scene document stands with the light off.")
 ;; an ellipsoidal dome meshed band by band, its rim landing on the
 ;; painted roof strips.  solid=false so the glass reads from the
 ;; bench seats below it, which is the whole point.
-(defun star-dome-x3d (&key (center (make-point -0.45 -0.36 1.12))
+(defun star-dome-x3d (&key (center (make-point -0.45 -0.36 1.16))
                            (rx 1.22) (ry 0.72) (rz 0.48)
                            (bands 8) (sectors 28))
   (let ((points (make-string-output-stream))
@@ -3162,12 +3167,21 @@ GW_CHECK_IN();"
              ;; cowl framing it
              (cons :port-lookout
                    (viewpoint-x3d "port-lookout" "Port lookout"
-                                  (make-point -0.02 0 0.78)
+                                  (make-point -0.02 0 0.84)
                                   (unitize-vector (make-vector 0.26 0.97 0))
                                   "1.15" :z-near "0.05" :z-far "8000" :up up))
              (cons :drivers-seat
                    (viewpoint-x3d "drivers-seat" "Driver's seat"
-                                  (make-point -0.02 0 0.78)
+                                  ;; the eye at 0.84 (was 0.78): a
+                                  ;; taller seat drops the cowl top
+                                  ;; under the world's south limb
+                                  ;; (the dash top sat exactly on it
+                                  ;; from 0.78, whatever the pitch)
+                                  ;; and shrinks the pedal well in
+                                  ;; the frame -- the glass gets
+                                  ;; both.  The roofline rose with
+                                  ;; it (roof-z) to keep the crown.
+                                  (make-point -0.02 0 0.84)
                                   ;; lifted from -0.24, then -0.15:
                                   ;; the wheel is smaller and lower,
                                   ;; the roofline higher and the
