@@ -804,13 +804,15 @@ EARTH-SUN-LOCAL."
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
 
-;; THE SHIP'S CLOCK and the worlds' days.  Galaxy World is
+;; THE SHIP'S CLOCK and the worlds' days.  Aloft, Galaxy World is
 ;; turn-based: game time stands still between moves, and each move
 ;; spends a known stretch of it -- the cadence for a hand-flown
-;; turn, the road's own time of flight for a programmed one.  A
-;; world's pole angle is the clock read against his day, so every
-;; world, parked or flown, wears the face that much time has turned
-;; him to, and a flown road turns him by exactly the time it spends.
+;; turn, the road's own time of flight for a programmed one.  On
+;; the ground the clock runs on its own at the radio's rate (the
+;; idle clock: settle-clock!, day-clock-x3d).  A world's pole angle
+;; is the clock read against his day, so every world, parked or
+;; flown, wears the face that much time has turned him to, and a
+;; flown road turns him by exactly the time it spends.
 (defun day-seconds-of (world)
   (or (world-figure world :day-seconds) 86400))
 
@@ -883,6 +885,46 @@ nose track never jumps a lap."
 ;; riding world's whirl reads as flicker, so the pole track keeps
 ;; the fractional turn (the endpoints exact) and this many whole ones
 (defparameter +clip-turn-cap+ 6)
+
+;; THE IDLE CLOCK in the scene (S2, 2026-09-03): on the ground the
+;; world turns under him for real.  A looping TimeSensor runs the
+;; world's day at SCALE game-seconds per wall-second and wheels the
+;; sky (day-turn: sun and stars) and the sky's riders (day-turn-
+;; bodies) about the pole the way a ground observer sees them --
+;; backward against the world's own spin, the other way on rewind
+;; (SCALE negative) -- while each rider's face turns on from its
+;; phase at its own day (RIDERS: (prefix phase-rad day-seconds),
+;; each with its own sensor).  Keys every quarter turn, an
+;; orientation interpolator taking the short way between
+;; neighbours.  START-TIME (unix seconds) lets a scene document
+;; ignite itself; the page re-seeds every sensor to the game-time
+;; elapsed since the scene was cut in any case (GW_DAY_WIRE).
+(defun day-clock-x3d (day-seconds scale &key riders start-time)
+  (flet ((track (clock target axis phase sign)
+           (format nil "<OrientationInterpolator DEF=\"~a-i\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~{~a ~,5f~^ ~}\"></OrientationInterpolator><ROUTE fromNode=\"~a\" fromField=\"fraction_changed\" toNode=\"~a-i\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-i\" fromField=\"value_changed\" toNode=\"~a\" toField=\"set_rotation\"></ROUTE>"
+                   target
+                   (loop for k from 0 to 4
+                         append (list axis (+ phase (* sign k (/ pi 2)))))
+                   clock target target target))
+         (sensor (id day)
+           (format nil "<TimeSensor DEF=\"~a\" id=\"~a\" cycleInterval=\"~,3f\" loop=\"true\"~@[ startTime=\"~,1f\"~]></TimeSensor>"
+                   id id (/ day (abs scale)) start-time)))
+    (let ((s (if (minusp scale) -1 1)))
+      (string-append
+       (sensor "day-clock" day-seconds)
+       (track "day-clock" "day-turn" "0 0 1" 0 (- s))
+       (track "day-clock" "day-turn-bodies" "0 0 1" 0 (- s))
+       (if riders
+           (apply #'string-append
+                  (mapcar (lambda (r)
+                            (destructuring-bind (prefix phase day) r
+                              (let ((id (format nil "spin-clock-~a" prefix)))
+                                (string-append
+                                 (sensor id day)
+                                 (track id (format nil "~a-spin" prefix)
+                                        "0 -1 0" phase s)))))
+                          riders))
+           "")))))
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
                  &key phase diffuse emissive scale-override tilt adornment
@@ -1846,6 +1888,101 @@ window.GW_BEATS = function () {
   step();
 };")
 
+;; THE IDLE CLOCK on the page (S1 + S2, 2026-09-03).  GW_CLOCK_TICK
+;; paints the card's clock every quarter second from GW_CLOCK -- the
+;; settled reading, the rate in force (0 aloft, so the figure stands
+;; as before), and on a flown road the clip's own time-map, so the
+;; figure runs through the voyage at the road's Kepler pace and
+;; lands on the settled reading exactly.  GW_DAY_WIRE seeds the
+;; ground scene's looping sensors (the sky's day-turn and each
+;; rider's own spin) so their fraction NOW matches the game-time
+;; elapsed since the scene was cut (GW_SCENE_T): no snap on a
+;; re-wire, whichever renderer -- x3dom by DOM attribute, X_ITE by
+;; the SAI handle the xr wire leaves on GW_XR_NAMED.
+(defparameter *idle-clock-js* "
+window.GW_CLOCK_FACE = function (secs) {
+  var s = Math.round(secs), neg = s < 0; s = Math.abs(s);
+  var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return (neg ? '-' : '') + 'day ' + d + ', ' + (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+};
+window.GW_CLOCK_NOW = function () {
+  var C = window.GW_CLOCK; if (!C) return null;
+  var T0 = window.GW_VOYAGE_T0;
+  if (C.tmap && C.total != null && C.cycle && typeof T0 === 'number') {
+    var f = (Date.now() - T0) / (C.cycle * 1000);
+    if (f < 1) {
+      if (f < 0) f = 0;
+      var tm = C.tmap, g = tm.length ? tm[tm.length - 1][1] : 0;
+      for (var i = 1; i < tm.length; i++) {
+        if (f <= tm[i][0]) {
+          var a = tm[i - 1], b = tm[i], span = b[0] - a[0];
+          g = span > 0 ? a[1] + (b[1] - a[1]) * (f - a[0]) / span : b[1];
+          break;
+        }
+      }
+      return C.t - C.total + g;
+    }
+  }
+  return C.t + (C.scale || 0) * (Date.now() - C.wall) / 1000;
+};
+window.GW_CLOCK_TICK = function () {
+  GW_CLOCK_TICK.gen = (GW_CLOCK_TICK.gen || 0) + 1;
+  var gen = GW_CLOCK_TICK.gen, inClip = false;
+  function clipRunning () {
+    var C = window.GW_CLOCK, T0 = window.GW_VOYAGE_T0;
+    return !!(C && C.tmap && C.cycle && typeof T0 === 'number' && (Date.now() - T0) / (C.cycle * 1000) < 1);
+  }
+  function step () {
+    if (gen !== GW_CLOCK_TICK.gen) return;
+    var el = document.getElementById('gw-clock'), t = GW_CLOCK_NOW();
+    if (el && t !== null) el.textContent = \"ship's clock: \" + GW_CLOCK_FACE(t);
+    // a clip that ends on the ground (the landing) leaves the
+    // arrival scene standing with no day clock in it: one settle
+    // re-cuts the ground scene with its sensors -- pressed through
+    // the lit channel key, the same path a hand takes
+    var running = clipRunning();
+    if (inClip && !running) {
+      try {
+        if (window.GW_CLOCK && window.GW_CLOCK.scale) {
+          var b = document.querySelector('.cadence-btn.lit'); if (b) b.click();
+        }
+      } catch (e) {}
+    }
+    inClip = running;
+    setTimeout(step, 250);
+  }
+  step();
+};
+window.GW_DAY_WIRE = function () {
+  var C = window.GW_CLOCK; if (!C || !C.scale || !C.day) return;
+  var t = GW_CLOCK_NOW(); if (t === null) return;
+  var now = Date.now() / 1000;
+  // game-seconds since the standing scene was cut
+  var e = t - (typeof window.GW_SCENE_T === 'number' ? window.GW_SCENE_T : C.t);
+  var s = C.scale < 0 ? -1 : 1;
+  function seed (id, cycle, frac) {
+    frac = frac - Math.floor(frac);
+    var start = now - frac * cycle;
+    var el = document.getElementById(id);
+    if (el) {
+      el.setAttribute('cycleInterval', '' + cycle);
+      el.setAttribute('startTime', '' + start);
+      return;
+    }
+    var n = window.GW_XR_NAMED ? window.GW_XR_NAMED(id) : null;
+    if (!n) return;
+    try { n.getField('cycleInterval').setValue(cycle); } catch (e1) {}
+    try { n.getField('startTime').setValue(start); } catch (e2) {}
+  }
+  // the sky: its angle is -2 pi e / day, and the track is cut to
+  // turn -s * 2 pi per cycle (day-clock-x3d)
+  seed('day-clock', C.day / Math.abs(C.scale), (e / C.day) / s);
+  // each rider's face: phase + 2 pi e / his day, cut to turn s * 2 pi
+  (C.spins || []).forEach(function (sp) {
+    seed(sp.id, sp.day / Math.abs(C.scale), (e / sp.day) / s);
+  });
+};")
+
 ;; The hands on the helm: drags and clicks on the rigs mirror into
 ;; the form controls, which stay the readout and the fallback -- the
 ;; move still posts through make the move and the same after-set!
@@ -1883,10 +2020,12 @@ window.GW_WIRE = function () {
     var neutral = gearSel && gearSel.value === ':NEUTRAL';
     var landed = false;
     try { landed = !!(window.GW_PLAN && GW_PLAN.orbit && GW_PLAN.orbit.landed); } catch (e) {}
+    // the radio stays live on the ground whatever road is bought:
+    // down there it sets the rate the world turns at (the idle clock)
     return { wheel: road || landed,
              gear:  road || rw,
              pedal: road || rw || neutral,
-             radio: road };
+             radio: road && !landed };
   }
   function sensorEnable (id, on) {
     var s = document.getElementById(id);
@@ -2099,11 +2238,13 @@ window.GW_WIRE = function () {
       var r = radioByVal(b.getAttribute('data-val'));
       if (!r) return;
       if (r.checked) { b.classList.add('lit'); if (after) after(b); }
-      b.addEventListener('click', function () {
+      b.addEventListener('click', function (ev) {
         r.checked = true;
         Array.prototype.forEach.call(btns, function (o) { o.classList.remove('lit'); });
         b.classList.add('lit');
         if (after) after(b);
+        // on the ground the radio is live: the change posts at once
+        if (window.GW_SETTLE_GROUND) GW_SETTLE_GROUND(ev);
       });
     });
   }
@@ -2534,9 +2675,67 @@ window.GW_WIRE = function () {
    ;; pilot moves, and the face he sees lights and darkens as he
    ;; goes AROUND the orbit, not as the world whirls in place.
    (game-seconds 0 :settable)
+   ;; THE IDLE CLOCK (S2, 2026-09-03): on the ground, time flows on
+   ;; its own.  clock-anchor is the wall time (unix seconds) at
+   ;; which game-seconds was last true and clock-scale the rate in
+   ;; force since -- game-seconds per wall-second: the radio channel
+   ;; while landed, the tape direction its sign, 0 aloft, where
+   ;; time stays frozen between moves until the coasting ship rides
+   ;; rails of her own.  Every post settles the clock first
+   ;; (settle-clock!): the idle time folds into game-seconds at the
+   ;; rate that WAS in force, then the new rate takes over -- so the
+   ;; server and the page's own ticking read the same instant, and
+   ;; a move lands on the world the pilot is looking at.  A GET of
+   ;; the page settles too (before-present!): every figure below
+   ;; reads game-seconds, and a cached slot cannot watch a wall
+   ;; clock.
+   (clock-anchor nil :settable)
+   (clock-scale 0 :settable)
+   ;; the rate the state calls for right now
+   (idle-scale (if (the landed?)
+                   (* (if (eql (the transport-control value) :rewind) -1 1)
+                      (ecase (the cadence-control value)
+                        (:slow 10) (:medium 100) (:fast 1000) (:fastest 10000)))
+                   0))
+   ;; every settle on the ground re-cuts the scene (the sky's pose,
+   ;; the riders' faces and the sensors' rates all live in it), so
+   ;; the scene generation counts settles beside moves
+   (clock-cuts 0 :settable)
+   (scene-gen (format nil "~d.~d" (the moves-count) (the clock-cuts)))
    (world-spin-rad (world-phase-rad (the world) (the game-seconds)))
    ;; the clock as the helm reads it
    (clock-string (clock-face (the game-seconds)))
+   ;; the sky's riders on the ground: the one other world hanging
+   ;; at the horizon -- (prefix phase-rad day-seconds), the face he
+   ;; shows and how fast it turns
+   (landed-riders
+    (when (the landed?)
+      (case (the world)
+        (:home (list (list "moon" (world-phase-rad :moon (the game-seconds))
+                           (day-seconds-of :moon))))
+        (:moon (list (list "home-far" (world-phase-rad :home (the game-seconds))
+                           (day-seconds-of :home))))
+        (t nil))))
+   ;; the clock as the page ticks it (*idle-clock-js*): the settled
+   ;; reading, the rate in force, the world's day and the riders'
+   ;; spins for the ground sensors, and a flown road's own time-map
+   ;; so the card runs through the clip at the road's Kepler pace
+   (clock-json
+    (let* ((tm (the transit-time-map))
+           (total (when tm (cdr (car (last tm))))))
+      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
+              (round (the game-seconds)) (the clock-scale)
+              (the world-day-seconds)
+              (if total (format nil "~,1f" total) "null")
+              (if tm
+                  (format nil "[~{[~,4f,~,1f]~^,~}]"
+                          (loop for (k . s) in tm append (list k s)))
+                  "null")
+              (if tm (the transit-duration) "null")
+              (mapcar (lambda (r)
+                        (format nil "{\"id\":\"spin-clock-~a\",\"day\":~d}"
+                                (first r) (third r)))
+                      (the landed-riders)))))
    (vel-x 0 :settable)
    (vel-y +ring-speed+ :settable)
    (pos-x +ring-radius+ :settable)
@@ -2845,24 +3044,40 @@ window.GW_WIRE = function () {
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
                          :adornment (world-figure (the world) :adornment)))
-           (cond ((eql (the world) :home)
-(body-x3d "moon" "moon-tex"
-                            (the moon-bearing) (the moon-distance) +moon-radius+
-                            :phase (world-phase-rad :moon (the game-seconds))
-                            :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03"))
-                 ;; falling around the moon, home hangs in his sky:
-                 ;; the whole blue marble at his true bearing
-                 ((eql (the world) :moon)
-                  (body-x3d "home-far" "earth-tex"
-                            (bearing-to (the pos-x) (the pos-y)
-                                        (deg->rad (the heading-deg))
-                                        (- +moon-x+) 0)
-                            (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
-                            +planet-radius+
-                            :phase (world-phase-rad :home (the game-seconds))
-                            :diffuse "0.10 0.18 0.85"
-                            :emissive "0.02 0.03 0.05"))
-                 (t ""))))))
+           ;; on the ground the sky's riders ride the day-turn frame
+           ;; too (day-clock-x3d): they sweep the horizon with the
+           ;; stars as the world turns under him
+           (let ((riders
+                  (cond ((eql (the world) :home)
+                         (body-x3d "moon" "moon-tex"
+                                   (the moon-bearing) (the moon-distance) +moon-radius+
+                                   :phase (world-phase-rad :moon (the game-seconds))
+                                   :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03"))
+                        ;; falling around the moon, home hangs in his sky:
+                        ;; the whole blue marble at his true bearing
+                        ((eql (the world) :moon)
+                         (body-x3d "home-far" "earth-tex"
+                                   (bearing-to (the pos-x) (the pos-y)
+                                               (deg->rad (the heading-deg))
+                                               (- +moon-x+) 0)
+                                   (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
+                                   +planet-radius+
+                                   :phase (world-phase-rad :home (the game-seconds))
+                                   :diffuse "0.10 0.18 0.85"
+                                   :emissive "0.02 0.03 0.05"))
+                        (t ""))))
+             (if (the landed?)
+                 (string-append
+                  (format nil "<Transform DEF=\"day-turn-bodies\" id=\"day-turn-bodies\">~a</Transform>"
+                          riders)
+                  (if (/= (the clock-scale) 0)
+                      (day-clock-x3d (the world-day-seconds) (the clock-scale)
+                                     :riders (the landed-riders)
+                                     ;; a scene document ignites itself;
+                                     ;; the page re-seeds either way
+                                     :start-time (when (the xr-scene?) (unix-now)))
+                      ""))
+                 riders))))))
 
    ;; the voyage's page script: first load arms the one-shot clock;
    ;; a reload of the same arrival fast-forwards the scene to the
@@ -3003,9 +3218,13 @@ window.GW_WIRE = function () {
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
                                 (- (the sky-authored-heading-rad)))
-              (str (sun-light-x3d :elevation (the sun-elevation)))
-              (:|Transform| :|DEF| "sky-drift"
-                (str (starfield-x3d :radius 5000.0d0))))
+              ;; day-turn: the frame the ground's idle clock wheels
+              ;; (sun and stars together, see day-clock-x3d); it
+              ;; stands still aloft
+              (:|Transform| :|DEF| "day-turn" :|id| "day-turn"
+                (str (sun-light-x3d :elevation (the sun-elevation)))
+                (:|Transform| :|DEF| "sky-drift"
+                  (str (starfield-x3d :radius 5000.0d0)))))
             (str (the bodies-x3d))
             ;; the cab under its own lamp (see cab-light-x3d)
             (:|Group|
@@ -3021,23 +3240,28 @@ window.GW_WIRE = function () {
               (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_CLOCK = ~a;~%window.GW_CLOCK.wall = Date.now();~%if (!window.GW_LOADED || window.GW_GEN !== '~a') window.GW_SCENE_T = window.GW_CLOCK.t;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();~%if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
             (the nose-in-json)
+            ;; the clock the page ticks; GW_SCENE_T remembers the
+            ;; reading the standing scene was cut at, so a re-wire
+            ;; seeds the ground sensors to the time elapsed since
+            (the clock-json)
+            (the scene-gen)
             (if (the transit-samples) "Date.now() + 2000" "null")
             ;; the speedo face is painted to the world's own scale
             (the speedo-full-scale)
             ;; the scene refresh is gated on the scene GENERATION
-            ;; (moves-count, the gw-gen-N stamp every move path
-            ;; bumps), not merely on the page being loaded: the
-            ;; boarding check-in returns this section too, and
-            ;; re-pointing the canvas at the generation it is still
-            ;; fetching aborted the first load in production (X_ITE
-            ;; AbortError, 2026-09-02) -- and reloaded the x3dom page
-            ;; at every first boarding.
-            (the moves-count)
+            ;; (scene-gen: moves-count plus the ground settles, the
+            ;; gw-gen-N stamp every move path bumps), not merely on
+            ;; the page being loaded: the boarding check-in returns
+            ;; this section too, and re-pointing the canvas at the
+            ;; generation it is still fetching aborted the first load
+            ;; in production (X_ITE AbortError, 2026-09-02) -- and
+            ;; reloaded the x3dom page at every first boarding.
+            (the scene-gen)
             (the scene-refresh-js)
-            (the moves-count)))
+            (the scene-gen)))
 
    ;; how this renderer takes the new scene after a move: the
    ;; scene-section was just swapped in place, so re-init x3dom
@@ -3126,6 +3350,18 @@ window.GW_WIRE = function () {
                       :function-key :after-set!))
        :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;"
        "make the move")
+      ;; on the ground the radio is live: a change of channel or of
+      ;; tape direction posts at once through the same pipe, no
+      ;; move made, and the ship's clock folds the idle time at the
+      ;; rate that was playing before taking the new one
+      (:script
+       ;; debounced: the hands script is wired once by its inclusion
+       ;; and again by the state script, so a click reaches this twice
+       (str (format nil "window.GW_SETTLE_GROUND = function (event) { try { if (!(window.GW_PLAN && GW_PLAN.orbit && GW_PLAN.orbit.landed)) return; } catch (e) { return; } var now = Date.now(); if (window.GW_SETTLE_AT && now - window.GW_SETTLE_AT < 800) return; window.GW_SETTLE_AT = now; ~a };"
+                    (the (gdl-ajax-call
+                          :form-controls (list (the cadence-control)
+                                               (the transport-control))
+                          :function-key :settle-clock!)))))
       ;; the boarding signature: the browser keeps a pilot token of
       ;; its own minting (localStorage; a private window simply
       ;; boards unsigned), writes it on the hidden line, and posts
@@ -3345,9 +3581,10 @@ function toggleHelm () {
         (str *plan-view-js*)
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
+        (str *idle-clock-js*)
         ;; the definitions just landed; give the section's state
         ;; script its first real run
-        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS();")
+        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS(); if (window.GW_CLOCK_TICK) GW_CLOCK_TICK(); if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }")
         (str (the voyage-script-js)))))
 
    (eye-button-style
@@ -3435,7 +3672,9 @@ function toggleHelm () {
    ;; radio.  Four channels -- the faster the music, the bigger the
    ;; jump per turn -- and every move falls that long, even in
    ;; neutral with the wheel amidships: time passes whether or not
-   ;; you touch anything, which is the whole lesson.  The real
+   ;; you touch anything, which is the whole lesson.  On the ground
+   ;; the same four channels are the RATE the world turns at under
+   ;; him (idle-scale), and a change posts at once.  The real
    ;; radio inputs ride hidden in the form; the faceplate's preset
    ;; buttons drive them, the same mirror the 3D rigs use.
    (cadence-control :type 'gwl:radio-form-control
@@ -3554,9 +3793,13 @@ function toggleHelm () {
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
                                 (- (the sky-authored-heading-rad)))
-              (str (sun-light-x3d :elevation (the sun-elevation)))
-              (:|Transform| :|DEF| "sky-drift"
-                (str (starfield-x3d :radius 5000.0d0))))
+              ;; day-turn: the frame the ground's idle clock wheels
+              ;; (sun and stars together, see day-clock-x3d); it
+              ;; stands still aloft
+              (:|Transform| :|DEF| "day-turn" :|id| "day-turn"
+                (str (sun-light-x3d :elevation (the sun-elevation)))
+                (:|Transform| :|DEF| "sky-drift"
+                  (str (starfield-x3d :radius 5000.0d0)))))
             (str (the bodies-x3d))
             (:|Group|
               (str (cab-light-x3d))
@@ -3628,8 +3871,17 @@ function toggleHelm () {
           (check-in-pilot! id)
           (the (set-slot! :pilot-id id))))))
 
+   ;; a GET of the page settles the clock before anything is drawn:
+   ;; the ground's idle time folds into game-seconds, so the world
+   ;; the reload shows is the world that turned while nobody looked
+   (before-present!
+    ()
+    (the settle-clock!))
+
    (after-set!
     ()
+    ;; the move lands on the ship's clock as it reads NOW
+    (the settle-clock!)
     (let* ((*current-pilot* (the pilot-id))
            (choice (the voyage-control value))
            (road? (not (member choice '(:hand :down)))))
@@ -4365,7 +4617,33 @@ function toggleHelm () {
    ;; rewind, unwinding the turn with the fall.
    (advance-clock!
     (secs)
-    (the (set-slot! :game-seconds (+ (the game-seconds) secs))))
+    (the (set-slot! :game-seconds (+ (the game-seconds) secs)))
+    (the (set-slot! :clock-anchor (unix-now)))
+    (the (set-slot! :clock-scale (the idle-scale))))
+
+   ;; THE SETTLE: the ship's clock brought up to this instant.  On
+   ;; the ground time has been flowing at clock-scale since
+   ;; clock-anchor; fold that in at the rate that WAS in force, then
+   ;; anchor here and take the rate the state now calls for (the
+   ;; radio may just have changed, the tape may have turned).  Every
+   ;; post runs it first, every page GET too.  A settle that folded
+   ;; real time re-cuts the scene (clock-cuts -> scene-gen): the
+   ;; sky's pose, the riders' faces and the sensors' rate all live
+   ;; there, and the page seeds the new scene's sensors to the time
+   ;; elapsed since it was cut, so nothing snaps.
+   (settle-clock!
+    ()
+    (let ((now (unix-now))
+          (was (the clock-scale))
+          (rate (the idle-scale)))
+      (when (and (the clock-anchor) (/= was 0))
+        (the (set-slot! :game-seconds
+                        (+ (the game-seconds)
+                           (* (- now (the clock-anchor)) was))))
+        (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
+      (the (set-slot! :clock-anchor now))
+      (unless (= rate was)
+        (the (set-slot! :clock-scale rate)))))
 
    (make-helm-move!
     ()
@@ -4557,9 +4835,9 @@ function toggleHelm () {
                                    (t (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
                                               (the world-name))))))
              (the (set-slot! :moves-count (1+ (the moves-count))))
-             ;; sitting on a world still spends the turn: the clock
-             ;; runs by the cadence, and the world turns under him
-             (the (advance-clock! (* (if rewind? -1 1) (the cadence-seconds))))
+             ;; sitting on a world spends nothing extra: on the
+             ;; ground the clock runs on its own (settle-clock!),
+             ;; the world turning under him at the radio's rate
              (tally! :moves)))))))
 
 ;; ============================================================
@@ -4796,6 +5074,10 @@ function toggleHelm () {
       }
       window.GW_VOYAGE_T0 = t0 * 1000;
     }
+    // the ground's idle clock seeds its sensors through the SAI
+    // too: leave the handle, then seed (see *idle-clock-js*)
+    window.GW_XR_NAMED = named;
+    if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }
     var note = document.getElementById('plot-frame-label');
     if (note) note.textContent = 'X_ITE: wired';
     // the twist itself: X_ITE's examine viewer STRAIGHTENS the
@@ -4901,7 +5183,7 @@ function toggleHelm () {
    ;; seat, and relights the indicators
    (scene-refresh-js
     (format nil "window.GW_XR_EXPECT = '~a';~%var cv = document.querySelector('x3d-canvas');~%if (cv) cv.setAttribute('src', '/xr-scene.x3d?ship=~a&bust=' + Date.now());~%if (window.GW_XR_WIRE) setTimeout(window.GW_XR_WIRE, 400);"
-            (the moves-count) (the instance-id)))
+            (the scene-gen) (the instance-id)))
    (xr-scene? t)
    (use-x3dom? nil)
    (additional-header-content
@@ -4920,7 +5202,7 @@ function toggleHelm () {
      ;; the generation stamp: the page's re-wire after a move
      ;; waits for THIS scene, not whichever scene the canvas still
      ;; holds -- production latency taught that lesson
-     (format nil "<WorldInfo DEF=\"gw-gen-~a\" title=\"gw-gen-~a\"></WorldInfo>" (the moves-count) (the moves-count))
+     (format nil "<WorldInfo DEF=\"gw-gen-~a\" title=\"gw-gen-~a\"></WorldInfo>" (the scene-gen) (the scene-gen))
      ;; transitionTime 0: binds snap instead of touring (the
      ;; visible tumble at load was the transition animation).  NOT
      ;; transitionType TELEPORT -- under X_ITE that mode reported
@@ -4932,7 +5214,7 @@ function toggleHelm () {
      ;; so the world stays z-up here and the y-up question waits
      ;; for authored-in-y-up viewpoints on the WebXR slice
      (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
-     (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\">~a<Transform DEF=\"sky-drift\">~a</Transform></Transform>"
+     (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"day-turn\">~a<Transform DEF=\"sky-drift\">~a</Transform></Transform></Transform>"
              (- (the sky-authored-heading-rad))
              (sun-light-x3d :elevation (the sun-elevation))
              (starfield-x3d :radius 5000.0d0))
@@ -5002,8 +5284,9 @@ function toggleHelm () {
         (str *plan-view-js*)
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
+        (str *idle-clock-js*)
         ;; the definitions just landed; give the section's state
         ;; script its first real run (the xr wiring arms itself on
-        ;; window load)
-        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS();")
+        ;; window load, and seeds the ground sensors then)
+        (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS(); if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();")
         (str *xr-sai-js*))))))
