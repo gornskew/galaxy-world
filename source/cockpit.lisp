@@ -4640,6 +4640,15 @@ function toggleHelm () {
         (the (set-slot! :game-seconds
                         (+ (the game-seconds)
                            (* (- now (the clock-anchor)) was))))
+        ;; a clip that brought her down is over by now: retire it,
+        ;; or the re-cut scene is the landing again, replayed from
+        ;; a fresh clock -- and its end settles once more, forever
+        (when (the transit-samples)
+          (the (set-slot! :transit-samples nil))
+          (the (set-slot! :transit-target nil))
+          (the (set-slot! :transit-bodies nil))
+          (the (set-slot! :transit-beats nil))
+          (the (set-slot! :transit-time-map nil)))
         (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
       (the (set-slot! :clock-anchor now))
       (unless (= rate was)
