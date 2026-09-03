@@ -821,16 +821,17 @@ scene is static between moves, so this bakes as a shader constant."
 ;; and spin tracks into those fields, so the terminator stands where
 ;; the sun is while the world turns and she rounds him.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
 (defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
-                                &optional (elevation 0.0))
+                                &optional (elevation 0.0) (sun-az (/ pi 2)))
   "A ComposedShader Appearance for the city-lights earth: DAY-URL and
 NIGHT-URL are raw paths; HEADING-RAD and PHASE-RAD author the sky's
 heading and the world's spin the shader starts from (a tape routes
-the live ones in)."
-  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
-          prefix prefix day-url night-url (- heading-rad) phase-rad elevation
+the live ones in); SUN-AZ is the world-frame angle the sun lies at
+(the ephemeris's for the date; +y was the old fixed sun)."
+  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><field name=\"sunAz\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,5f\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
+          prefix prefix day-url night-url (- heading-rad) phase-rad elevation sun-az
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
 
@@ -846,10 +847,11 @@ the live ones in)."
 (defun day-seconds-of (world)
   (or (world-figure world :day-seconds) 86400))
 
-(defun world-phase-rad (world game-seconds)
+(defun world-phase-rad (world game-seconds &optional (offset 0))
   "The pole angle WORLD stands at when the ship's clock reads
-GAME-SECONDS."
-  (mod (* 2 pi (/ game-seconds (day-seconds-of world))) (* 2 pi)))
+GAME-SECONDS; OFFSET is the angle at clock zero (home's is the Earth
+rotation angle at the epoch, see phase-of)."
+  (mod (+ offset (* 2 pi (/ game-seconds (day-seconds-of world)))) (* 2 pi)))
 
 (defun world-spin-rate (world)
   "Radians of pole turn per game-second."
@@ -986,7 +988,8 @@ near ring arc lost the draw and hid behind the globe."
             ;; NIGHT-URL + SUN (heading-rad phase-rad) => the
             ;; city-lights shader stands in for the plain Material
             (if (and night-url sun day-url)
-                (earth-lights-appearance prefix day-url night-url (first sun) (second sun))
+                (earth-lights-appearance prefix day-url night-url (first sun) (second sun)
+                                         0.0 (or (third sun) (/ pi 2)))
                 (format nil "<Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance>"
                         texture-id texture-id
                         (if day-url (format nil "&quot;~a&quot;" day-url) "")
@@ -1034,6 +1037,71 @@ near ring arc lost the draw and hid behind the globe."
   "Unix epoch seconds -- the time scale X3D SFTime clocks keep."
   (+ *unix-epoch-anchor*
      (/ (get-internal-real-time) (float internal-time-units-per-second 1d0))))
+
+(defun utc-date-string (unix-seconds)
+  "2026-09-03 21:14 UTC, for the card and the footer."
+  (multiple-value-bind (s mi h d mo y)
+      (decode-universal-time (+ (round unix-seconds) 2208988800) 0)
+    (declare (ignore s))
+    (format nil "~d-~2,'0d-~2,'0d ~2,'0d:~2,'0d UTC" y mo d h mi)))
+
+;; THE EPHEMERIS (departure epochs, first piece, 2026-09-03).  Where
+;; the worlds stand around the sun for a date: JPL's approximate
+;; Keplerian elements at J2000 (Standish), the mean longitude and the
+;; longitude of perihelion with their rates per Julian century, and
+;; Kepler's equation for the true anomaly.  Keplerian is plenty at
+;; this grain: the game keeps circular rings and Hohmann roads, so a
+;; degree of longitude is below anything the plot or the sun's
+;; direction can show, and the secular drift of the elements over a
+;; game's span of weeks is nothing.  The world frame's +x is the
+;; ecliptic's (the vernal equinox), so a heliocentric longitude is an
+;; angle in the frame the plot and the roads already use.
+(defparameter *sun-elements*
+  ;; world  a(au)      e           L0(deg)      Ldot(deg/cy)   w0(deg)      wdot(deg/cy)
+  '((:home    1.00000261 0.01671123 100.46457166 35999.37244981 102.93768193  0.32327364)
+    (:mars    1.52371034 0.09339410  -4.55343205 19140.30268499 -23.94362959  0.44441088)
+    (:jupiter 5.20288700 0.04838624  34.39644051  3034.74612775  14.72847983  0.21252668)
+    (:saturn  9.53667594 0.05386179  49.95424423  1222.49362201  92.59887831 -0.41897216)))
+
+(defun julian-centuries (unix-seconds)
+  "Julian centuries since J2000.0 for a unix time."
+  (/ (- (+ (/ unix-seconds 86400d0) 2440587.5d0) 2451545.0d0) 36525d0))
+
+(defun heliocentric-longitude-rad (world unix-seconds)
+  "The world's true heliocentric longitude at UNIX-SECONDS, radians
+from the vernal equinox; nil for a world with no road of the sun's."
+  (let ((row (cdr (assoc world *sun-elements*))))
+    (when row
+      (destructuring-bind (a e l0 ldot w0 wdot) row
+        (declare (ignore a))
+        (let* ((tc (julian-centuries unix-seconds))
+               (l (* (/ pi 180) (+ l0 (* ldot tc))))
+               (w (* (/ pi 180) (+ w0 (* wdot tc))))
+               (m (mod (- l w) (* 2 pi)))
+               (ea m))
+          ;; Kepler: E - e sin E = M, a few Newton steps
+          (dotimes (i 8)
+            (setq ea (- ea (/ (- ea (* e (sin ea)) m) (- 1 (* e (cos ea)))))))
+          (let ((nu (* 2 (atan (* (sqrt (/ (+ 1 e) (- 1 e))) (tan (/ ea 2)))))))
+            (mod (+ w nu) (* 2 pi))))))))
+
+(defun sun-direction-rad (world unix-seconds)
+  "The direction from WORLD to the sun at UNIX-SECONDS, radians in the
+world frame -- its heliocentric longitude and a half turn."
+  (let ((lon (heliocentric-longitude-rad world unix-seconds)))
+    (if lon (mod (+ lon pi) (* 2 pi)) (/ pi 2))))
+
+;; home's own turn: the Earth rotation angle for a date (IERS, from
+;; UT1 taken as UTC here), so the sphere stands the way the world
+;; does at that hour and the terminator the sun casts is the real one
+(defparameter +home-meridian-offset+ 0.0
+  "Radians to add to ERA for the texture's own prime meridian; tune by eye.")
+
+(defun era-rad (unix-seconds)
+  (let ((tu (- (+ (/ unix-seconds 86400d0) 2440587.5d0) 2451545.0d0)))
+    (mod (+ (* 2 pi (+ 0.7790572732640d0 (* 1.00273781191135448d0 tu)))
+            +home-meridian-offset+)
+         (* 2 pi))))
 
 ;; TAG suffixes every DEF this clip owns -- its clock and its
 ;; interpolators -- so a stretch of coast tape can stand beside the
@@ -1198,12 +1266,13 @@ near ring arc lost the draw and hid behind the globe."
 (defparameter *sun-world-heading* (/ pi 2)
   "World-frame angle the sun lies at, radians: +y, see above.")
 
-(defun sun-light-x3d (&key (elevation 0.0))
+(defun sun-light-x3d (&key (elevation 0.0) (heading *sun-world-heading*))
   "The sun and the floodlight, for the inside of sky-heading.
-ELEVATION lifts the sun above the plane (radians)."
+ELEVATION lifts the sun above the plane (radians); HEADING is the
+world-frame angle the sun lies at (the ephemeris's, for a date)."
   (let* ((c (cos elevation)) (z (- (sin elevation)))
-         (sx (* c (cos *sun-world-heading*)))
-         (sy (* c (sin *sun-world-heading*))))
+         (sx (* c (cos heading)))
+         (sy (* c (sin heading))))
     ;; direction is the way the light TRAVELS: from the sun in
     (format nil "<DirectionalLight DEF=\"sun-light\" id=\"sun-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"1\" ambientIntensity=\"0.06\" color=\"1 0.98 0.94\"></DirectionalLight><DirectionalLight DEF=\"flood-light\" id=\"flood-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"0\" ambientIntensity=\"0\" color=\"0.85 0.9 1\"></DirectionalLight>"
             (- sx) (- sy) z
@@ -1698,7 +1767,7 @@ window.GW_DRAW = function () {
     ctx.beginPath(); ctx.moveTo(8, y0 + 0.5); ctx.lineTo(W - 8, y0 + 0.5); ctx.stroke();
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     var t = window.GW_CLOCK_NOW ? GW_CLOCK_NOW() : null;
-    var clock = (t !== null && window.GW_CLOCK_FACE) ? GW_CLOCK_FACE(t) : '';
+    var clock = (t !== null && window.GW_CLOCK_FACE) ? (GW_CLOCK_FACE(t) + (window.GW_CLOCK_DATE ? '  ' + GW_CLOCK_DATE(t) : '')) : '';
     var where = O ? ((O.landed ? 'down on ' : 'falling around ') + O.frame) : '';
     ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#e8c839';
     ctx.fillText((clock ? 'ship\\'s clock ' + clock + '   \\u00b7   ' : '') + where, 10, y0 + 13);
@@ -1846,19 +1915,23 @@ window.GW_DRAW = function () {
     ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2*Math.PI);
     ctx.fillStyle = '#ffd76a'; ctx.fill();
     var here = null;
+    // each world at its true longitude for the date (r.lon, from
+    // the ephemeris), on its schematic ring
     S.rings.forEach(function (r) {
       var mine = r.name === S.here; if (mine) here = r;
+      var lon = r.lon || 0, wx = cx + r.r*s*Math.cos(lon), wy = cy - r.r*s*Math.sin(lon);
       ctx.beginPath(); ctx.arc(cx, cy, r.r*s, 0, 2*Math.PI);
       ctx.setLineDash([3, 3]);
       ctx.strokeStyle = mine ? 'rgba(232,200,57,0.85)' : 'rgba(232,200,57,0.35)';
       ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
-      ctx.beginPath(); ctx.arc(cx + r.r*s, cy, mine ? 3.5 : 2.5, 0, 2*Math.PI);
+      ctx.beginPath(); ctx.arc(wx, wy, mine ? 3.5 : 2.5, 0, 2*Math.PI);
       ctx.fillStyle = col(r.color); ctx.fill();
       ctx.font = '10px sans-serif'; ctx.fillStyle = '#c9a227'; ctx.textAlign = 'left';
-      ctx.fillText(r.name, cx + r.r*s + 6, cy - 5);
+      ctx.fillText(r.name, wx + 6, wy - 5);
     });
     if (here) {
-      ctx.beginPath(); ctx.arc(cx + here.r*s, cy, 1.8, 0, 2*Math.PI);
+      var hl = here.lon || 0;
+      ctx.beginPath(); ctx.arc(cx + here.r*s*Math.cos(hl), cy - here.r*s*Math.sin(hl), 1.8, 0, 2*Math.PI);
       ctx.fillStyle = '#ffffff'; ctx.fill();
     }
     var pl = document.getElementById('plot-frame-label');
@@ -2173,6 +2246,11 @@ window.GW_CLOCK_FACE = function (secs) {
   var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return (neg ? '-' : '') + 'day ' + d + ', ' + (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
 };
+// the date the clock stands for: the epoch and the reading
+window.GW_CLOCK_DATE = function (t) {
+  var C = window.GW_CLOCK; if (!C || !C.epoch || t === null) return '';
+  try { return new Date((C.epoch + t) * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; } catch (e) { return ''; }
+};
 window.GW_CLOCK_NOW = function () {
   var C = window.GW_CLOCK; if (!C) return null;
   var T0 = window.GW_VOYAGE_T0;
@@ -2210,7 +2288,7 @@ window.GW_CLOCK_TICK = function () {
   function step () {
     if (gen !== GW_CLOCK_TICK.gen) return;
     var el = document.getElementById('gw-clock'), t = GW_CLOCK_NOW();
-    if (el && t !== null) el.textContent = \"ship's clock: \" + GW_CLOCK_FACE(t);
+    if (el && t !== null) el.textContent = \"ship's clock: \" + GW_CLOCK_FACE(t) + ' \\u00b7 ' + GW_CLOCK_DATE(t);
     var C = window.GW_CLOCK, f = clipFrac(), running = f !== null && f < 1;
     if (C && C.scale) {
       if (C.coast) {
@@ -3115,11 +3193,13 @@ window.GW_WIRE = function () {
    (bridge-keeper (cdr (assoc "BASILISK_CREW_BRIDGE" (the muster) :test #'string=))))
   :objects
   ((bridge :type 'bridge)
-   ;; the cockpits aboard, one berth each, keyed by session: the
-   ;; sequence follows the bridge's roster (refresh-roster!)
+   ;; the cockpits aboard, one berth each: a STANDARD sequence sized
+   ;; by the bridge's roster (refresh-roster!), each berth taking
+   ;; its session key by index -- the sequence follows the slot, so
+   ;; a variable sequence's surgical insert/delete is not needed
    (berths :type 'berth
-           :sequence (:indices (the bridge roster-keys))
-           :key (the-child index)
+           :sequence (:size (length (the bridge roster-keys)))
+           :key (nth (the-child index) (the bridge roster-keys))
            :bridge (the bridge))))
 
 (define-object bridge ()
@@ -3331,6 +3411,22 @@ window.GW_WIRE = function () {
    ;; clock.
    (clock-anchor nil :settable)
    (clock-scale 0 :settable)
+   ;; THE EPOCH (departure epochs, first piece): the real date the
+   ;; ship's clock read zero at -- boarding time, or the pilot's own
+   ;; epoch when a newcomer takes the ship (board!).  Per cockpit,
+   ;; like the clock: two cockpits may live at different dates.
+   (epoch-seconds nil :settable)
+   (game-date-seconds (+ (or (the epoch-seconds) (unix-now)) (the game-seconds)))
+   (game-date-string (utc-date-string (the game-date-seconds)))
+   ;; the sun's direction in the world frame for the date (a world
+   ;; with no road of the sun's, the moon, takes home's)
+   (sun-heading-rad (sun-direction-rad (if (world-figure (the world) :sun-radius)
+                                           (the world)
+                                           :home)
+                                       (the game-date-seconds)))
+   ;; home's pole angle at clock zero: the Earth rotation angle at
+   ;; the epoch, so the face and the terminator are the date's own
+   (home-spin-offset (era-rad (or (the epoch-seconds) (unix-now))))
    ;; boarded: this session has taken (or been given) its place --
    ;; the ship or a shuttle (board!, once, at the first GET)
    (boarded? nil :settable)
@@ -3351,9 +3447,9 @@ window.GW_WIRE = function () {
    ;; the scene generation counts settles beside moves
    (clock-cuts 0 :settable)
    (scene-gen (format nil "~d.~d" (the moves-count) (the clock-cuts)))
-   (world-spin-rad (world-phase-rad (the world) (the game-seconds)))
-   ;; the clock as the helm reads it
-   (clock-string (clock-face (the game-seconds)))
+   (world-spin-rad (the (phase-of (the world) (the game-seconds))))
+   ;; the clock as the helm reads it, and the date it stands for
+   (clock-string (format nil "~a &middot; ~a" (clock-face (the game-seconds)) (the game-date-string)))
    ;; the nose-in switch (S3): on, the tape holds her heading on the
    ;; world's center as she coasts -- the old watch reborn as a law
    (nose-in? (the nose-in-control value))
@@ -3394,9 +3490,9 @@ window.GW_WIRE = function () {
    (landed-riders
     (when (the landed?)
       (case (the world)
-        (:home (list (list "moon" (world-phase-rad :moon (the game-seconds))
+        (:home (list (list "moon" (the (phase-of :moon (the game-seconds)))
                            (day-seconds-of :moon))))
-        (:moon (list (list "home-far" (world-phase-rad :home (the game-seconds))
+        (:moon (list (list "home-far" (the (phase-of :home (the game-seconds)))
                            (day-seconds-of :home))))
         (t nil))))
    ;; the clock as the page ticks it (*idle-clock-js*): the settled
@@ -3409,8 +3505,8 @@ window.GW_WIRE = function () {
            ;; a road's clock already carries its whole time; a
            ;; coast tape starts at the settled reading
            (total (cond ((null tm) nil) (coast? 0) (t (cdr (car (last tm)))))))
-      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"ground\":~a,\"coast\":~a,\"serial\":~d,\"clock\":\"voyage-clock~a\",\"tickAt\":~a,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
-              (round (the game-seconds)) (the clock-scale)
+      (format nil "{\"t\":~d,\"epoch\":~d,\"scale\":~d,\"day\":~d,\"ground\":~a,\"coast\":~a,\"serial\":~d,\"clock\":\"voyage-clock~a\",\"tickAt\":~a,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
+              (round (the game-seconds)) (round (or (the epoch-seconds) (unix-now))) (the clock-scale)
               (the world-day-seconds)
               (if (the landed?) "true" "false")
               (if coast? "true" "false")
@@ -3579,11 +3675,14 @@ window.GW_WIRE = function () {
               (if (world-figure (the world) :sun-radius)
                   (the world-name)
                   (world-figure :home :name))
+              ;; each world at its TRUE heliocentric longitude for the
+              ;; date (the ephemeris), on its schematic ring
               (loop for row in *worlds*
                     for sr = (world-figure (first row) :sun-radius)
                     when sr
-                      collect (format nil "{\"name\":~s,\"r\":~,1f,\"color\":~s}"
+                      collect (format nil "{\"name\":~s,\"r\":~,1f,\"lon\":~,5f,\"color\":~s}"
                                       (world-figure (first row) :name) sr
+                                      (or (heliocentric-longitude-rad (first row) (the game-date-seconds)) 0.0)
                                       (world-figure (first row) :diffuse))))
       (when (the transit-samples)
         (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~a,\"samples\":["
@@ -3727,7 +3826,8 @@ window.GW_WIRE = function () {
                                     :night-url (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
                                                  "/gw-tex/earth-night.jpg")
                                     :sun (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
-                                           (list h0 (or (getf body :spin-phase) 0)))))))))
+                                           (list h0 (or (getf body :spin-phase) 0)
+                                                 (the sun-heading-rad)))))))))
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (the transit-duration)
                                :time-map (the transit-time-map)
@@ -3777,7 +3877,8 @@ window.GW_WIRE = function () {
                                       "/gw-tex/earth-night.jpg")
                          :sun (when (and (the xr-scene?) (eql (the world) :home))
                                 (list (the sky-authored-heading-rad)
-                                      (the world-spin-rad)))
+                                      (the world-spin-rad)
+                                      (the sun-heading-rad)))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
@@ -3789,7 +3890,7 @@ window.GW_WIRE = function () {
                   (cond ((eql (the world) :home)
                          (body-x3d "moon" "moon-tex"
                                    (the moon-bearing) (the moon-distance) +moon-radius+
-                                   :phase (world-phase-rad :moon (the game-seconds))
+                                   :phase (the (phase-of :moon (the game-seconds)))
                                    :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03"))
                         ;; falling around the moon, home hangs in his sky:
                         ;; the whole blue marble at his true bearing
@@ -3800,7 +3901,7 @@ window.GW_WIRE = function () {
                                                (- +moon-x+) 0)
                                    (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
                                    +planet-radius+
-                                   :phase (world-phase-rad :home (the game-seconds))
+                                   :phase (the (phase-of :home (the game-seconds)))
                                    :diffuse "0.10 0.18 0.85"
                                    :emissive "0.02 0.03 0.05"))
                         (t ""))))
@@ -3966,7 +4067,7 @@ window.GW_WIRE = function () {
               ;; (sun and stars together, see day-clock-x3d); it
               ;; stands still aloft
               (:|Transform| :|DEF| "day-turn" :|id| "day-turn"
-                (str (sun-light-x3d :elevation (the sun-elevation)))
+                (str (sun-light-x3d :elevation (the sun-elevation) :heading (the sun-heading-rad)))
                 (:|Transform| :|DEF| "sky-drift"
                   (str (starfield-x3d :radius 5000.0d0)))))
             (str (the bodies-x3d))
@@ -4603,7 +4704,7 @@ function toggleHelm () {
               ;; (sun and stars together, see day-clock-x3d); it
               ;; stands still aloft
               (:|Transform| :|DEF| "day-turn" :|id| "day-turn"
-                (str (sun-light-x3d :elevation (the sun-elevation)))
+                (str (sun-light-x3d :elevation (the sun-elevation) :heading (the sun-heading-rad)))
                 (:|Transform| :|DEF| "sky-drift"
                   (str (starfield-x3d :radius 5000.0d0)))))
             (str (the bodies-x3d))
@@ -4701,6 +4802,11 @@ function toggleHelm () {
     (unless (the boarded?)
       (the (set-slot! :boarded? t))
       (let ((mother (the mother-object)))
+        ;; the epoch: the pilot's own when taking the ship from him,
+        ;; else the wall clock at boarding
+        (the (set-slot! :epoch-seconds
+                        (or (and mother (not (eq mother self)) (the-object mother epoch-seconds))
+                            (unix-now))))
         (when (and mother (not (eq mother self)))
           (the-object mother (settle-clock!))
           (dolist (slot '(:world :pos-x :pos-y :vel-x :vel-y :heading-deg
@@ -4726,6 +4832,14 @@ function toggleHelm () {
     ()
     (let ((iid (the instance-id)))
       (and iid (gwl::make-keyword-sensitive iid))))
+
+   ;; a world's pole angle at a clock reading, home's anchored to the
+   ;; Earth rotation angle at this cockpit's epoch (the date's own
+   ;; face and terminator); every other world counts from zero
+   (phase-of
+    (world game-seconds)
+    (world-phase-rad world game-seconds
+                     (if (eql world :home) (the home-spin-offset) 0)))
 
    ;; A HAIL: the line on the card goes to THE BRIDGE, signed with
    ;; this session, its pilot and its world -- and the bridge relays
@@ -4880,7 +4994,7 @@ function toggleHelm () {
                          :radius (the world-radius)
                          :targets (make-list (length samples)
                                              :initial-element (list 0 0))
-                         :spin-phase (world-phase-rad (the world) t0)
+                         :spin-phase (the (phase-of (the world) t0))
                          :spin-rate (world-spin-rate (the world))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
@@ -4892,7 +5006,7 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list +moon-x+ 0))
-                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
@@ -4902,7 +5016,7 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list (- +moon-x+) 0))
-                           :spin-phase (world-phase-rad :home t0)
+                           :spin-phase (the (phase-of :home t0))
                            :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
                            :emissive "0.05 0.07 0.12"))))))
@@ -5016,7 +5130,7 @@ function toggleHelm () {
                          :radius (the world-radius)
                          :targets (make-list (length samples)
                                              :initial-element (list 0 0))
-                         :spin-phase (world-phase-rad (the world) t0)
+                         :spin-phase (the (phase-of (the world) t0))
                          :spin-rate (world-spin-rate (the world))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
@@ -5029,7 +5143,7 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list +moon-x+ 0))
-                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
@@ -5039,7 +5153,7 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list (- +moon-x+) 0))
-                           :spin-phase (world-phase-rad :home t0)
+                           :spin-phase (the (phase-of :home t0))
                            :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
                            :emissive "0.05 0.07 0.12"))))))
@@ -5141,7 +5255,7 @@ function toggleHelm () {
                         :radius +planet-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list 0 0))
-                        :spin-phase (world-phase-rad :home t0)
+                        :spin-phase (the (phase-of :home t0))
                         :spin-rate (world-spin-rate :home)
                         :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
                   ;; the moon authors HIDDEN: he and home share the
@@ -5154,7 +5268,7 @@ function toggleHelm () {
                         :radius +moon-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list +moon-x+ 0))
-                        :spin-phase (world-phase-rad :moon t0)
+                        :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
                         :scale-override 0.001))))
@@ -5267,7 +5381,7 @@ function toggleHelm () {
                         :radius +planet-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list 0 0))
-                        :spin-phase (world-phase-rad :home t0)
+                        :spin-phase (the (phase-of :home t0))
                         :spin-rate (world-spin-rate :home)
                         :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
                   ;; the moon at full size from the first frame:
@@ -5277,7 +5391,7 @@ function toggleHelm () {
                         :radius +moon-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list +moon-x+ 0))
-                        :spin-phase (world-phase-rad :moon t0)
+                        :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
       (the (set-slot! :transit-beats
@@ -5440,7 +5554,7 @@ function toggleHelm () {
                          :emissive (world-figure to-world :emissive)
                          :tilt (world-figure to-world :tilt)
                          :adornment (world-figure to-world :adornment)
-                         :spin-phase (world-phase-rad to-world t0)
+                         :spin-phase (the (phase-of to-world t0))
                          :spin-rate (world-spin-rate to-world)
                          ;; no visible size at au range anyway; the
                          ;; first key sets him true -- the same guard
@@ -5450,7 +5564,7 @@ function toggleHelm () {
                          :texture (world-figure from-world :texture)
                          :radius (world-figure from-world :radius)
                          :targets asterns
-                         :spin-phase (world-phase-rad from-world t0)
+                         :spin-phase (the (phase-of from-world t0))
                          :spin-rate (world-spin-rate from-world)
                          :diffuse (world-figure from-world :diffuse)
                          :emissive (world-figure from-world :emissive)
@@ -5462,7 +5576,7 @@ function toggleHelm () {
                (list (list :prefix "moon" :texture "moon-tex"
                            :radius +moon-radius+
                            :targets moons
-                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
@@ -5477,7 +5591,7 @@ function toggleHelm () {
                                               (list (+ (first d) +moon-x+)
                                                     (second d)))
                                             dests)
-                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09"
@@ -5765,7 +5879,7 @@ function toggleHelm () {
                            :texture (world-figure (the world) :texture)
                            :radius (the world-radius)
                            :targets (make-list count :initial-element (list 0 0))
-                           :spin-phase (world-phase-rad (the world) t0)
+                           :spin-phase (the (phase-of (the world) t0))
                            :spin-rate (world-spin-rate (the world))
                            :diffuse (world-figure (the world) :diffuse)
                            :emissive (world-figure (the world) :emissive)
@@ -5775,13 +5889,13 @@ function toggleHelm () {
                  (:home (list (list :prefix "moon" :texture "moon-tex"
                                     :radius +moon-radius+
                                     :targets (make-list count :initial-element (list +moon-x+ 0))
-                                    :spin-phase (world-phase-rad :moon t0)
+                                    :spin-phase (the (phase-of :moon t0))
                                     :spin-rate (world-spin-rate :moon)
                                     :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")))
                  (:moon (list (list :prefix "home-far" :texture "earth-tex"
                                     :radius +planet-radius+
                                     :targets (make-list count :initial-element (list (- +moon-x+) 0))
-                                    :spin-phase (world-phase-rad :home t0)
+                                    :spin-phase (the (phase-of :home t0))
                                     :spin-rate (world-spin-rate :home)
                                     :diffuse "0.10 0.18 0.85" :emissive "0.02 0.03 0.05")))
                  (t nil))))))))
@@ -6373,7 +6487,7 @@ function toggleHelm () {
      (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
      (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"day-turn\">~a<Transform DEF=\"sky-drift\">~a</Transform></Transform></Transform>"
              (- (the sky-authored-heading-rad))
-             (sun-light-x3d :elevation (the sun-elevation))
+             (sun-light-x3d :elevation (the sun-elevation) :heading (the sun-heading-rad))
              (starfield-x3d :radius 5000.0d0))
      (the bodies-x3d)
      ;; the cab under its own lamp (see cab-light-x3d)
