@@ -220,14 +220,10 @@
    ;; climb gauge now, reading the session's own radial speed, so
    ;; like the speedo and compass needles it renders per cockpit
 
-   ;; the flatscreens in the instrument panel: the PORT one is THE
-   ;; PLOT now (ruled 2026-09-03 -- the plan view painted onto the
-   ;; glass, see plot-screen-x3d), grown to a squarer 0.30 x 0.235
-   ;; face; the starboard one is the starboard reptile eye's feed,
-   ;; dark glass where the renderer has no such feed.
-   ;; the STARBOARD flatscreen only: the port one lost its tile when
-   ;; the plot grew past it (ruled 2026-09-03 -- the plot quad stands
-   ;; on the dash by itself, plot-screen-x3d)
+   ;; the STARBOARD flatscreen only, the starboard reptile eye's
+   ;; feed (dark glass where the renderer has no such feed).  The
+   ;; port dash carries no screen: the plot is the flat HTML card
+   ;; (ruled 2026-09-03 evening; see the note at port-feed-x3d)
    (eye-screen-bezels :type 'box
                       :center (make-point 0.728 -0.75 0.42)
                       :width 0.015
@@ -1542,29 +1538,15 @@ X_ITE), because a fresh scene document stands with the light off.")
                 (look-at-orientation (make-vector 0 -1 0) (make-vector 0 0 1))
                 -0.63 -0.87))
 
-;; THE PLOT on the port flatscreen: a painted quad the page feeds
-;; from the plan view's canvas (plot-tex, a few frames a second),
-;; the corners the driver's own -- left is +y.  Sized to the plot
-;; canvas's 320 x 250, on the grown port screen (eye-screens 0).
-(defun plot-screen-x3d ()
-  ;; under its own TouchSensor: a tap on the glass zooms the plan
-  ;; view out a level (S4, GW_ZOOM_CYCLE), both renderers
-  (format nil "<Transform DEF=\"plot-hit\" id=\"plot-hit\"><TouchSensor DEF=\"plot-touch\" id=\"plot-touch\" description=\"the plot — tap to zoom out a level\"></TouchSensor>~a</Transform>"
-          ;; 0.385 x 0.27 on the port dash, a hair prouder than the
-          ;; dial faces, its top under the cowl sill; no tile behind
-          ;; it.  Its port edge stops at y 0.51 (the cab's side wall
-          ;; stands in front of the dash beyond that) and its
-          ;; starboard edge at the shifted compass's bezel (0.125).
-          ;; Its height is the dash's: nothing may rise above the
-          ;; sill where the disc's lower limb lands.
-          (painted-quad-x3d "plot-tex"
-                            (list (list 0.7125 0.51 0.275)
-                                  (list 0.7125 0.10 0.275)
-                                  (list 0.7125 0.10 0.545)
-                                  (list 0.7125 0.51 0.545))
-                            ;; low emissive: the plot's black ground
-                            ;; must read black, the gold lines lit
-                            :emissive "0.2 0.2 0.2")))
+;; The port flatscreen is gone (ruled 2026-09-03 evening): for a day
+;; the plan view was painted onto a quad on the port dash (plot-tex,
+;; plot-screen-x3d, the mirror in *plan-view-js*), and it read muddy
+;; beside the flat card, which is clearer and costs nothing to make.
+;; The cab need not all look like a 1959 pickup: the plot is a 2026
+;; element and stays HTML.  In an immersive WebXR session no HTML
+;; shows at all, so the VR pass will want a panel in the scene again
+;; -- rendered from the same canvas, pushed only while immersed; the
+;; quad and its mirror stand in git history (galaxy-world 9b3c1ca).
 
 ;; The dash radio in the metal, with the starter beside it: the
 ;; whole turn drives from inside the scene now.  Four preset keys
@@ -1800,47 +1782,10 @@ window.GW_DRAW = function () {
   // below needs no second reading.
   var FOOT = 0;
   function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = (H - FOOT) / 2; }
-  // THE MIRROR: every frame drawn here is painted onto the port
-  // flatscreen in the cab (plot-tex), a few times a second -- by
-  // DOM attribute under x3dom, by the SAI setter the xr wire
-  // leaves on GW_XR_SETTEX under X_ITE.  JPEG: the canvas's clear
-  // ground comes out black, which is what a screen wants.
-  function mirror () {
-    var now = Date.now();
-    // X_ITE loads each pushed picture as a file and wears its wait
-    // cursor while it does, so the glass takes one a second there;
-    // x3dom takes the attribute four times a second
-    var isDom = !!(window.GW_LIVE ? GW_LIVE('plot-tex') : document.getElementById('plot-tex'));
-    if (now - (GW_DRAW.pushed || 0) < (isDom ? 250 : 1000)) return;
-    GW_DRAW.pushed = now;
-    try {
-      // PNG, as the dial faces are (x3dom took no JPEG data url),
-      // and only when the picture changed: a parked orbit is
-      // painted once, a coast a few times a second
-      var u = cv.toDataURL();
-      window.GW_TEX = window.GW_TEX || {};
-      // the LIVE screen, not the x3dom template's copy (GW_LIVE)
-      var el = window.GW_LIVE ? GW_LIVE('plot-tex') : document.getElementById('plot-tex');
-      var same = window.GW_TEX['plot-tex'] === u;
-      // x3dom takes the attribute again every couple of seconds
-      // even unchanged: a single push can land before its runtime
-      // reads the node, and then the glass stays blank
-      if (same && (!el || now - (GW_DRAW.repushed || 0) < 2000)) return;
-      GW_DRAW.repushed = now;
-      window.GW_TEX['plot-tex'] = u;
-      if (el) el.setAttribute('url', u);
-      else if (window.GW_XR_SETTEX) GW_XR_SETTEX('plot-tex', u);
-    } catch (e) {}
-  }
-  // the pump: whatever the canvas shows goes to the glass a few
-  // times a second, whichever draw put it there (the card itself
-  // stays folded out of the way by default -- the screen IS the
-  // plot; the caret opens the card)
-  (function pump () {
-    if (gen !== GW_DRAW.gen) return;
-    mirror();
-    setTimeout(pump, 250);
-  })();
+  // No mirror onto the cab any more: the canvas IS the plot, on the
+  // flat card (ruled 2026-09-03 evening).  The push of every frame
+  // to a painted quad -- and the wait cursor X_ITE wore loading each
+  // one -- went with the quad; see the note at port-feed-x3d.
   // THE PLOT promotes to a HEADS-UP while a voyage flies: centered
   // on the glass, enlarged, translucent -- there is little to see
   // out the windshield mid-road, and the plot IS the show.  The
@@ -1916,6 +1861,33 @@ window.GW_DRAW = function () {
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
     ctx.beginPath(); ctx.arc(px, py, 3, 0, 2*Math.PI);
     ctx.fillStyle = '#ffffff'; ctx.fill();
+  }
+  // THE FLEET: every other cockpit in this frame, from the hails
+  // poll (GW_FLEET, every 8 s) -- a filled dot where gravity carries
+  // her to YOUR date (gold for the ship, blue for a shuttle), a
+  // hollow dot at her own clock's fix when the two part by more
+  // than a few pixels, a faint thread between, and her tail as a
+  // label.  PX/PY map km in the frame to the canvas.
+  function fleet (frame, PX, PY) {
+    var F = window.GW_FLEET; if (!F || !F.length) return;
+    F.forEach(function (r) {
+      if (r.you || r.x === null || r.x === undefined || r.world !== frame) return;
+      var colr = r.ship ? '#e8c839' : '#7fb2ff';
+      var hx = PX(r.x), hy = PY(r.y);
+      var has = (r.cx !== null && r.cx !== undefined);
+      var gx = has ? PX(r.cx) : hx, gy = has ? PY(r.cy) : hy;
+      if (has && Math.abs(gx - hx) + Math.abs(gy - hy) > 4) {
+        ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(gx, gy);
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = colr; ctx.lineWidth = 1; ctx.globalAlpha = 0.5; ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(hx, hy, 3, 0, 2*Math.PI);
+        ctx.strokeStyle = colr; ctx.lineWidth = 1; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(gx, gy, 3, 0, 2*Math.PI);
+      ctx.fillStyle = colr; ctx.fill();
+      ctx.font = '9px sans-serif'; ctx.fillStyle = colr; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(r.ship ? 'the ship' : String(r.id).slice(-4), gx + 6, gy);
+    });
   }
   var O = P.orbit;
   // a level out (S4): the system frames the world's riders
@@ -2011,6 +1983,7 @@ window.GW_DRAW = function () {
       ctx.strokeStyle = '#e8c839'; ctx.lineWidth = 1.2; ctx.stroke();
     }
     ship(O.x, O.y, O.heading * Math.PI/180, s);
+    fleet(O.frame, function (x) { return cx + x*s; }, function (y) { return cy - y*s; });
     // close aboard the moon the main view cannot separate ship and
     // moon (the standoff is a few px); a magnifier inset shows the
     // neighborhood -- moon to scale, the watch ring, the nose on him
@@ -2160,6 +2133,7 @@ window.GW_DRAW = function () {
     ctx.beginPath(); ctx.moveTo(px, py);
     ctx.lineTo(px + 8*Math.cos(h), py - 8*Math.sin(h));
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+    fleet(V.frame, vpx, vpy);
     label(V.frame + ' frame \\u2014 ' + (mkm ? 'Mkm' : 'km'));
     coords(x, y, mkm, V.frame);
     // the live readout on the vertical clips: altitude off the
@@ -2479,9 +2453,22 @@ window.GW_HAILS = function () {
     D.roster.forEach(function (r) {
       var line = document.createElement('div');
       line.textContent = (r.ship ? '\\u25c6 ' : '\\u25c7 ') + who(r) + (r.you ? ' (you)' : '') + ' \\u2014 ' + r.world + ', ' + r.where + (r.ship ? ' \\u2014 the ship' : ' \\u2014 a shuttle');
+      // her fix, at her own clock; the plot draws it carried to yours
+      if (r.x !== null && r.x !== undefined && !r.you) {
+        var fx = document.createElement('div');
+        fx.style.cssText = 'font-size:10px;color:#c9a227;margin-left:14px;font-variant-numeric:tabular-nums;';
+        var dt = (typeof r.dt === 'number') ? r.dt : 0, ad = Math.abs(dt);
+        var lag = ad < 60 ? '' : ' (' + (ad < 3600 ? Math.round(ad / 60) + ' min' : ad < 86400 ? (ad / 3600).toFixed(1) + ' h' : (ad / 86400).toFixed(1) + ' days') + (dt > 0 ? ' behind yours' : ' ahead of yours') + ')';
+        fx.textContent = 'x ' + Math.round(r.x).toLocaleString('en-US') + ' \\u00b7 y ' + Math.round(r.y).toLocaleString('en-US') + ' km \\u00b7 her clock ' + r.date + lag;
+        line.appendChild(fx);
+      }
       ro.appendChild(line);
     });
     if (ct) ct.textContent = D.roster.length + ' aboard';
+    // the fleet onto the plot: the dots redraw with the fresh fixes
+    var before = JSON.stringify(window.GW_FLEET || null);
+    window.GW_FLEET = D.roster;
+    if (JSON.stringify(D.roster) !== before && window.GW_DRAW && window.GW_PLAN) { try { GW_DRAW(); } catch (e) {} }
     lg.textContent = '';
     D.hails.forEach(function (h) {
       var line = document.createElement('div');
@@ -2851,8 +2838,6 @@ window.GW_WIRE = function () {
     if (st) st.setAttribute('emissiveColor', '0.75 0.25 0.12');
     var b = document.getElementById('gw-move-btn'); if (b) b.click();
   });
-  // the port screen: a tap zooms the plot out a level (S4)
-  touch('plot-touch', function () { if (window.GW_ZOOM_CYCLE) GW_ZOOM_CYCLE(); });
   // what is grabbable says so, straight from the sensors' own
   // isOver: an arrow everywhere, the grab hand over wheel,
   // shifter, pedals and horn, the plain pointer over the keys
@@ -2878,7 +2863,7 @@ window.GW_WIRE = function () {
   });
   ['radio-preset-0-touch', 'radio-preset-1-touch', 'radio-preset-2-touch',
    'radio-preset-3-touch', 'radio-tpt-0-touch', 'radio-tpt-1-touch',
-   'radio-tpt-2-touch', 'starter-touch', 'plot-touch'].forEach(function (id) {
+   'radio-tpt-2-touch', 'starter-touch'].forEach(function (id) {
     overCursor(id, 'pointer');
   });
 };")
@@ -3209,7 +3194,34 @@ window.GW_WIRE = function () {
    (pilot-id (and (the session) (the-object (the session) pilot-id)))
    (who (if (the session) (the-object (the session) (hail-name)) "a cockpit"))
    (world-name (if (the session) (the-object (the session) world-name) "the ship"))
-   (where (if (and (the session) (the-object (the session) landed?)) "down" "aloft"))))
+   (where (if (and (the session) (the-object (the session) landed?)) "down" "aloft")))
+  :functions
+  (;; her FIX this instant, in her world's frame and at her own
+   ;; clock's date: (vx vy px py date), nil for a session gone.  A
+   ;; function, not a slot: it rides the wall clock, which no slot
+   ;; dependency would ever invalidate
+   (fix
+    ()
+    (and (the session)
+         (ignore-errors (multiple-value-list (the-object (the session) (state-now))))))
+   ;; the fix carried by gravity alone to another cockpit's date (the
+   ;; fleet on the plot reads every cockpit at the asker's time as
+   ;; well as at her own): (values px py delta), nil when landed,
+   ;; gone, or more than two years apart -- past that the fall is
+   ;; long to integrate and means little
+   (fix-at
+    (date &optional (f (the (fix))))
+    (progn
+      (when f
+        (destructuring-bind (vx vy px py her-date) f
+          (let ((delta (- date her-date)))
+            (cond ((or (the-object (the session) landed?) (< (abs delta) 60))
+                   (values px py delta))
+                  ((> (abs delta) (* 2 365.25 86400)) nil)
+                  (t (destructuring-bind (cvx cvy cpx cpy)
+                         (the-object (the session) (fall vx vy px py delta))
+                       (declare (ignore cvx cvy))
+                       (values cpx cpy delta)))))))))))
 
 (define-object ship ()
   :documentation (:description "The basilisk herself: the ship the rooms share, named from basilisk/.ship at every raising, crewed from basilisk/.muster; one per backend process (the-ship), the bridge her child, and a berth for every cockpit aboard.")
@@ -3320,15 +3332,32 @@ window.GW_WIRE = function () {
                 (if (the pilot-key) (json-string (string (the pilot-key))) "null")
                 (json-string (the-object (the-ship) styled-name))
                 (round now)
-                (mapcar (lambda (b)
-                          (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a}"
-                                  (json-string (string (the-object b key)))
-                                  (if (the-object b pilot-id) (json-string (string (the-object b pilot-id))) "null")
-                                  (json-string (the-object b world-name))
-                                  (json-string (the-object b where))
-                                  (if (the-object b pilot?) "true" "false")
-                                  (if (eq (the-object b session) cockpit) "true" "false")))
-                        (list-elements (the-object (the-ship) berths)))
+                (let ((your-date (ignore-errors
+                                   (multiple-value-bind (vx vy px py d) (the-object cockpit (state-now))
+                                     (declare (ignore vx vy px py))
+                                     d))))
+                  (mapcar (lambda (b)
+                            ;; the fleet: each cockpit's fix at her own
+                            ;; date (x y h date) and carried by gravity
+                            ;; to the asker's date (cx cy dt)
+                            (let* ((f (the-object b (fix)))
+                                   ;; one fall per berth per poll
+                                   (carried (and f your-date (multiple-value-list (the-object b (fix-at your-date f))))))
+                              (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a,\"x\":~a,\"y\":~a,\"h\":~a,\"date\":~a,\"cx\":~a,\"cy\":~a,\"dt\":~a}"
+                                      (json-string (string (the-object b key)))
+                                      (if (the-object b pilot-id) (json-string (string (the-object b pilot-id))) "null")
+                                      (json-string (the-object b world-name))
+                                      (json-string (the-object b where))
+                                      (if (the-object b pilot?) "true" "false")
+                                      (if (eq (the-object b session) cockpit) "true" "false")
+                                      (if f (format nil "~,1f" (third f)) "null")
+                                      (if f (format nil "~,1f" (fourth f)) "null")
+                                      (if f (format nil "~,1f" (the-object (the-object b session) heading-deg)) "null")
+                                      (if f (json-string (utc-date-string (fifth f))) "null")
+                                      (if (first carried) (format nil "~,1f" (first carried)) "null")
+                                      (if (first carried) (format nil "~,1f" (second carried)) "null")
+                                      (if (and f your-date) (format nil "~d" (round (- your-date (fifth f)))) "null"))))
+                          (list-elements (the-object (the-ship) berths))))
                 (mapcar (lambda (h)
                           (destructuring-bind (at from pilot world text to) h
                             (declare (ignore to))
@@ -4078,12 +4107,10 @@ window.GW_WIRE = function () {
    (plot-size 512)
    (plot-height 337)
 
-   ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
-   ;; view's canvas, painted onto the glass by the page a few times
-   ;; a second (plot-screen-x3d; the mirror step in *plan-view-js*),
-   ;; both renderers alike.  The port reptile eye's feed it replaced
-   ;; stands in git history (port-eye-feed-x3d).
-   (port-feed-x3d (plot-screen-x3d))
+   ;; no port flatscreen: the plot is the flat HTML card (ruled
+   ;; 2026-09-03 evening; the painted quad and, before it, the port
+   ;; reptile eye's feed stand in git history)
+   (port-feed-x3d "")
 
    ;; the big readout in the helm's title bar: gear letter and
    ;; steerage at a glance, visible even with the card folded.
@@ -4961,8 +4988,14 @@ function toggleHelm () {
    (ship-line
     ()
     (let ((mother (the mother-object)))
-      (cond ((or (null mother) (eq mother self))
+      (cond ((eq mother self)
              "the ship: yours &mdash; this cockpit pilots the basilisk")
+            ;; the pilot's session is gone (reaped, or the backend
+            ;; restarted): nobody stands the ship, and a shuttle
+            ;; cannot re-take her (ruled 2026-09-03) -- the next
+            ;; cockpit to board does
+            ((null mother)
+             "the ship: her pilot's session is gone &mdash; she stands where he left her until the next cockpit boards and takes her &mdash; you fly a shuttle")
             (t (multiple-value-bind (vx vy px py her-date) (the-object mother (state-now))
                  (let* ((delta (- (the game-date-seconds) her-date))
                         (carried? (and (> (abs delta) 60) (not (the-object mother landed?)))))
@@ -6447,8 +6480,6 @@ function toggleHelm () {
     onRelease('starter-touch', function () {
       var b = document.getElementById('gw-move-btn'); if (b) b.click();
     });
-    // the port screen: a tap zooms the plot out a level (S4)
-    onRelease('plot-touch', function () { if (window.GW_ZOOM_CYCLE) GW_ZOOM_CYCLE(); });
     var wheel = named('wheel-sensor');
     if (wheel) {
       var lastAng = 0;
