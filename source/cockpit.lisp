@@ -895,9 +895,13 @@ nose track never jumps a lap."
 ;; spent, the last heading (unwrapped from HEADING0), and the angle
 ;; coasted.
 (defun coast-to-node (heading0 pos-x pos-y radius ring mu sense
-                      &key (center-x 0) (end-key 0.05) (n 8))
+                      &key (center-x 0) (center-y 0) (node-angle 0.0)
+                           (end-key 0.05) (n 8))
+  "NODE-ANGLE is the departure point's angle on the ring (0 was the
+only node before the worlds kept phase); CENTER-X/Y carry the samples
+into a frame where the ridden world is not at the origin."
   (let* ((phi0 (atan pos-y pos-x))
-         (d (mod (* (- sense) phi0) (* 2 pi)))
+         (d (mod (* sense (- node-angle phi0)) (* 2 pi)))
          (coast (if (> d (- (* 2 pi) 0.01)) 0.0 d))
          (wait (* coast (sqrt (/ (* ring ring ring) mu))))
          (prev-h heading0)
@@ -909,7 +913,7 @@ nose track never jumps a lap."
              (h (unwrap-heading (+ phi pi) prev-h)))
         (setq prev-h h)
         (push (list (* end-key f) h
-                    (+ center-x (* r (cos phi))) (* r (sin phi)))
+                    (+ center-x (* r (cos phi))) (+ center-y (* r (sin phi))))
               samples)))
     (values (nreverse samples) wait prev-h coast)))
 
@@ -1102,6 +1106,32 @@ world frame -- its heliocentric longitude and a half turn."
     (mod (+ (* 2 pi (+ 0.7790572732640d0 (* 1.00273781191135448d0 tu)))
             +home-meridian-offset+)
          (* 2 pi))))
+
+;; THE MOON ON HIS TRACK (departure epochs, second piece): his mean
+;; longitude for a date, a circle at the game's own distance -- the
+;; ellipse and the perturbations are below this grain (his radius
+;; wanders 6%, his longitude some 6 degrees, both invisible on a road
+;; cut to circular rings).  He rides the same ecliptic frame the sun's
+;; elements do, +x the vernal equinox.
+(defparameter +moon-orbit-radius+ 396400.0
+  "The moon's distance from home in the game, km (the old +moon-x+).")
+(defparameter +moon-longitude-rate+ (* (/ pi 180) 13.17639648d0)
+  "Radians of lunar mean longitude per day.")
+
+(defun moon-longitude-rad (unix-seconds)
+  "The moon's mean ecliptic longitude at UNIX-SECONDS."
+  (let ((d (- (+ (/ unix-seconds 86400d0) 2440587.5d0) 2451545.0d0)))
+    (mod (+ (* (/ pi 180) 218.3164477d0) (* +moon-longitude-rate+ d)) (* 2 pi))))
+
+(defun moon-position (unix-seconds)
+  "Where the moon stands in home's frame at UNIX-SECONDS: (values x y), km."
+  (let ((l (moon-longitude-rad unix-seconds)))
+    (values (* +moon-orbit-radius+ (cos l)) (* +moon-orbit-radius+ (sin l)))))
+
+(defun rotate-xy (x y rho)
+  "(x y) turned by RHO radians about the origin: (values x' y')."
+  (values (- (* x (cos rho)) (* y (sin rho)))
+          (+ (* x (sin rho)) (* y (cos rho)))))
 
 ;; TAG suffixes every DEF this clip owns -- its clock and its
 ;; interpolators -- so a stretch of coast tape can stand beside the
@@ -3427,6 +3457,10 @@ window.GW_WIRE = function () {
    ;; home's pole angle at clock zero: the Earth rotation angle at
    ;; the epoch, so the face and the terminator are the date's own
    (home-spin-offset (era-rad (or (the epoch-seconds) (unix-now))))
+   ;; where the moon stands in home's frame for the date (his track,
+   ;; moon-position); every place that put him at his node reads these
+   (moon-x (multiple-value-bind (x y) (moon-position (the game-date-seconds)) (declare (ignore y)) x))
+   (moon-y (multiple-value-bind (x y) (moon-position (the game-date-seconds)) (declare (ignore x)) y))
    ;; boarded: this session has taken (or been given) its place --
    ;; the ship or a shuttle (board!, once, at the first GET)
    (boarded? nil :settable)
@@ -3621,8 +3655,8 @@ window.GW_WIRE = function () {
                       (deg->rad (the heading-deg))))
    ;; and the moon
    (moon-bearing (bearing-to (the pos-x) (the pos-y)
-                             (deg->rad (the heading-deg)) +moon-x+ 0))
-   (moon-distance (dist-to (the pos-x) (the pos-y) +moon-x+ 0))
+                             (deg->rad (the heading-deg)) (the moon-x) (the moon-y)))
+   (moon-distance (dist-to (the pos-x) (the pos-y) (the moon-x) (the moon-y)))
 
    ;; where periapsis points: the eccentricity vector's angle, so
    ;; the plot can lay the road's true shape on the table
@@ -3657,8 +3691,8 @@ window.GW_WIRE = function () {
                   (the semi-major) (the eccentricity) (the peri-angle))
           (format out ",\"a\":null"))
       (when (eql (the world) :home)
-        (format out ",\"moon\":{\"x\":~,1f,\"y\":0,\"r\":~,1f}"
-                +moon-x+ +moon-radius+))
+        (format out ",\"moon\":{\"x\":~,1f,\"y\":~,1f,\"r\":~,1f}"
+                (the moon-x) (the moon-y) +moon-radius+))
       (format out "}")
       ;; THE ZOOM (S4): what the plot draws a level out -- the
       ;; SYSTEM (the world's riders, in his frame) and the SUN'S
@@ -3667,10 +3701,10 @@ window.GW_WIRE = function () {
       ;; the ring of the world that has her -- home's, from the moon)
       (format out ",\"zoom\":{\"system\":[~{~a~^,~}],\"solar\":{\"here\":~s,\"rings\":[~{~a~^,~}]}}"
               (case (the world)
-                (:home (list (format nil "{\"name\":\"the moon\",\"x\":~,1f,\"y\":0,\"r\":~,1f,\"color\":\"0.75 0.74 0.70\"}"
-                                     +moon-x+ +moon-radius+)))
-                (:moon (list (format nil "{\"name\":\"home\",\"x\":~,1f,\"y\":0,\"r\":~,1f,\"color\":\"0.10 0.18 0.85\"}"
-                                     (- +moon-x+) +planet-radius+)))
+                (:home (list (format nil "{\"name\":\"the moon\",\"x\":~,1f,\"y\":~,1f,\"r\":~,1f,\"color\":\"0.75 0.74 0.70\"}"
+                                     (the moon-x) (the moon-y) +moon-radius+)))
+                (:moon (list (format nil "{\"name\":\"home\",\"x\":~,1f,\"y\":~,1f,\"r\":~,1f,\"color\":\"0.10 0.18 0.85\"}"
+                                     (- (the moon-x)) (- (the moon-y)) +planet-radius+)))
                 (t nil))
               (if (world-figure (the world) :sun-radius)
                   (the world-name)
@@ -3898,8 +3932,8 @@ window.GW_WIRE = function () {
                          (body-x3d "home-far" "earth-tex"
                                    (bearing-to (the pos-x) (the pos-y)
                                                (deg->rad (the heading-deg))
-                                               (- +moon-x+) 0)
-                                   (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
+                                               (- (the moon-x)) (- (the moon-y)))
+                                   (dist-to (the pos-x) (the pos-y) (- (the moon-x)) (- (the moon-y)))
                                    +planet-radius+
                                    :phase (the (phase-of :home (the game-seconds)))
                                    :diffuse "0.10 0.18 0.85"
@@ -5005,7 +5039,7 @@ function toggleHelm () {
                            :radius +moon-radius+
                            :targets (make-list (length samples)
                                                :initial-element
-                                               (list +moon-x+ 0))
+                                               (list (the moon-x) (the moon-y)))
                            :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
@@ -5015,7 +5049,7 @@ function toggleHelm () {
                            :radius +planet-radius+
                            :targets (make-list (length samples)
                                                :initial-element
-                                               (list (- +moon-x+) 0))
+                                               (list (- (the moon-x)) (- (the moon-y))))
                            :spin-phase (the (phase-of :home t0))
                            :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
@@ -5142,7 +5176,7 @@ function toggleHelm () {
                            :radius +moon-radius+
                            :targets (make-list (length samples)
                                                :initial-element
-                                               (list +moon-x+ 0))
+                                               (list (the moon-x) (the moon-y)))
                            :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
@@ -5152,7 +5186,7 @@ function toggleHelm () {
                            :radius +planet-radius+
                            :targets (make-list (length samples)
                                                :initial-element
-                                               (list (- +moon-x+) 0))
+                                               (list (- (the moon-x)) (- (the moon-y))))
                            :spin-phase (the (phase-of :home t0))
                            :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
@@ -5199,13 +5233,30 @@ function toggleHelm () {
            (n 32)
            ;; the clock before the move: the faces the clip opens on
            (t0 (the game-seconds))
+           (date0 (the game-date-seconds))
            (h0 (deg->rad (the heading-deg)))
-           ;; the opening beat: the coast round to the ring's
-           ;; departure point, in her own sense (coast-to-node)
            (sense (if (minusp (the specific-h)) -1 1))
-           (coast (multiple-value-list
-                   (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
-                                  r1 +mu+ sense)))
+           ;; THE WINDOW (departure epochs): the transfer's apogee
+           ;; must stand where the moon WILL be at arrival, so the
+           ;; departure point is the ring's node opposite that
+           ;; longitude -- and the moon moves while she coasts round
+           ;; to it, so the two are solved together, a few turns of
+           ;; the fixed point (he moves 13 degrees a day, she rounds
+           ;; the ring in eight hours: it settles in two)
+           (window (let ((rho 0.0) (wait 0.0) (coast nil))
+                     (dotimes (i 4)
+                       (let* ((l-arr (moon-longitude-rad (+ date0 wait tof)))
+                              (node (mod (- l-arr pi) (* 2 pi))))
+                         (setq rho (- l-arr pi))
+                         (setq coast (multiple-value-list
+                                      (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
+                                                     r1 +mu+ sense :node-angle node)))
+                         (setq wait (second coast))))
+                     (list rho coast)))
+           ;; the road is cut in its canonical frame (departure at
+           ;; +x, the moon at -x) and turned by RHO to the sky
+           (rho (first window))
+           (coast (second window))
            (wait (second coast))
            (prev-h (third coast))
            (coast-hours (/ wait 3600))
@@ -5218,31 +5269,38 @@ function toggleHelm () {
                (r (* a (- 1 (* e (cos ecc-anom)))))
                (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
                             (- (cos ecc-anom) e)))
-               ;; unwrap the heading so the nose track never jumps a lap
-               (h (unwrap-heading (atan (* vcoeff (+ e (cos theta)))
-                                        (* vcoeff (- (sin theta))))
+               ;; unwrap the heading so the nose track never jumps a
+               ;; lap; the canonical heading turns with the road
+               (h (unwrap-heading (+ rho (atan (* vcoeff (+ e (cos theta)))
+                                               (* vcoeff (- (sin theta)))))
                                   prev-h))
                ;; Kepler: game-time since the kick at this sample
                (tim (/ (- ecc-anom (* e (sin ecc-anom))) n-tr))
                (key (+ 0.10 (* 0.83 (/ i n)))))
           (setq prev-h h)
-          (push (list key h (* r (cos theta)) (* r (sin theta))) samples)
+          (multiple-value-bind (x y) (rotate-xy (* r (cos theta)) (* r (sin theta)) rho)
+            (push (list key h x y) samples))
           (push (cons key (+ wait tim)) time-map)))
-      ;; the closing beat: nose-in on the moon
-      (push (list 1.0 (unwrap-heading pi prev-h) (- r2) 0) samples)
+      ;; the closing beat: nose-in on the moon, where he stands
+      (multiple-value-bind (ax ay) (rotate-xy (- r2) 0 rho)
+        (push (list 1.0 (unwrap-heading (+ pi rho) prev-h) ax ay) samples))
       (push (cons 1.0 (+ wait tof)) time-map)
       (setq samples (nreverse samples)
             time-map (nreverse time-map))
       ;; she arrives in the MOON's OWN FRAME, truly falling around
       ;; him: the watch is state now, not scenery.  Clockwise, the
-      ;; way the transfer's apoapsis crawl handed her over.
-      (the (set-slot! :world :moon))
-      (the (set-slot! :landed? nil))
-      (the (set-slot! :heading-deg 180))
-      (the (set-slot! :vel-x 0))
-      (the (set-slot! :vel-y (- (sqrt (/ +mu-moon+ +moon-watch-radius+)))))
-      (the (set-slot! :pos-x +moon-watch-radius+))
-      (the (set-slot! :pos-y 0))
+      ;; way the transfer's apoapsis crawl handed her over -- the
+      ;; canonical arrival (watch, 0) heading 180, turned by RHO.
+      (let ((v (sqrt (/ +mu-moon+ +moon-watch-radius+))))
+        (the (set-slot! :world :moon))
+        (the (set-slot! :landed? nil))
+        (the (set-slot! :heading-deg (mod (round (+ 180 (* rho (/ 180 pi)))) 360)))
+        (multiple-value-bind (vx vy) (rotate-xy 0 (- v) rho)
+          (the (set-slot! :vel-x vx))
+          (the (set-slot! :vel-y vy)))
+        (multiple-value-bind (px py) (rotate-xy +moon-watch-radius+ 0 rho)
+          (the (set-slot! :pos-x px))
+          (the (set-slot! :pos-y py))))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       ;; the road spends the wait and the fall
@@ -5266,8 +5324,12 @@ function toggleHelm () {
                   ;; starts
                   (list :prefix "moon" :texture "moon-tex"
                         :radius +moon-radius+
-                        :targets (make-list (length samples)
-                                            :initial-element (list +moon-x+ 0))
+                        ;; he rides his track through the clip: a
+                        ;; target per sample, at that sample's date
+                        :targets (mapcar (lambda (tm)
+                                           (multiple-value-bind (x y) (moon-position (+ date0 (cdr tm)))
+                                             (list x y)))
+                                         time-map)
                         :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
@@ -5323,53 +5385,76 @@ function toggleHelm () {
            (vcoeff (sqrt (/ +mu+ p)))
            (n 32)
            (t0 (the game-seconds))
+           (date0 (the game-date-seconds))
            (h0 (deg->rad (the heading-deg)))
-           ;; the opening beat: the coast round the moon's watch to
-           ;; the transfer's own node, in her own sense.  The scene
-           ;; flies the leg in home's frame, so the coast rides
-           ;; there too (the moon at his node)
            (sense (if (minusp (the specific-h)) -1 1))
-           (coast (multiple-value-list
-                   (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
-                                  +moon-watch-radius+ +mu-moon+ sense
-                                  :center-x +moon-x+)))
+           ;; THE WINDOW home: the transfer's apogee is where the moon
+           ;; stands at DEPARTURE (she leaves his doorstep), so the
+           ;; road's canonical frame (apogee at -x, home's ring at
+           ;; +x) is turned by RHO = his longitude then less a half
+           ;; turn; the node on his watch is the far side, turned the
+           ;; same way; his own motion while she coasts the watch is
+           ;; folded in by a few turns of the fixed point
+           (window (let ((rho 0.0) (wait 0.0) (coast nil))
+                     (dotimes (i 4)
+                       (let* ((l-dep (moon-longitude-rad (+ date0 wait))))
+                         (setq rho (- l-dep pi))
+                         (multiple-value-bind (mx my) (moon-position (+ date0 wait))
+                           (setq coast (multiple-value-list
+                                        (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
+                                                       +moon-watch-radius+ +mu-moon+ sense
+                                                       :center-x mx :center-y my
+                                                       :node-angle (mod rho (* 2 pi))))))
+                         (setq wait (second coast))))
+                     (list rho coast)))
+           (rho (first window))
+           (coast (second window))
            (wait (second coast))
            (prev-h (third coast))
            (coast-hours (/ wait 3600))
+           ;; the scene flies the leg in home's frame, so the first
+           ;; sample is her seat carried there: the moon where he
+           ;; stands at departure
            (samples (append (reverse (first coast))
-                            (list (list 0.0 h0
-                                        (+ +moon-x+ (the pos-x)) (the pos-y)))))
+                            (list (multiple-value-bind (mx my) (moon-position date0)
+                                    (list 0.0 h0 (+ mx (the pos-x)) (+ my (the pos-y)))))))
            (time-map (list (cons 0.05 wait) (cons 0.0 0.0))))
       (dotimes (i (1+ n))
         (let* ((ecc-anom (+ pi (* pi (/ i n))))
                (r (* a (- 1 (* e (cos ecc-anom)))))
                (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
                             (- (cos ecc-anom) e)))
-               ;; unwrap the heading so the nose track never jumps a lap
-               (h (unwrap-heading (atan (* vcoeff (+ e (cos theta)))
-                                        (* vcoeff (- (sin theta))))
+               ;; unwrap the heading so the nose track never jumps a
+               ;; lap; the canonical heading turns with the road
+               (h (unwrap-heading (+ rho (atan (* vcoeff (+ e (cos theta)))
+                                               (* vcoeff (- (sin theta)))))
                                   prev-h))
                ;; Kepler: game-time since the kick, from the apogee
                (tim (/ (- ecc-anom (* e (sin ecc-anom)) pi) n-tr))
                (key (+ 0.10 (* 0.83 (/ i n)))))
           (setq prev-h h)
-          (push (list key h (* r (cos theta)) (* r (sin theta))) samples)
+          (multiple-value-bind (x y) (rotate-xy (* r (cos theta)) (* r (sin theta)) rho)
+            (push (list key h x y) samples))
           (push (cons key (+ wait tim)) time-map)))
       ;; the closing beat: nose-in on home, swung on from prograde
       ;; without ever unwinding the lap the fall wound up
-      (push (list 1.0 (unwrap-heading pi prev-h) r1 0) samples)
+      (multiple-value-bind (ax ay) (rotate-xy r1 0 rho)
+        (push (list 1.0 (unwrap-heading (+ pi rho) prev-h) ax ay) samples))
       (push (cons 1.0 (+ wait tof)) time-map)
       (setq samples (nreverse samples)
             time-map (nreverse time-map))
       ;; she arrives back in HOME's frame, on the ring she first
-      ;; rode: circular, prograde, nose-in
+      ;; rode: circular, prograde, nose-in -- at the ring's point the
+      ;; road lands on, turned by RHO from the canonical +x
       (the (set-slot! :world :home))
       (the (set-slot! :landed? nil))
-      (the (set-slot! :heading-deg 180))
-      (the (set-slot! :vel-x 0))
-      (the (set-slot! :vel-y +ring-speed+))
-      (the (set-slot! :pos-x +ring-radius+))
-      (the (set-slot! :pos-y 0))
+      (the (set-slot! :heading-deg (mod (round (+ 180 (* rho (/ 180 pi)))) 360)))
+      (multiple-value-bind (vx vy) (rotate-xy 0 +ring-speed+ rho)
+        (the (set-slot! :vel-x vx))
+        (the (set-slot! :vel-y vy)))
+      (multiple-value-bind (px py) (rotate-xy +ring-radius+ 0 rho)
+        (the (set-slot! :pos-x px))
+        (the (set-slot! :pos-y py)))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
       (the (advance-clock! (+ wait tof)))
@@ -5389,8 +5474,11 @@ function toggleHelm () {
                   ;; astern the whole way down
                   (list :prefix "moon" :texture "moon-tex"
                         :radius +moon-radius+
-                        :targets (make-list (length samples)
-                                            :initial-element (list +moon-x+ 0))
+                        ;; he falls astern along his own track
+                        :targets (mapcar (lambda (tm)
+                                           (multiple-value-bind (x y) (moon-position (+ date0 (cdr tm)))
+                                             (list x y)))
+                                         time-map)
                         :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
@@ -5488,7 +5576,10 @@ function toggleHelm () {
            (samples (list (list 0.0 (deg->rad (the heading-deg))
                                 (+ re ox) oy)))
            (asterns (list (list re 0)))
-           (moons (list (list (+ re +moon-x+) 0)))
+           (date0 (the game-date-seconds))
+           ;; home's moon rides his own track through the leg
+           (moons (multiple-value-bind (mx my) (moon-position date0)
+                    (list (list (+ re mx) my))))
            (dests (list (list (* rm+ (cos mars0)) (* rm+ (sin mars0)))))
            (prev-h nil)
            (t0 (the game-seconds))
@@ -5514,8 +5605,9 @@ function toggleHelm () {
                       (+ (* r (sin theta)) (* oy fade)))
                 samples)
           (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
-          (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e)))
-                moons)
+          (multiple-value-bind (mx my) (moon-position (+ date0 tim))
+            (push (list (+ (* re (cos th-e)) mx) (+ (* re (sin th-e)) my))
+                  moons))
           (push (list (* rm+ (cos th-m)) (* rm+ (sin th-m))) dests)
           (push (cons (+ 0.07 (* 0.86 (/ i n))) tim) time-map)))
       ;; the closing beat: nose-in on the new world, the old one
@@ -5523,7 +5615,8 @@ function toggleHelm () {
       (push (list 1.0 pi (- rm) 0) samples)
       (let ((th-e (* n-e tof)))
         (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
-        (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e))) moons))
+        (multiple-value-bind (mx my) (moon-position (+ date0 tof))
+          (push (list (+ (* re (cos th-e)) mx) (+ (* re (sin th-e)) my)) moons)))
       (push (list (- rm+) 0) dests)
       (push (cons 1.0 tof) time-map)
       (setq samples (nreverse samples)
@@ -5587,10 +5680,12 @@ function toggleHelm () {
              (when (eql to-world :home)
                (list (list :prefix "moon" :texture "moon-tex"
                            :radius +moon-radius+
-                           :targets (mapcar (lambda (d)
-                                              (list (+ (first d) +moon-x+)
-                                                    (second d)))
-                                            dests)
+                           ;; the moon beside home at each sample's date
+                           :targets (mapcar (lambda (d tm)
+                                              (multiple-value-bind (mx my) (moon-position (+ date0 (cdr tm)))
+                                                (list (+ (first d) mx)
+                                                      (+ (second d) my))))
+                                            dests time-map)
                            :spin-phase (the (phase-of :moon t0))
                            :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
@@ -5807,10 +5902,10 @@ function toggleHelm () {
    (hand-off-due?
     (px py)
     (case (the world)
-      (:home (let ((mx (- px +moon-x+)) (my py))
+      (:home (let ((mx (- px (the moon-x))) (my (- py (the moon-y))))
                (> (/ +mu-moon+ (+ (* mx mx) (* my my)))
                   (* 1.15 (/ +mu+ (+ (* px px) (* py py)))))))
-      (:moon (let ((hx (+ px +moon-x+)) (hy py))
+      (:moon (let ((hx (+ px (the moon-x))) (hy (+ py (the moon-y))))
                (> (/ +mu+ (+ (* hx hx) (* hy hy)))
                   (* 1.15 (/ +mu-moon+ (+ (* px px) (* py py)))))))
       (t nil)))
@@ -5888,13 +5983,23 @@ function toggleHelm () {
                (case (the world)
                  (:home (list (list :prefix "moon" :texture "moon-tex"
                                     :radius +moon-radius+
-                                    :targets (make-list count :initial-element (list +moon-x+ 0))
+                                    ;; he rides his track through the tape
+                                    :targets (mapcar (lambda (s)
+                                                       (multiple-value-bind (x y)
+                                                           (moon-position (+ (the game-date-seconds) (* sign (first s))))
+                                                         (list x y)))
+                                                     samples)
                                     :spin-phase (the (phase-of :moon t0))
                                     :spin-rate (world-spin-rate :moon)
                                     :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")))
                  (:moon (list (list :prefix "home-far" :texture "earth-tex"
                                     :radius +planet-radius+
-                                    :targets (make-list count :initial-element (list (- +moon-x+) 0))
+                                    ;; home swings round in his sky as he rides his track
+                                    :targets (mapcar (lambda (s)
+                                                       (multiple-value-bind (x y)
+                                                           (moon-position (+ (the game-date-seconds) (* sign (first s))))
+                                                         (list (- x) (- y))))
+                                                     samples)
                                     :spin-phase (the (phase-of :home t0))
                                     :spin-rate (world-spin-rate :home)
                                     :diffuse "0.10 0.18 0.85" :emissive "0.02 0.03 0.05")))
@@ -6033,13 +6138,14 @@ function toggleHelm () {
    (maybe-hand-off!
     ()
     (cond ((eql (the world) :home)
-           (let* ((mx (- (the pos-x) +moon-x+))
-                  (my (the pos-y))
+           (let* ((mx (- (the pos-x) (the moon-x)))
+                  (my (- (the pos-y) (the moon-y)))
                   (pull-moon (/ +mu-moon+ (+ (* mx mx) (* my my))))
                   (pull-home (/ +mu+ (* (the radius) (the radius)))))
              (when (> pull-moon (* 1.15 pull-home))
                (the (set-slot! :world :moon))
                (the (set-slot! :pos-x mx))
+               (the (set-slot! :pos-y my))
                (the (set-slot! :last-move-note
                      (concatenate 'string (the last-move-note)
                                   " — and the moon's grip takes her: falling around the moon now")))
@@ -6047,13 +6153,14 @@ function toggleHelm () {
                (tally! :handoffs-moonward)
                (bridge-says (format nil "the moon's grip takes ~a" (the (hail-name))) "the moon"))))
           ((eql (the world) :moon)
-           (let* ((hx (+ (the pos-x) +moon-x+))
-                  (hy (the pos-y))
+           (let* ((hx (+ (the pos-x) (the moon-x)))
+                  (hy (+ (the pos-y) (the moon-y)))
                   (pull-home (/ +mu+ (+ (* hx hx) (* hy hy))))
                   (pull-moon (/ +mu-moon+ (* (the radius) (the radius)))))
              (when (> pull-home (* 1.15 pull-moon))
                (the (set-slot! :world :home))
                (the (set-slot! :pos-x hx))
+               (the (set-slot! :pos-y hy))
                (the (set-slot! :last-move-note
                      (concatenate 'string (the last-move-note)
                                   " — and home reclaims her: back in the big well")))
