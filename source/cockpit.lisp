@@ -67,7 +67,7 @@
    ;; glass, right through the crown of the world nosed-in ahead.
    ;; Every roof member reads (the roof-z); the header rail is
    ;; thinner too.  The second step went with the taller seat (the
-   ;; driver's eye at 0.84, see viewpoints-x3d): the cowl top sat
+   ;; driver's eye at 0.81, see viewpoints-x3d): the cowl top sat
    ;; on the world's south limb, and the only way to drop it under
    ;; the disc without rebuilding the dash was to raise the eye --
    ;; which put the header back on the crown until it rose too.
@@ -3167,21 +3167,27 @@ GW_CHECK_IN();"
              ;; cowl framing it
              (cons :port-lookout
                    (viewpoint-x3d "port-lookout" "Port lookout"
-                                  (make-point -0.02 0 0.84)
+                                  (make-point -0.02 0 0.81)
                                   (unitize-vector (make-vector 0.26 0.97 0))
                                   "1.15" :z-near "0.05" :z-far "8000" :up up))
              (cons :drivers-seat
                    (viewpoint-x3d "drivers-seat" "Driver's seat"
-                                  ;; the eye at 0.84 (was 0.78): a
-                                  ;; taller seat drops the cowl top
-                                  ;; under the world's south limb
-                                  ;; (the dash top sat exactly on it
-                                  ;; from 0.78, whatever the pitch)
-                                  ;; and shrinks the pedal well in
-                                  ;; the frame -- the glass gets
-                                  ;; both.  The roofline rose with
-                                  ;; it (roof-z) to keep the crown.
-                                  (make-point -0.02 0 0.84)
+                                  ;; the eye at 0.81 (was 0.78, then
+                                  ;; a first try at 0.84 that never
+                                  ;; took: point-string rounded to 1
+                                  ;; decimal, and 0.78/0.84 both read
+                                  ;; "0.8" -- a no-op until the
+                                  ;; format string itself was fixed
+                                  ;; to 4 places).  Once real, 0.84
+                                  ;; dropped the dash enough to also
+                                  ;; push the rear-view mirror low
+                                  ;; enough to overlap THE HELM
+                                  ;; card's title; 0.81 splits the
+                                  ;; difference -- the dash still
+                                  ;; drops, the mirror stays clear.
+                                  ;; The roofline rose with it
+                                  ;; (roof-z) to keep the crown.
+                                  (make-point -0.02 0 0.81)
                                   ;; lifted from -0.24, then -0.15:
                                   ;; the wheel is smaller and lower,
                                   ;; the roofline higher and the

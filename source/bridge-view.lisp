@@ -4,7 +4,11 @@
 (in-package :galaxy-world)
 
 (defun point-string (point)
-  (format nil "~,1f ~,1f ~,1f" (get-x point) (get-y point) (get-z point)))
+  ;; 4 decimals (was 1, 2026-09-03): at 1 the driver's-seat eye
+  ;; moving from 0.78 to 0.84 rounded to the same "0.8" both ways --
+  ;; a height fix that changed nothing on screen, silently.  A meter
+  ;; scene wants millimeters, not decimeters.
+  (format nil "~,4f ~,4f ~,4f" (get-x point) (get-y point) (get-z point)))
 
 (defun viewpoint-x3d (id description position direction field-of-view
                       &key (z-near "50") (z-far "2500000") up)
