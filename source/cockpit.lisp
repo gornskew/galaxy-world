@@ -769,17 +769,91 @@ EARTH-SUN-LOCAL."
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
 
+;; THE SHIP'S CLOCK and the worlds' days.  Galaxy World is
+;; turn-based: game time stands still between moves, and each move
+;; spends a known stretch of it -- the cadence for a hand-flown
+;; turn, the road's own time of flight for a programmed one.  A
+;; world's pole angle is the clock read against his day, so every
+;; world, parked or flown, wears the face that much time has turned
+;; him to, and a flown road turns him by exactly the time it spends.
+(defun day-seconds-of (world)
+  (or (world-figure world :day-seconds) 86400))
+
+(defun world-phase-rad (world game-seconds)
+  "The pole angle WORLD stands at when the ship's clock reads
+GAME-SECONDS."
+  (mod (* 2 pi (/ game-seconds (day-seconds-of world))) (* 2 pi)))
+
+(defun world-spin-rate (world)
+  "Radians of pole turn per game-second."
+  (/ (* 2 pi) (day-seconds-of world)))
+
+(defun clock-face (game-seconds)
+  "The ship's clock as the helm reads it: days, hours and minutes
+since she first sailed; a rewind past the start runs it negative."
+  (let* ((s (round game-seconds))
+         (neg? (minusp s))
+         (s (abs s)))
+    (format nil "~:[~;-~]day ~d, ~2,'0d:~2,'0d"
+            neg? (floor s 86400) (floor (mod s 86400) 3600)
+            (floor (mod s 3600) 60))))
+
+(defun unwrap-heading (h prev)
+  "H shifted by whole laps to lie within half a lap of PREV, so a
+nose track never jumps a lap."
+  (loop while (> (- h prev) pi) do (decf h (* 2 pi)))
+  (loop while (< (- h prev) (- pi)) do (incf h (* 2 pi)))
+  h)
+
+;; The coast round to a road's departure point.  A programmed road
+;; leaves from ONE point on the ring -- the node square across from
+;; the world it sails for -- and she may stand anywhere on the ring
+;; when she buys it, so the clip opens with her gliding round to
+;; that point in her own sense, nose-in, the radius easing onto the
+;; ring; the wait is real game-time on the ship's clock, at the
+;; ring's own pace.  (Before this the road simply began at the
+;; node: the world snapped under her at the start of every voyage.)
+;; HEADING0, POS-X, POS-Y and RADIUS are hers in the frame of the
+;; world she rides; CENTER-X carries the samples into the scene's
+;; frame when that world is not at the origin (the moon at his
+;; node).  Returns the coast samples (keys 0..END-KEY), the seconds
+;; spent, the last heading (unwrapped from HEADING0), and the angle
+;; coasted.
+(defun coast-to-node (heading0 pos-x pos-y radius ring mu sense
+                      &key (center-x 0) (end-key 0.05) (n 8))
+  (let* ((phi0 (atan pos-y pos-x))
+         (d (mod (* (- sense) phi0) (* 2 pi)))
+         (coast (if (> d (- (* 2 pi) 0.01)) 0.0 d))
+         (wait (* coast (sqrt (/ (* ring ring ring) mu))))
+         (prev-h heading0)
+         (samples nil))
+    (dotimes (k n)
+      (let* ((f (/ (1+ k) n))
+             (phi (+ phi0 (* sense coast f)))
+             (r (+ radius (* (- ring radius) f)))
+             (h (unwrap-heading (+ phi pi) prev-h)))
+        (setq prev-h h)
+        (push (list (* end-key f) h
+                    (+ center-x (* r (cos phi))) (* r (sin phi)))
+              samples)))
+    (values (nreverse samples) wait prev-h coast)))
+
+;; a clip compresses days to a breath: past this many full turns a
+;; riding world's whirl reads as flicker, so the pole track keeps
+;; the fractional turn (the endpoints exact) and this many whole ones
+(defparameter +clip-turn-cap+ 6)
+
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
-                 &key spin? phase diffuse emissive scale-override tilt adornment
+                 &key phase diffuse emissive scale-override tilt adornment
                       night-url sun-local)
   "One body: a unit sphere under a DEF'd frame transform carrying
-translation and scale, so a voyage can fly both.  SPIN? adds the
-pole-spin CLOCK -- a body on a flown road, where real time (and so
-game time) is passing.  PHASE authors a STATIC pole rotation
-(radians) and no clock: the PARKED view is time-frozen between
-moves (turn-based), and each move advances the world's rotation by
-the game-time it spent (see spin-seconds / advance-spin!).  A body
-gets one or the other, never both.  SCALE-OVERRIDE authors a different scale than the
+translation and scale, so a voyage can fly both.  PHASE is the pole
+angle (radians) the body stands at: the scene is time-frozen
+between moves (turn-based), each move advances the ship's clock by
+the game-time it spent, and a body's face is that clock read
+against his day (world-phase-rad).  On a flown road the voyage
+clock turns him on from PHASE by the road's own time of flight
+(the pole tracks in transit-anim-x3d).  SCALE-OVERRIDE authors a different scale than the
 subtended one -- a voyage page hides a body until its clock's first
 key sets the true size.  ADORNMENT is extra markup riding the frame
 in body-radius units (Saturn's rings), and TILT leans body and
@@ -803,50 +877,20 @@ near ring arc lost the draw and hid behind the globe."
                         (if day-url (format nil "&quot;~a&quot;" day-url) "")
                         prefix diffuse emissive))))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\" id=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
-             prefix
-             ;; the pole spins about 0 -1 0 in this inner frame (the
-             ;; clock's own axis); a frozen world stands at PHASE
+             prefix prefix
+             ;; the pole turns about 0 -1 0 in this inner frame; the
+             ;; world stands at PHASE, and a flown road turns him on
+             ;; from there by a voyage-clock track (transit-anim-x3d)
              (if phase (format nil " rotation=\"0 -1 0 ~,5f\"" phase) "")
              appearance
              (or adornment "")
              (if tilt "</Transform>" ""))
-     (if (and spin? (not phase))
-         (format nil "<TimeSensor DEF=\"~a-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"~a-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"~a-clock\" fromField=\"fraction_changed\" toNode=\"~a-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-swing\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
-                 prefix prefix prefix prefix prefix prefix)
-         "")))))
+))))
 
-;; The parked orbit: once she has taken the moon's ring she rides
-;; it NOSE-IN, the way she rode at home -- the moon square in the
-;; windshield while his face slowly turns, home and the whole sky
-;; wheeling once around per orbit (the ship's frame turns with her
-;; ring; everything far away appears to turn the other way).  One
-;; looping clock, three tracks.  ENABLED? nil parks the clock so a
-;; voyage can finish first -- parked BOTH ways (enabled=false AND a
-;; far-future startTime), so the watch stays down even where one
-;; guard is ignored; the page's script throws both switches.
-(defun moon-ambient-x3d (home-bearing sky-angle &key (period 240) enabled?)
-  (let ((homes (make-string-output-stream))
-        (skys (make-string-output-stream))
-        (spins (make-string-output-stream)))
-    ;; the watch runs CLOCKWISE (the transfer's apoapsis crawl hands
-    ;; her over that way, and the integrated state agrees): riding
-    ;; nose-in, home's bearing INCREASES -- dead astern, up the
-    ;; starboard side, ahead, down the port side -- and the sky
-    ;; wheels with it; his face scrolls the other way under her
-    (dotimes (k 9)
-      (let ((b (+ home-bearing (* k (/ pi 4)))))
-        (format homes "~,1f ~,1f 0 " (* 3000 (cos b)) (* 3000 (sin b)))))
-    (dotimes (k 5)
-      (format skys "0 0 1 ~,5f " (+ sky-angle (* k (/ pi 2))))
-      (format spins "0 1 0 ~,5f " (* k (/ pi 2))))
-    (format nil "<TimeSensor DEF=\"ambient-clock\" id=\"ambient-clock\" cycleInterval=\"~d\" loop=\"true\" enabled=\"~a\"~:[ startTime=\"8000000000\"~;~]></TimeSensor><PositionInterpolator DEF=\"amb-home\" key=\"0 0.125 0.25 0.375 0.5 0.625 0.75 0.875 1\" keyValue=\"~a\"></PositionInterpolator><OrientationInterpolator DEF=\"amb-sky\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><OrientationInterpolator DEF=\"amb-moonspin\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-home\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-sky\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"ambient-clock\" fromField=\"fraction_changed\" toNode=\"amb-moonspin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"amb-home\" fromField=\"value_changed\" toNode=\"planet-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"amb-sky\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE><ROUTE fromNode=\"amb-moonspin\" fromField=\"value_changed\" toNode=\"moon-spin\" toField=\"set_rotation\"></ROUTE>"
-            period (if enabled? "true" "false") enabled?
-            (get-output-stream-string homes)
-            (get-output-stream-string skys)
-            (get-output-stream-string spins))))
+
 
 ;; The voyage, flown by the scene: the sampled road becomes
 ;; interpolator tracks -- every riding body's frame and the sky's
@@ -857,6 +901,10 @@ near ring arc lost the draw and hid behind the globe."
 ;; the body's position, one (x y) per sample -- a body standing
 ;; still repeats one target; a body riding its own road brings a
 ;; different one for every key.
+;; TIME-MAP is the clip's clock: (key . game-seconds) pairs, the
+;; game-time elapsed at each key; a body carrying :spin-phase and
+;; :spin-rate (radians, radians per game-second) gets a pole track
+;; read off it, his face turning on from the phase he left with.
 ;; START-TIME, when given, is unix epoch seconds baked into the
 ;; clock itself -- a scene DOCUMENT (the X_ITE road) flies the
 ;; voyage with no page script; the x3dom page keeps starting the
@@ -865,7 +913,7 @@ near ring arc lost the draw and hid behind the globe."
   "Unix epoch seconds -- the time scale X3D SFTime clocks keep."
   (- (get-universal-time) 2208988800))
 
-(defun transit-anim-x3d (samples bodies &key (duration 90) start-time)
+(defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map)
   (let ((keys (make-string-output-stream))
         (nose (make-string-output-stream))
         (tracks nil))
@@ -901,11 +949,48 @@ near ring arc lost the draw and hid behind the globe."
             (format out "<PositionInterpolator DEF=\"vy-~a-pos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-~a-scl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-pos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-scl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-pos\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-~a-scl\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_scale\"></ROUTE>"
                     prefix k pos prefix k scl
                     prefix prefix prefix prefix prefix prefix)))
+        ;; the pole tracks: a riding world's face turns on from its
+        ;; departure phase by the game-time the road spends, read off
+        ;; TIME-MAP, so the face at the clip's end is the face the
+        ;; parked page then shows.  Keys land at least every quarter
+        ;; turn (an orientation interpolator takes the short way
+        ;; between neighbours), the angles reduced to one lap.
+        (when time-map
+          (let ((total (cdr (car (last time-map)))))
+            (dolist (body bodies)
+              (let ((phase (getf body :spin-phase))
+                    (rate (getf body :spin-rate)))
+                (when (and phase rate)
+                  (let* ((turn (* rate total))
+                         (turn (if (> turn (* 2 pi (1+ +clip-turn-cap+)))
+                                   (+ (mod turn (* 2 pi)) (* 2 pi +clip-turn-cap+))
+                                   turn))
+                         (rate (if (zerop total) 0 (/ turn total)))
+                         (skeys (make-string-output-stream))
+                         (svals (make-string-output-stream))
+                         (prev-key -1.0)
+                         (first? t))
+                    (loop for ((k0 . t0) (k1 . t1)) on time-map
+                          while k1
+                          do (let ((m (max 1 (ceiling (abs (* rate (- t1 t0))) (/ pi 2)))))
+                               (loop for j from (if first? 0 1) to m
+                                     do (let* ((f (/ j m))
+                                               (key (+ k0 (* (- k1 k0) f)))
+                                               (secs (+ t0 (* (- t1 t0) f))))
+                                          (when (> key (+ prev-key 1e-5))
+                                            (format skeys "~,5f " key)
+                                            (format svals "0 -1 0 ~,5f "
+                                                    (mod (+ phase (* rate secs)) (* 2 pi)))
+                                            (setq prev-key key))))
+                               (setq first? nil)))
+                    (format out "<OrientationInterpolator DEF=\"vy-~a-spin\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-spin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-spin\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
+                            (getf body :prefix)
+                            (get-output-stream-string skeys)
+                            (get-output-stream-string svals)
+                            (getf body :prefix) (getf body :prefix) (getf body :prefix))))))))
         (format out "<OrientationInterpolator DEF=\"vy-nose\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-nose\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-nose\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE>"
                 k (get-output-stream-string nose))))))
 
-;; The night itself drifts: the whole starfield swings slowly about
-;; the scene's zenith, the way the sky wheels past a ship falling
 ;; THE SUN.  Until 2026-09-02 the scene carried no light at all, so
 ;; the renderer's default HEADLIGHT lit every face from the camera
 ;; and every world glowed on its own emissive term: no day side, no
@@ -997,10 +1082,7 @@ window.GW_FLOOD_TOGGLE = function () {
 every scene swap (the state script under x3dom, the wire under
 X_ITE), because a fresh scene document stands with the light off.")
 
-;; around a world.  One revolution in twenty minutes -- game time
-;; runs generous.
-(defparameter *sky-drift-x3d*
-  "<TimeSensor DEF=\"sky-clock\" cycleInterval=\"1200\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"sky-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 0 -1 0 0 0 -1 1.5708 0 0 -1 3.14159 0 0 -1 4.71239 0 0 -1 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"sky-clock\" fromField=\"fraction_changed\" toNode=\"sky-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"sky-swing\" fromField=\"value_changed\" toNode=\"sky-drift\" toField=\"set_rotation\"></ROUTE>")
+
 
 ;; A torus as one smooth-shaded IndexedFaceSet in world coordinates.
 ;; The stock torus primitive facets visibly at the rim; this mesh
@@ -2106,21 +2188,29 @@ window.GW_WIRE = function () {
    ;; center, the world square in the windshield, the ring flown
    ;; sideways.
    (heading-deg 180 :settable)
-   ;; the world's accumulated rotation, in game-seconds: time is
-   ;; frozen between moves, and each move adds the seconds it spent
-   ;; (advance-spin!).  world-spin-rad turns it into the parked
-   ;; body's static pole angle -- the day/night terminator the sun
-   ;; casts then sits still until the pilot moves, and the face he
-   ;; sees lights and darkens as he goes AROUND the orbit, not as
-   ;; the world whirls in place.
-   (spin-seconds 0 :settable)
-   (world-spin-rad (mod (* 2 pi (/ (the spin-seconds) (the world-day-seconds)))
-                        (* 2 pi)))
+   ;; THE SHIP'S CLOCK, in game-seconds: time is frozen between
+   ;; moves, and each move adds the seconds it spent (advance-clock!
+   ;; -- the cadence for a hand-flown turn, the road's own time of
+   ;; flight for a programmed one, the coast to the departure point
+   ;; where a road demands one).  world-spin-rad reads it against
+   ;; the world's day for the parked body's pole angle -- the
+   ;; day/night terminator the sun casts then sits still until the
+   ;; pilot moves, and the face he sees lights and darkens as he
+   ;; goes AROUND the orbit, not as the world whirls in place.
+   (game-seconds 0 :settable)
+   (world-spin-rad (world-phase-rad (the world) (the game-seconds)))
+   ;; the clock as the helm reads it
+   (clock-string (clock-face (the game-seconds)))
    (vel-x 0 :settable)
    (vel-y +ring-speed+ :settable)
    (pos-x +ring-radius+ :settable)
    (pos-y 0 :settable)
    (moves-count 0 :settable)
+   ;; the scope of a hand-flown turn, seconds: a minute of close
+   ;; work up to a full day on the fastest channel
+   (cadence-seconds (ecase (the cadence-control value)
+                      (:slow 60) (:medium 600)
+                      (:fast 3600) (:fastest 86400)))
    ;; the pilot this cockpit's hands belong to, once the browser
    ;; signs the log book at boarding (check-in!).  NIL until then --
    ;; an unsigned hand flies fine; only the book ignores him.
@@ -2142,7 +2232,7 @@ window.GW_WIRE = function () {
    (world-mu (world-figure (the world) :mu))
    (world-radius (world-figure (the world) :radius))
    (world-sky (world-figure (the world) :sky))
-   (world-day-seconds (or (world-figure (the world) :day-seconds) 86400))
+   (world-day-seconds (day-seconds-of (the world)))
    (world-ring (world-figure (the world) :ring))
    (world-ring-speed (sqrt (/ (the world-mu) (the world-ring))))
 
@@ -2291,7 +2381,8 @@ window.GW_WIRE = function () {
    ;; transit-anim-x3d, set by the road function alongside the
    ;; samples so page and animation author from one list.  Each is a
    ;; plist: :prefix :texture :radius :targets :diffuse :emissive
-   ;; :spin? :scale-override.
+   ;; :spin-phase :spin-rate (the face he leaves with, and how fast
+   ;; his day turns it) :scale-override.
    (transit-bodies nil :settable)
 
    ;; the running story of a programmed road: (fraction . line)
@@ -2299,10 +2390,10 @@ window.GW_WIRE = function () {
    ;; clock flies, the full arrival note returning at the end
    (transit-beats nil :settable)
 
-   ;; she stands the moon watch: set on arrival, cleared by the
-   ;; next hand-flown move; while set, the scene loops the parked
-   ;; orbit around the moon
-   (moon-orbit? nil :settable)
+   ;; the clip's clock: (key . game-seconds) pairs along the road,
+   ;; the game-time elapsed at each key -- what turns the riding
+   ;; worlds' faces (transit-anim-x3d); set beside the samples
+   (transit-time-map nil :settable)
 
    ;; the sky's authored heading: mid-voyage pages author the scene
    ;; at the road's start and let the clock fly it forward
@@ -2331,7 +2422,7 @@ window.GW_WIRE = function () {
                                     (bearing-to px0 py0 h0 tx0 ty0)
                                     (dist-to px0 py0 tx0 ty0)
                                     (getf body :radius)
-                                    :spin? (getf body :spin?)
+                                    :phase (getf body :spin-phase)
                                     :diffuse (getf body :diffuse)
                                     :emissive (getf body :emissive)
                                     :scale-override (getf body :scale-override)
@@ -2339,25 +2430,13 @@ window.GW_WIRE = function () {
                                     :adornment (getf body :adornment)))))))
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (the transit-duration)
+                               :time-map (the transit-time-map)
                                ;; a scene document carries its own
                                ;; ignition; the x3dom page lights the
                                ;; clock from script instead
                                :start-time (when (the xr-scene?)
                                              (+ (unix-now) 2)))
-             ;; the watch waits, parked, for the moon road to land;
-             ;; at a new world the plain scene already stands the
-             ;; watch
-             ;; the ambient's anchor is HOME's true bearing -- since
-             ;; the arrival state lives in the MOON's frame now,
-             ;; (the planet-bearing) means HIM, not home; aim at
-             ;; home's own seat in his frame
-             (if (eql (the transit-target) :moon)
-                 (moon-ambient-x3d (bearing-to (the pos-x) (the pos-y)
-                                               (deg->rad (the heading-deg))
-                                               (- +moon-x+) 0)
-                                   (- (deg->rad (the heading-deg)))
-                                   :enabled? nil)
-                 "")
+
              ;; the ground rides the clip's ends: the yard's
              ;; descent finishes ON the plain (it rises under the
              ;; cab over the last tenth, taking the view as the
@@ -2400,15 +2479,10 @@ window.GW_WIRE = function () {
                          :tilt (world-figure (the world) :tilt)
                          :adornment (world-figure (the world) :adornment)))
            (cond ((eql (the world) :home)
-                  (string-append
-                   (body-x3d "moon" "moon-tex"
-                             (the moon-bearing) (the moon-distance) +moon-radius+
-                             :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")
-                   (if (the moon-orbit?)
-                       (moon-ambient-x3d (the planet-bearing)
-                                         (- (deg->rad (the heading-deg)))
-                                         :enabled? t)
-                       "")))
+(body-x3d "moon" "moon-tex"
+                            (the moon-bearing) (the moon-distance) +moon-radius+
+                            :phase (world-phase-rad :moon (the game-seconds))
+                            :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03"))
                  ;; falling around the moon, home hangs in his sky:
                  ;; the whole blue marble at his true bearing
                  ((eql (the world) :moon)
@@ -2418,6 +2492,7 @@ window.GW_WIRE = function () {
                                         (- +moon-x+) 0)
                             (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
                             +planet-radius+
+                            :phase (world-phase-rad :home (the game-seconds))
                             :diffuse "0.10 0.18 0.85"
                             :emissive "0.02 0.03 0.05"))
                  (t ""))))))
@@ -2445,8 +2520,18 @@ window.GW_WIRE = function () {
                            (scene-body-frame (bearing-to px py h tx ty)
                                              (dist-to px py tx ty)
                                              (getf body :radius))
-                         (format out "~:[,~%           ~;~]['~a-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f']"
-                                 first (getf body :prefix) sx sy sc sc sc))))
+                         (format out "~:[,~%           ~;~]['~a-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f'~a]"
+                                 first (getf body :prefix) sx sy sc sc sc
+                                 ;; the face he lands with: the clock's
+                                 ;; end read against his day
+                                 (let ((ph (getf body :spin-phase))
+                                       (rate (getf body :spin-rate))
+                                       (secs (let ((tm (the transit-time-map)))
+                                               (if tm (cdr (car (last tm))) 0))))
+                                   (if (and ph rate)
+                                       (format nil ", '0 -1 0 ~,5f'"
+                                               (mod (+ ph (* rate secs)) (* 2 pi)))
+                                       ""))))))
             (format out "]")))
         "[]"))
 
@@ -2466,29 +2551,18 @@ window.GW_WIRE = function () {
     fin.forEach(function (f) {
       var el = document.getElementById(f[0]);
       if (el) { el.setAttribute('translation', f[1]); el.setAttribute('scale', f[2]); }
+      if (f[3]) { var sp = document.getElementById(f[0].replace('-frame', '-spin')); if (sp) sp.setAttribute('rotation', f[3]); }
     });
     var gl = document.getElementById('ground-lift');
     if (gl) gl.setAttribute('translation', '~a');
     var sky = document.getElementById('sky-heading');
     if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
-    var amb = document.getElementById('ambient-clock');
-    if (amb) {
-      amb.setAttribute('startTime', '' + (Date.now() / 1000));
-      amb.setAttribute('enabled', 'true');
-    }
   } else {
     try { sessionStorage.setItem(key, '1'); } catch (e) {}
     window.addEventListener('load', function () {
       var ts = document.getElementById('voyage-clock');
       if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
       window.GW_VOYAGE_T0 = Date.now() + 1000;
-      setTimeout(function () {
-        var amb = document.getElementById('ambient-clock');
-        if (amb) {
-          amb.setAttribute('startTime', '' + (Date.now() / 1000));
-          amb.setAttribute('enabled', 'true');
-        }
-      }, ~d);
     });
   }
 })();"
@@ -2497,8 +2571,7 @@ window.GW_WIRE = function () {
                 ;; where the ground stands when the clip is snapped
                 ;; past: home for a landing, struck for a lift-off
                 (if (eql (the transit-target) :up) "0 0 -6000" "0 0 0")
-                (- (deg->rad (the heading-deg)))
-                (* 1000 (+ 2 (the transit-duration))))
+                (- (deg->rad (the heading-deg))))
         ""))
    ;; the speedo sweeps 8 o'clock to 4 o'clock; full scale reads the
    ;; world -- 8 km/s over home and Mars, opened up over a giant
@@ -2557,8 +2630,8 @@ window.GW_WIRE = function () {
             (:|Background| :|skyColor| "0 0 0.012")
             (str (the viewpoints-x3d))
             ;; the universe turns around the ship, never the ship
-            ;; around the universe -- and inside the heading, the
-            ;; night drifts on its own clock
+            ;; around the universe -- and nothing in it moves between
+            ;; moves: the scene stands until the pilot acts
             (:|NavigationInfo| :headlight "false")
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
@@ -2566,7 +2639,6 @@ window.GW_WIRE = function () {
               (str (sun-light-x3d :elevation (the sun-elevation)))
               (:|Transform| :|DEF| "sky-drift"
                 (str (starfield-x3d :radius 5000.0d0))))
-            (str *sky-drift-x3d*)
             (str (the bodies-x3d))
             ;; the cab under its own lamp (see cab-light-x3d)
             (:|Group|
@@ -3039,6 +3111,7 @@ function toggleHelm () {
                                         (the periapsis-alt))))))
                    (htm (:div :style "color:#e07050;"
                           "the road is unbound — the deep dark has you")))))
+          (:div :id "gw-clock" (fmt "ship's clock: ~a" (the clock-string)))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :id "move-note"
             :style "margin-top:6px;font-size:11px;font-style:italic;color:#c9a227;"
@@ -3074,8 +3147,8 @@ function toggleHelm () {
             (:|Background| :|skyColor| "0 0 0.012")
             (str (the viewpoints-x3d))
             ;; the universe turns around the ship, never the ship
-            ;; around the universe -- and inside the heading, the
-            ;; night drifts on its own clock
+            ;; around the universe -- and nothing in it moves between
+            ;; moves: the scene stands until the pilot acts
             (:|NavigationInfo| :headlight "false")
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
@@ -3083,7 +3156,6 @@ function toggleHelm () {
               (str (sun-light-x3d :elevation (the sun-elevation)))
               (:|Transform| :|DEF| "sky-drift"
                 (str (starfield-x3d :radius 5000.0d0))))
-            (str *sky-drift-x3d*)
             (str (the bodies-x3d))
             (:|Group|
               (str (cab-light-x3d))
@@ -3201,6 +3273,11 @@ function toggleHelm () {
            (h-up phi0)                       ; nose away from the center
            (h-pro (+ phi0 (/ pi 2)))        ; prograde on the ring
            (n 24)
+           ;; the climb's time: the half-ellipse from the sky to the
+           ;; ring, the yard's own pace
+           (tof (* pi (sqrt (/ (expt (* 0.5 (+ sky ring)) 3) (the world-mu)))))
+           (t0 (the game-seconds))
+           (time-map (list (cons 0.0 0.0)))
            (samples (list (list 0.0 h-up (the pos-x) (the pos-y)))))
       (dotimes (i (1+ n))
         (let* ((f (/ i n))
@@ -3212,10 +3289,13 @@ function toggleHelm () {
                (h (+ h-up (* lean (- h-pro h-up)))))
           (push (list (+ 0.05 (* 0.90 f)) h
                       (* r (cos phi0)) (* r (sin phi0)))
-                samples)))
+                samples)
+          (push (cons (+ 0.05 (* 0.90 f)) (* tof f)) time-map)))
       (push (list 1.0 h-pro (* ring (cos phi0)) (* ring (sin phi0)))
             samples)
-      (setq samples (nreverse samples))
+      (push (cons 1.0 tof) time-map)
+      (setq samples (nreverse samples)
+            time-map (nreverse time-map))
       (the (set-slot! :landed? nil))
       (the (set-slot! :heading-deg (mod (round (* h-pro (/ 180 pi))) 360)))
       (the (set-slot! :pos-x (* ring (cos phi0))))
@@ -3223,9 +3303,10 @@ function toggleHelm () {
       (the (set-slot! :vel-x (* (the world-ring-speed) (- (sin phi0)))))
       (the (set-slot! :vel-y (* (the world-ring-speed) (cos phi0))))
       (the (set-slot! :last-burn :forward))
-      (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (advance-clock! tof))
       (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-time-map time-map))
       (the (set-slot! :transit-target :up))
       (the (set-slot! :transit-bodies
             (append
@@ -3234,7 +3315,8 @@ function toggleHelm () {
                          :radius (the world-radius)
                          :targets (make-list (length samples)
                                              :initial-element (list 0 0))
-                         :spin? t
+                         :spin-phase (world-phase-rad (the world) t0)
+                         :spin-rate (world-spin-rate (the world))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
@@ -3245,6 +3327,8 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list +moon-x+ 0))
+                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
              (when (eql (the world) :moon)
@@ -3253,6 +3337,8 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list (- +moon-x+) 0))
+                           :spin-phase (world-phase-rad :home t0)
+                           :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
                            :emissive "0.05 0.07 0.12"))))))
       (the (set-slot! :transit-beats
@@ -3298,6 +3384,11 @@ function toggleHelm () {
                    (sqrt (* mu (- (/ 2 r1) (/ 1 a))))))
            (dv2 (sqrt (* mu (- (/ 2 sky) (/ 1 a)))))
            (n 32)
+           ;; the descent's time: half a lap of the conic
+           (n-d (sqrt (/ mu (* a a a))))
+           (tof (/ pi n-d))
+           (t0 (the game-seconds))
+           (time-map (list (cons 0.0 0.0)))
            ;; pre-burn beat: wherever and however she stands
            (samples (list (list 0.0 (deg->rad (the heading-deg))
                                 (the pos-x) (the pos-y))))
@@ -3322,7 +3413,11 @@ function toggleHelm () {
                         (+ h alpha)
                         (* r (cos ang))
                         (* r (sin ang)))
-                  samples))))
+                  samples)
+            ;; Kepler: game-time since the retro kick, from the apoapsis
+            (push (cons (+ 0.06 (* 0.84 (/ i n)))
+                        (/ (- ecc-anom (* e (sin ecc-anom)) pi) n-d))
+                  time-map))))
       ;; the flip for the brake: the nose swings RETROGRADE over
       ;; the last beats -- she brakes tail-first, the way the big
       ;; brake must be pointed -- and holds the pose through the
@@ -3331,7 +3426,10 @@ function toggleHelm () {
         (declare (ignore key))
         (push (list 0.95 (+ fh pi) fx fy) samples)
         (push (list 1.0 (+ fh pi) fx fy) samples))
-      (setq samples (nreverse samples))
+      (push (cons 0.95 tof) time-map)
+      (push (cons 1.0 tof) time-map)
+      (setq samples (nreverse samples)
+            time-map (nreverse time-map))
       (destructuring-bind (key fh fx fy) (car (last samples))
         (declare (ignore key))
         (the (set-slot! :heading-deg (mod (round (* fh (/ 180 pi))) 360)))
@@ -3341,9 +3439,10 @@ function toggleHelm () {
       (the (set-slot! :vel-y 0))
       (the (set-slot! :landed? t))
       (the (set-slot! :last-burn :none))
-      (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (advance-clock! tof))
       (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-time-map time-map))
       (the (set-slot! :transit-target :down))
       (the (set-slot! :transit-bodies
             (append
@@ -3352,7 +3451,8 @@ function toggleHelm () {
                          :radius (the world-radius)
                          :targets (make-list (length samples)
                                              :initial-element (list 0 0))
-                         :spin? t
+                         :spin-phase (world-phase-rad (the world) t0)
+                         :spin-rate (world-spin-rate (the world))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
@@ -3364,6 +3464,8 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list +moon-x+ 0))
+                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
              (when (eql (the world) :moon)
@@ -3372,6 +3474,8 @@ function toggleHelm () {
                            :targets (make-list (length samples)
                                                :initial-element
                                                (list (- +moon-x+) 0))
+                           :spin-phase (world-phase-rad :home t0)
+                           :spin-rate (world-spin-rate :home)
                            :diffuse "0.10 0.18 0.85"
                            :emissive "0.05 0.07 0.12"))))))
       (the (set-slot! :transit-beats
@@ -3409,29 +3513,47 @@ function toggleHelm () {
            ;; the transfer's apoapsis crawl -- his ring, his mu
            (dv2 (- (sqrt (/ +mu-moon+ +moon-watch-radius+))
                    (sqrt (* +mu+ (- (/ 2 r2) (/ 1 a))))))
-           (tof-days (/ (* pi (sqrt (/ (* a a a) +mu+))) 86400))
+           (n-tr (sqrt (/ +mu+ (* a a a))))
+           (tof (/ pi n-tr))
+           (tof-days (/ tof 86400))
            (vcoeff (sqrt (/ +mu+ p)))
            (n 32)
-           (samples (list (list 0.0 pi r1 0)))  ; pre-burn, nose-in
-           (prev-h nil))
+           ;; the clock before the move: the faces the clip opens on
+           (t0 (the game-seconds))
+           (h0 (deg->rad (the heading-deg)))
+           ;; the opening beat: the coast round to the ring's
+           ;; departure point, in her own sense (coast-to-node)
+           (sense (if (minusp (the specific-h)) -1 1))
+           (coast (multiple-value-list
+                   (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
+                                  r1 +mu+ sense)))
+           (wait (second coast))
+           (prev-h (third coast))
+           (coast-hours (/ wait 3600))
+           ;; the samples and the clip's clock, built newest-first
+           (samples (append (reverse (first coast))
+                            (list (list 0.0 h0 (the pos-x) (the pos-y)))))
+           (time-map (list (cons 0.05 wait) (cons 0.0 0.0))))
       (dotimes (i (1+ n))
         (let* ((ecc-anom (* pi (/ i n)))
                (r (* a (- 1 (* e (cos ecc-anom)))))
                (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
                             (- (cos ecc-anom) e)))
-               (h (atan (* vcoeff (+ e (cos theta)))
-                        (* vcoeff (- (sin theta))))))
-          ;; unwrap the heading so the nose track never jumps a lap
-          (when prev-h
-            (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
-            (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi))))
+               ;; unwrap the heading so the nose track never jumps a lap
+               (h (unwrap-heading (atan (* vcoeff (+ e (cos theta)))
+                                        (* vcoeff (- (sin theta))))
+                                  prev-h))
+               ;; Kepler: game-time since the kick at this sample
+               (tim (/ (- ecc-anom (* e (sin ecc-anom))) n-tr))
+               (key (+ 0.10 (* 0.83 (/ i n)))))
           (setq prev-h h)
-          (push (list (+ 0.07 (* 0.86 (/ i n))) h
-                      (* r (cos theta)) (* r (sin theta)))
-                samples)))
+          (push (list key h (* r (cos theta)) (* r (sin theta))) samples)
+          (push (cons key (+ wait tim)) time-map)))
       ;; the closing beat: nose-in on the moon
-      (push (list 1.0 pi (- r2) 0) samples)
-      (setq samples (nreverse samples))
+      (push (list 1.0 (unwrap-heading pi prev-h) (- r2) 0) samples)
+      (push (cons 1.0 (+ wait tof)) time-map)
+      (setq samples (nreverse samples)
+            time-map (nreverse time-map))
       ;; she arrives in the MOON's OWN FRAME, truly falling around
       ;; him: the watch is state now, not scenery.  Clockwise, the
       ;; way the transfer's apoapsis crawl handed her over.
@@ -3444,15 +3566,18 @@ function toggleHelm () {
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (advance-spin! (* tof-days 86400)))
+      ;; the road spends the wait and the fall
+      (the (advance-clock! (+ wait tof)))
       (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-time-map time-map))
       (the (set-slot! :transit-target :moon))
       (the (set-slot! :transit-bodies
             (list (list :prefix "planet" :texture "earth-tex"
                         :radius +planet-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list 0 0))
-                        :spin? t
+                        :spin-phase (world-phase-rad :home t0)
+                        :spin-rate (world-spin-rate :home)
                         :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
                   ;; the moon authors HIDDEN: he and home share the
                   ;; same spot at departure, and if home's big
@@ -3464,17 +3589,24 @@ function toggleHelm () {
                         :radius +moon-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list +moon-x+ 0))
+                        :spin-phase (world-phase-rad :moon t0)
+                        :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
                         :scale-override 0.001))))
-      (the (set-slot! :moon-orbit? t))
       (the (set-slot! :transit-beats
-            (list (cons 0.02 "hands off the wheel -- the programmed road has her")
-                  (cons 0.07 (format nil "the kick at perigee: +~,2f km/s, and the road out opens" dv1))
-                  (cons 0.35 (format nil "falling uphill -- ~,1f days of coast, compressed to a breath" tof-days))
-                  (cons 0.90 (format nil "the capture kick: +~,2f km/s, onto the moon's watch" dv2))
-                  (cons 0.97 "the watch takes her -- nose-in on a new world"))))
+            (append
+             (list (cons 0.02 "hands off the wheel -- the programmed road has her"))
+             (when (> wait 60)
+               (list (cons 0.035 (format nil "coasting round to the departure point -- ~,1f hours on the clock" coast-hours))))
+             (list (cons 0.10 (format nil "the kick at perigee: +~,2f km/s, and the road out opens" dv1))
+                   (cons 0.35 (format nil "falling uphill -- ~,1f days of coast, compressed to a breath" tof-days))
+                   (cons 0.90 (format nil "the capture kick: +~,2f km/s, onto the moon's watch" dv2))
+                   (cons 0.97 "the watch takes her -- nose-in on a new world")))))
       (the (set-slot! :last-move-note
-                      (format nil "the programmed road: a kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and she settles into the watch around the moon.  The helm is yours."
+                      (format nil "the programmed road: ~aa kick at perigee (+~,2f km/s), ~,1f days falling uphill, a second kick (+~,2f) -- and she settles into the watch around the moon.  The helm is yours."
+                              (if (> wait 60)
+                                  (format nil "~,1f hours coasting round to the departure point, " coast-hours)
+                                  "")
                               dv1 tof-days dv2)))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
@@ -3506,31 +3638,50 @@ function toggleHelm () {
            ;; pace -- the same figure the road out spent to leave
            (dv2 (- (sqrt (* +mu+ (- (/ 2 r1) (/ 1 a))))
                    (sqrt (/ +mu+ r1))))
-           (tof-days (/ (* pi (sqrt (/ (* a a a) +mu+))) 86400))
+           (n-tr (sqrt (/ +mu+ (* a a a))))
+           (tof (/ pi n-tr))
+           (tof-days (/ tof 86400))
            (vcoeff (sqrt (/ +mu+ p)))
            (n 32)
-           ;; pre-burn: on the watch at the transfer's own node,
-           ;; nose-in on the moon -- the road out ended exactly here
-           (samples (list (list 0.0 pi (- r2) 0)))
-           (prev-h pi))
+           (t0 (the game-seconds))
+           (h0 (deg->rad (the heading-deg)))
+           ;; the opening beat: the coast round the moon's watch to
+           ;; the transfer's own node, in her own sense.  The scene
+           ;; flies the leg in home's frame, so the coast rides
+           ;; there too (the moon at his node)
+           (sense (if (minusp (the specific-h)) -1 1))
+           (coast (multiple-value-list
+                   (coast-to-node h0 (the pos-x) (the pos-y) (the radius)
+                                  +moon-watch-radius+ +mu-moon+ sense
+                                  :center-x +moon-x+)))
+           (wait (second coast))
+           (prev-h (third coast))
+           (coast-hours (/ wait 3600))
+           (samples (append (reverse (first coast))
+                            (list (list 0.0 h0
+                                        (+ +moon-x+ (the pos-x)) (the pos-y)))))
+           (time-map (list (cons 0.05 wait) (cons 0.0 0.0))))
       (dotimes (i (1+ n))
         (let* ((ecc-anom (+ pi (* pi (/ i n))))
                (r (* a (- 1 (* e (cos ecc-anom)))))
                (theta (atan (* (sqrt (- 1 (* e e))) (sin ecc-anom))
                             (- (cos ecc-anom) e)))
-               (h (atan (* vcoeff (+ e (cos theta)))
-                        (* vcoeff (- (sin theta))))))
-          ;; unwrap the heading so the nose track never jumps a lap
-          (loop while (> (- h prev-h) pi) do (decf h (* 2 pi)))
-          (loop while (< (- h prev-h) (- pi)) do (incf h (* 2 pi)))
+               ;; unwrap the heading so the nose track never jumps a lap
+               (h (unwrap-heading (atan (* vcoeff (+ e (cos theta)))
+                                        (* vcoeff (- (sin theta))))
+                                  prev-h))
+               ;; Kepler: game-time since the kick, from the apogee
+               (tim (/ (- ecc-anom (* e (sin ecc-anom)) pi) n-tr))
+               (key (+ 0.10 (* 0.83 (/ i n)))))
           (setq prev-h h)
-          (push (list (+ 0.07 (* 0.86 (/ i n))) h
-                      (* r (cos theta)) (* r (sin theta)))
-                samples)))
+          (push (list key h (* r (cos theta)) (* r (sin theta))) samples)
+          (push (cons key (+ wait tim)) time-map)))
       ;; the closing beat: nose-in on home, swung on from prograde
       ;; without ever unwinding the lap the fall wound up
-      (push (list 1.0 (* 3 pi) r1 0) samples)
-      (setq samples (nreverse samples))
+      (push (list 1.0 (unwrap-heading pi prev-h) r1 0) samples)
+      (push (cons 1.0 (+ wait tof)) time-map)
+      (setq samples (nreverse samples)
+            time-map (nreverse time-map))
       ;; she arrives back in HOME's frame, on the ring she first
       ;; rode: circular, prograde, nose-in
       (the (set-slot! :world :home))
@@ -3541,17 +3692,18 @@ function toggleHelm () {
       (the (set-slot! :pos-x +ring-radius+))
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
-      (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (advance-spin! (* tof-days 86400)))
+      (the (advance-clock! (+ wait tof)))
       (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-time-map time-map))
       (the (set-slot! :transit-target :homeward))
       (the (set-slot! :transit-bodies
             (list (list :prefix "planet" :texture "earth-tex"
                         :radius +planet-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list 0 0))
-                        :spin? t
+                        :spin-phase (world-phase-rad :home t0)
+                        :spin-rate (world-spin-rate :home)
                         :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
                   ;; the moon at full size from the first frame:
                   ;; she departs his very doorstep, and he falls
@@ -3560,15 +3712,23 @@ function toggleHelm () {
                         :radius +moon-radius+
                         :targets (make-list (length samples)
                                             :initial-element (list +moon-x+ 0))
+                        :spin-phase (world-phase-rad :moon t0)
+                        :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
       (the (set-slot! :transit-beats
-            (list (cons 0.02 "cast off the watch -- the road home has her")
-                  (cons 0.07 (format nil "the kick off the watch: +~,2f km/s, and the moon's grip lets go" dv1))
-                  (cons 0.35 (format nil "falling down the well -- ~,1f days, home growing in the glass" tof-days))
-                  (cons 0.90 (format nil "the big brake at perigee: -~,2f km/s, down to the ring's own pace" dv2))
-                  (cons 0.97 "the home ring takes her back"))))
+            (append
+             (list (cons 0.02 "cast off the watch -- the road home has her"))
+             (when (> wait 60)
+               (list (cons 0.035 (format nil "coasting round the watch to the node -- ~,1f hours on the clock" coast-hours))))
+             (list (cons 0.10 (format nil "the kick off the watch: +~,2f km/s, and the moon's grip lets go" dv1))
+                   (cons 0.35 (format nil "falling down the well -- ~,1f days, home growing in the glass" tof-days))
+                   (cons 0.90 (format nil "the big brake at perigee: -~,2f km/s, down to the ring's own pace" dv2))
+                   (cons 0.97 "the home ring takes her back")))))
       (the (set-slot! :last-move-note
-                      (format nil "the road home: a kick off the moon's watch (+~,2f km/s), ~,1f days falling down the well, and the big brake at perigee (-~,2f) -- the home ring takes her back.  The helm is yours."
+                      (format nil "the road home: ~aa kick off the moon's watch (+~,2f km/s), ~,1f days falling down the well, and the big brake at perigee (-~,2f) -- the home ring takes her back.  The helm is yours."
+                              (if (> wait 60)
+                                  (format nil "~,1f hours coasting round the watch, " coast-hours)
+                                  "")
                               dv1 tof-days dv2)))
       (the voyage-control (set-slot! :value :hand))
       (tally! :moves)
@@ -3651,7 +3811,9 @@ function toggleHelm () {
            (asterns (list (list re 0)))
            (moons (list (list (+ re +moon-x+) 0)))
            (dests (list (list (* rm+ (cos mars0)) (* rm+ (sin mars0)))))
-           (prev-h nil))
+           (prev-h nil)
+           (t0 (the game-seconds))
+           (time-map (list (cons 0.0 0.0))))
       (dotimes (i (1+ n))
         (let* ((ecc-anom (* pi (/ i n)))
                (r (* a (- 1 (* e (cos ecc-anom)))))
@@ -3675,7 +3837,8 @@ function toggleHelm () {
           (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
           (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e)))
                 moons)
-          (push (list (* rm+ (cos th-m)) (* rm+ (sin th-m))) dests)))
+          (push (list (* rm+ (cos th-m)) (* rm+ (sin th-m))) dests)
+          (push (cons (+ 0.07 (* 0.86 (/ i n))) tim) time-map)))
       ;; the closing beat: nose-in on the new world, the old one
       ;; dead astern of the sun
       (push (list 1.0 pi (- rm) 0) samples)
@@ -3683,7 +3846,9 @@ function toggleHelm () {
         (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
         (push (list (+ (* re (cos th-e)) +moon-x+) (* re (sin th-e))) moons))
       (push (list (- rm+) 0) dests)
+      (push (cons 1.0 tof) time-map)
       (setq samples (nreverse samples)
+            time-map (nreverse time-map)
             asterns (nreverse asterns)
             moons (nreverse moons)
             dests (nreverse dests))
@@ -3695,10 +3860,10 @@ function toggleHelm () {
       (the (set-slot! :pos-x r2))
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
-      (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
-      (the (advance-spin! (* tof-days 86400)))
+      (the (advance-clock! tof))
       (the (set-slot! :transit-samples samples))
+      (the (set-slot! :transit-time-map time-map))
       (the (set-slot! :transit-target to-world))
       (the (set-slot! :transit-bodies
             (append
@@ -3710,6 +3875,8 @@ function toggleHelm () {
                          :emissive (world-figure to-world :emissive)
                          :tilt (world-figure to-world :tilt)
                          :adornment (world-figure to-world :adornment)
+                         :spin-phase (world-phase-rad to-world t0)
+                         :spin-rate (world-spin-rate to-world)
                          ;; no visible size at au range anyway; the
                          ;; first key sets him true -- the same guard
                          ;; the moon road gives its hidden moon
@@ -3718,7 +3885,8 @@ function toggleHelm () {
                          :texture (world-figure from-world :texture)
                          :radius (world-figure from-world :radius)
                          :targets asterns
-                         :spin? t
+                         :spin-phase (world-phase-rad from-world t0)
+                         :spin-rate (world-spin-rate from-world)
                          :diffuse (world-figure from-world :diffuse)
                          :emissive (world-figure from-world :emissive)
                          :tilt (world-figure from-world :tilt)
@@ -3729,6 +3897,8 @@ function toggleHelm () {
                (list (list :prefix "moon" :texture "moon-tex"
                            :radius +moon-radius+
                            :targets moons
+                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09")))
              ;; ...and rides out to MEET her when home is the
@@ -3742,6 +3912,8 @@ function toggleHelm () {
                                               (list (+ (first d) +moon-x+)
                                                     (second d)))
                                             dests)
+                           :spin-phase (world-phase-rad :moon t0)
+                           :spin-rate (world-spin-rate :moon)
                            :diffuse "0.75 0.74 0.70"
                            :emissive "0.10 0.10 0.09"
                            :scale-override 0.001))))))
@@ -3773,12 +3945,13 @@ function toggleHelm () {
       (tally! (intern (concatenate 'string (symbol-name to-world) "-VOYAGES")
                       :keyword))))
 
-   ;; a move spends game-time; earth turns by that much (and no more
-   ;; -- between moves the clock is stopped).  SECS may be negative
-   ;; on a rewind, unwinding the rotation with the fall.
-   (advance-spin!
+   ;; a move spends game-time: the ship's clock runs by that much
+   ;; and no more -- between moves it is stopped -- and every world
+   ;; turns by what his day makes of it.  SECS may be negative on a
+   ;; rewind, unwinding the turn with the fall.
+   (advance-clock!
     (secs)
-    (the (set-slot! :spin-seconds (+ (the spin-seconds) secs))))
+    (the (set-slot! :game-seconds (+ (the game-seconds) secs))))
 
    (make-helm-move!
     ()
@@ -3786,7 +3959,7 @@ function toggleHelm () {
     (the (set-slot! :transit-target nil))
     (the (set-slot! :transit-bodies nil))
     (the (set-slot! :transit-beats nil))
-    (the (set-slot! :moon-orbit? nil))
+    (the (set-slot! :transit-time-map nil))
     (if (the landed?)
         (the make-parked-move!)
         (let* ((turn (ecase (the wheel-control value)
@@ -3809,10 +3982,7 @@ function toggleHelm () {
                ;; a full day on the fastest channel -- Space
                ;; Travel's clock, worn as the dash radio, and the
                ;; tape transport signs it
-               (dt (* (if rewind? -1 1)
-                      (ecase (the cadence-control value)
-                        (:slow 60) (:medium 600)
-                        (:fast 3600) (:fastest 86400))))
+               (dt (* (if rewind? -1 1) (the cadence-seconds)))
                (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
                                  (+ (the vel-y) (* dv flip (sin rad)))
                                  (the pos-x) (the pos-y) dt)))
@@ -3887,7 +4057,7 @@ function toggleHelm () {
                                            ((eql shifter :reverse) :retro)
                                            (t :forward))))
           (the (set-slot! :moves-count (1+ (the moves-count))))
-          (the (advance-spin! dt))
+          (the (advance-clock! dt))
           (the (set-slot! :last-move-note note))
           (tally! :moves)
           (tally! (cond (rewind? :rewinds)
@@ -3972,6 +4142,9 @@ function toggleHelm () {
                                    (t (format nil "down on ~a, engines cold -- the world turns under him.  Forward and the full pedal to climb"
                                               (the world-name))))))
              (the (set-slot! :moves-count (1+ (the moves-count))))
+             ;; sitting on a world still spends the turn: the clock
+             ;; runs by the cadence, and the world turns under him
+             (the (advance-clock! (* (if rewind? -1 1) (the cadence-seconds))))
              (tally! :moves)))))))
 
 ;; ============================================================
@@ -4185,18 +4358,6 @@ function toggleHelm () {
         try { vc.startTime = t0; } catch (e2) {}
       }
       window.GW_VOYAGE_T0 = t0 * 1000;
-      var cyc = 90;
-      try { cyc = vc.getField('cycleInterval').getValue(); } catch (e) {}
-      // the parked watch lights after the road lands
-      var amb = named('ambient-clock');
-      if (amb) {
-        setTimeout(function () {
-          try { amb.getField('startTime').setValue(Date.now() / 1000); } catch (e) {}
-          try { amb.getField('enabled').setValue(true); } catch (e) {
-            try { amb.enabled = true; } catch (e2) {}
-          }
-        }, (cyc + 2) * 1000);
-      }
     }
     var note = document.getElementById('plot-frame-label');
     if (note) note.textContent = 'X_ITE: wired';
@@ -4338,7 +4499,6 @@ function toggleHelm () {
              (- (the sky-authored-heading-rad))
              (sun-light-x3d :elevation (the sun-elevation))
              (starfield-x3d :radius 5000.0d0))
-     *sky-drift-x3d*
      (the bodies-x3d)
      ;; the cab under its own lamp (see cab-light-x3d)
      "<Group>"
