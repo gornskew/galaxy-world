@@ -1109,6 +1109,24 @@ world frame -- its heliocentric longitude and a half turn."
 ;; wanders 6%, his longitude some 6 degrees, both invisible on a road
 ;; cut to circular rings).  He rides the same ecliptic frame the sun's
 ;; elements do, +x the vernal equinox.
+(defun map-time (time-map key)
+  "The clip seconds at a sample KEY (0..1) off a tape's TIME-MAP of
+(key . seconds) pairs, interpolated between the pairs that bracket
+it: a rider's targets are laid ONE PER SAMPLE, and the samples
+outnumber the map's knots (the moon road: 43 to 36, the mismatch
+that threw the plot's voyage pass and left the road unwired,
+2026-09-03)."
+  (let ((below nil) (above nil))
+    (dolist (pair time-map)
+      (cond ((<= (car pair) key) (when (or (null below) (>= (car pair) (car below))) (setq below pair)))
+            (t (when (or (null above) (< (car pair) (car above))) (setq above pair)))))
+    (cond ((and below above (> (car above) (car below)))
+           (+ (cdr below) (* (- (cdr above) (cdr below))
+                             (/ (- key (car below)) (- (car above) (car below))))))
+          (below (cdr below))
+          (above (cdr above))
+          (t 0.0))))
+
 (defparameter +window-tolerance+ (* 2 86400)
   "Seconds either side of a sun's road's window within which the road
 is flown at once rather than booked: two days, a degree or so of
@@ -2166,12 +2184,13 @@ window.GW_DRAW = function () {
     // holding the last frame until the next stretch arrives
     function step () {
       if (gen !== GW_DRAW.gen) return;
+      GW_DRAW.live = true;
       var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
       if (f >= 1) {
         drawVoyage(1);
         if (V.coast) { setTimeout(step, 250); return; }
         setTimeout(function () {
-          if (gen === GW_DRAW.gen) { hudOff(); drawOrbit(); }
+          if (gen === GW_DRAW.gen) { GW_DRAW.live = false; hudOff(); drawOrbit(); }
         }, 1200);
         return;
       }
@@ -2185,7 +2204,7 @@ window.GW_DRAW = function () {
   (function waitClock () {
     if (gen !== GW_DRAW.gen) return;
     if (typeof window.GW_VOYAGE_T0 === 'number') { animate(); return; }
-    if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { hudOff(); drawOrbit(); return; }
+    if (window.GW_VOYAGE_T0 === null || Date.now() - polled > 4000) { GW_DRAW.live = false; hudOff(); drawOrbit(); return; }
     setTimeout(waitClock, 100);
   })();
 };
@@ -2465,10 +2484,13 @@ window.GW_HAILS = function () {
       ro.appendChild(line);
     });
     if (ct) ct.textContent = D.roster.length + ' aboard';
-    // the fleet onto the plot: the dots redraw with the fresh fixes
+    // the fleet onto the plot: a running animation draws the dots
+    // from GW_FLEET every frame on its own and must NOT be
+    // re-entered (a fresh GW_DRAW paints the road's end for a frame
+    // -- the hitch seen 2026-09-03); only a still plot is redrawn
     var before = JSON.stringify(window.GW_FLEET || null);
     window.GW_FLEET = D.roster;
-    if (JSON.stringify(D.roster) !== before && window.GW_DRAW && window.GW_PLAN) { try { GW_DRAW(); } catch (e) {} }
+    if (JSON.stringify(D.roster) !== before && window.GW_DRAW && window.GW_PLAN && !GW_DRAW.live) { try { GW_DRAW(); } catch (e) {} }
     lg.textContent = '';
     D.hails.forEach(function (h) {
       var line = document.createElement('div');
@@ -3153,15 +3175,17 @@ window.GW_WIRE = function () {
 })();
 ")
 
-;; THE SHIP AND HER BRIDGE (ruled 2026-09-03 evening): the ship is the
-;; basilisk itself -- the docker network the rooms share, minted a
+;; THE SHIP AND HIS BRIDGE (ruled 2026-09-03 evening): the ship is the
+;; basilisk himself -- the docker network the rooms share, minted a
 ;; name at every raising (basilisk/.ship) and crewed by the keepers on
 ;; the muster (basilisk/.muster) -- and THE BRIDGE is a SINGULAR
 ;; object living in this process, the bridge container's own resident
-;; in software: one per backend, never one per session.  She holds
-;; who pilots the ship, the hails log and the roster, and she is the
-;; only one a cockpit ever speaks to.  bridge-view (the page at
-;; /bridge) is a window onto her, not her.  Stood up on first call.
+;; in software: one per backend, never one per session.  It holds
+;; who pilots the ship, the hails log and the roster, and it is the
+;; only thing a cockpit ever speaks to.  bridge-view (the page at
+;; /bridge) is a window onto the bridge, not the bridge.  Stood up on
+;; first call.  Gender, by the ruling of 2026-09-03: a basilisk ship
+;; is HE, a cockpit or shuttle is SHE, the bridge is a room and IT.
 (defun read-first-line (path)
   (ignore-errors
    (with-open-file (s path :if-does-not-exist nil)
@@ -3224,7 +3248,7 @@ window.GW_WIRE = function () {
                        (values cpx cpy delta)))))))))))
 
 (define-object ship ()
-  :documentation (:description "The basilisk herself: the ship the rooms share, named from basilisk/.ship at every raising, crewed from basilisk/.muster; one per backend process (the-ship), the bridge her child, and a berth for every cockpit aboard.")
+  :documentation (:description "The basilisk himself: the ship the rooms share, named from basilisk/.ship at every raising, crewed from basilisk/.muster; one per backend process (the-ship), the bridge his child, and a berth for every cockpit aboard.  A basilisk ship is HE; a cockpit or shuttle is SHE (ruled 2026-09-03).")
   :computed-slots
   ((name (or (read-first-line "/projects/basilisk/.ship") "the ship"))
    (styled-name (format nil "R.V. ~a" (the name)))
@@ -3243,7 +3267,7 @@ window.GW_WIRE = function () {
            :bridge (the bridge))))
 
 (define-object bridge ()
-  :documentation (:description "THE BRIDGE: singular, this process's own.  Holds who pilots the ship (pilot-key), the hails log and the roster, and speaks to every cockpit at once; a cockpit only ever hails HER.")
+  :documentation (:description "THE BRIDGE: singular, this process's own.  Holds who pilots the ship (pilot-key), the hails log and the roster, and speaks to every cockpit at once; a cockpit only ever hails THE BRIDGE.")
   :computed-slots
   (;; the session that pilots the ship (S5): the most recently boarded
    (pilot-key nil :settable)
@@ -4729,10 +4753,17 @@ function toggleHelm () {
                                         (the periapsis-alt))))))
                    (htm (:div :style "color:#e07050;"
                           "the road is unbound — the deep dark has you")))))
-          ;; the ship's line (S5): yours, or where she stands
+          ;; the ship's line (S5): yours, or where he stands
           (:div :id "gw-ship" :style "font-size:11px;color:#c9a227;" (str (the (ship-line))))
-          ;; a booked sun's road, waiting on its window
-          (:div :id "gw-booking" :style "font-size:11px;color:#e8c839;" (str (the booking-html)))
+          ;; a booked sun's road, waiting on its window -- and the
+          ;; way to it: one press jumps the clock to the departure
+          (:div :id "gw-booking" :style "font-size:11px;color:#e8c839;"
+            (str (the booking-html))
+            (when (the booked-road)
+              (htm (:button :type "button" :id "gw-skip-btn"
+                    :onclick (the (gdl-ajax-call :function-key :skip-to-window!))
+                    :style "margin-left:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:2px 10px;font-size:11px;cursor:pointer;"
+                    "skip ahead to the window"))))
           (:div :id "gw-clock" (fmt "ship's clock: ~a" (the clock-string)))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :id "move-note"
@@ -4897,10 +4928,10 @@ function toggleHelm () {
                           :game-seconds :landed? :last-burn))
             (the (set-slot! slot (the-object mother (evaluate slot)))))
           (the (set-slot! :last-move-note
-                          "boarded, and the ship is yours -- she carries on from where the last pilot left her; he rides a shuttle from here"))
+                          "boarded, and the ship is yours -- he carries on from where the last pilot left him; that pilot rides a shuttle from here"))
           (the-object mother
                       (set-slot! :last-move-note
-                                 "another cockpit boarded and took the ship -- you fly a SHUTTLE now, on your own road from this point; the helm shows where she stands"))
+                                 "another cockpit boarded and took the ship -- you fly a SHUTTLE now, on your own road from this point; the helm shows where he stands"))
           (the-object mother (set-slot! :clock-cuts (1+ (the-object mother clock-cuts))))
           (bridge-says (format nil "~a has boarded and taken the ship; ~a flies a shuttle from here"
                                (the (hail-name)) (the-object mother (hail-name)))
@@ -4978,13 +5009,14 @@ function toggleHelm () {
       (declare (ignore vx vy))
       (values px py)))
 
-   ;; the ship's line on the helm: the pilot is told he has her; a
-   ;; shuttle is told where she stands.  Cockpits keep their own
-   ;; time, so when this one's date is not the pilot's the ship is
-   ;; CARRIED to this date by gravity alone from her last known
+   ;; the ship's line on the helm: the pilot is told the ship is
+   ;; hers; a shuttle is told where he stands.  Cockpits keep their
+   ;; own time, so when this one's date is not the pilot's the ship
+   ;; is CARRIED to this date by gravity alone from his last known
    ;; state -- no burn assumed -- and the line says so (ruled
    ;; 2026-09-03: the most realistic answer, kept comprehensible by
-   ;; saying it).  A landed ship stands where she is.
+   ;; saying it).  A landed ship stands where he is.  (A basilisk
+   ;; ship is HE; a cockpit or shuttle is SHE.)
    (ship-line
     ()
     (let ((mother (the mother-object)))
@@ -4995,7 +5027,7 @@ function toggleHelm () {
             ;; cannot re-take her (ruled 2026-09-03) -- the next
             ;; cockpit to board does
             ((null mother)
-             "the ship: her pilot's session is gone &mdash; she stands where he left her until the next cockpit boards and takes her &mdash; you fly a shuttle")
+             "the ship: his pilot's session is gone &mdash; he stands where she left him until the next cockpit boards and takes him &mdash; you fly a shuttle")
             (t (multiple-value-bind (vx vy px py her-date) (the-object mother (state-now))
                  (let* ((delta (- (the game-date-seconds) her-date))
                         (carried? (and (> (abs delta) 60) (not (the-object mother landed?)))))
@@ -5009,7 +5041,7 @@ function toggleHelm () {
                            (the-object mother world-name)
                            (if (the-object mother landed?) "down" "aloft")
                            (if carried?
-                               (format nil " (her clock reads ~a; carried ~a to your date by gravity alone)"
+                               (format nil " (his clock reads ~a; carried ~a to your date by gravity alone)"
                                        (utc-date-string her-date)
                                        (if (plusp delta) "forward" "back"))
                                ""))))))))
@@ -5406,11 +5438,13 @@ function toggleHelm () {
                   (list :prefix "moon" :texture "moon-tex"
                         :radius +moon-radius+
                         ;; he rides his track through the clip: a
-                        ;; target per sample, at that sample's date
-                        :targets (mapcar (lambda (tm)
-                                           (multiple-value-bind (x y) (moon-position (+ date0 (cdr tm)))
+                        ;; target per SAMPLE (the plot indexes riders
+                        ;; by sample), at that sample's date off the
+                        ;; time map
+                        :targets (mapcar (lambda (s)
+                                           (multiple-value-bind (x y) (moon-position (+ date0 (map-time time-map (first s))))
                                              (list x y)))
-                                         time-map)
+                                         samples)
                         :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"
@@ -5556,10 +5590,12 @@ function toggleHelm () {
                   (list :prefix "moon" :texture "moon-tex"
                         :radius +moon-radius+
                         ;; he falls astern along his own track
-                        :targets (mapcar (lambda (tm)
-                                           (multiple-value-bind (x y) (moon-position (+ date0 (cdr tm)))
+                        ;; one per SAMPLE, at that sample's date (the
+                        ;; plot indexes riders by sample; map-time)
+                        :targets (mapcar (lambda (s)
+                                           (multiple-value-bind (x y) (moon-position (+ date0 (map-time time-map (first s))))
                                              (list x y)))
-                                         time-map)
+                                         samples)
                         :spin-phase (the (phase-of :moon t0))
                         :spin-rate (world-spin-rate :moon)
                         :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09"))))
@@ -5654,7 +5690,7 @@ function toggleHelm () {
 
    ;; BUYING a sun's road: flown at once when the window stands (or
    ;; is just behind, within tolerance), else BOOKED -- the bridge
-   ;; says when it opens, the ship holds her orbit, and the first
+   ;; says when it opens, she holds her orbit, and the first
    ;; settle past the time departs
    (buy-sun-road!
     (to-world)
@@ -5673,6 +5709,21 @@ function toggleHelm () {
                                  (utc-date-string (+ (the game-date-seconds) wait)) (/ wait 86400.0))
                          (the world-name))
             (the voyage-control (set-slot! :value :hand))))))
+
+   ;; SKIP AHEAD TO THE WINDOW: the pilot controls time (Space
+   ;; Travel's rule kept) -- rather than riding the radio for
+   ;; minutes of wall clock, the ship's clock jumps to the booked
+   ;; departure and the settle departs at once.  The idle time
+   ;; before the jump is folded first, at the rate in force.
+   (skip-to-window!
+    ()
+    (let ((b (the booked-road)))
+      (when b
+        (the (settle-clock!))
+        (when (< (the game-seconds) (second b))
+          (the (set-slot! :game-seconds (second b)))
+          (the (set-slot! :clock-anchor (unix-now))))
+        (the (settle-clock!)))))
 
    (fly-sun-road!
     (to-world)
