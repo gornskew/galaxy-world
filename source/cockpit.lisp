@@ -798,6 +798,12 @@ since she first sailed; a rewind past the start runs it negative."
             neg? (floor s 86400) (floor (mod s 86400) 3600)
             (floor (mod s 3600) 60))))
 
+(defun turn-phrase (deg)
+  "A wheel angle as the helm says it: port positive."
+  (cond ((< (abs deg) 0.05) "amidships")
+        ((plusp deg) (format nil "~,1f° to port" deg))
+        (t (format nil "~,1f° to starboard" (- deg)))))
+
 (defun unwrap-heading (h prev)
   "H shifted by whole laps to lie within half a lap of PREV, so a
 nose track never jumps a lap."
@@ -1871,8 +1877,23 @@ window.GW_WIRE = function () {
     } catch (e) {}
     return 0;
   }
+  // the exact wheel: its angle rides the number line under the
+  // select; the 3D wheel turns to it on the presets' own scale
+  function angleInput () { return document.querySelector('#helm-body input[step=any]'); }
+  function exactDeg () {
+    var a = angleInput(); var v = a ? parseFloat(a.value) : 0;
+    return isNaN(v) ? 0 : v;
+  }
+  function poseOf (sel) {
+    if (sel.value === ':EXACT') return Math.max(-1.6, Math.min(1.6, exactDeg() * 1.3 / 30));
+    return wheelPose[sel.value] || 0;
+  }
+  function turnPhrase (d) {
+    if (Math.abs(d) < 0.05) return 'amidships';
+    return Math.abs(d).toFixed(1) + '° ' + (d > 0 ? 'port' : 'stbd');
+  }
   var suppress = 0;
-  var lastAng = wheelSel ? (wheelPose[wheelSel.value] || 0) : 0;
+  var lastAng = wheelSel ? poseOf(wheelSel) : 0;
   if (wheelSel) setWheelPose(lastAng);
   if (gearSel) setShifterPose(gearPose[gearSel.value] || 0);
   var sensor = document.getElementById('wheel-sensor');
@@ -1908,6 +1929,7 @@ window.GW_WIRE = function () {
   // the big readout in the title bar: gear letter, steerage band,
   // and the rewind arrows when the tape runs backward
   function readout () {
+    if (wheelSel && wheelSel.value === ':EXACT') { lastAng = poseOf(wheelSel); setWheelPose(lastAng); }
     var el = document.getElementById('helm-readout');
     if (!el) return;
     var gmap = { ':FORWARD': 'D', ':NEUTRAL': 'N', ':REVERSE': 'R' };
@@ -1919,7 +1941,7 @@ window.GW_WIRE = function () {
     for (var i = 0; i < tb.length; i++)
       if (tb[i].getAttribute('data-val') === ':REWIND') rw = true;
     el.textContent = (gearSel ? (gmap[gearSel.value] || '·') : '·')
-      + ' · ' + (wheelSel ? (wmap[wheelSel.value] || '') : '')
+      + ' · ' + (wheelSel ? (wheelSel.value === ':EXACT' ? turnPhrase(exactDeg()) : (wmap[wheelSel.value] || '')) : '')
       + (rw ? ' ◀◀' : '');
     var kc = { ':FORWARD': '0.30 0.75 0.35', ':NEUTRAL': '0.85 0.87 0.88',
                ':REVERSE': '0.91 0.60 0.18' };
@@ -1940,6 +1962,7 @@ window.GW_WIRE = function () {
     applyLockouts();
   }
   if (wheelSel) wheelSel.addEventListener('change', readout);
+  var angleIn = angleInput(); if (angleIn) angleIn.addEventListener('input', readout);
   if (gearSel) gearSel.addEventListener('change', readout);
   if (roadSel) roadSel.addEventListener('change', readout);
   touch('horn-touch', function () {
@@ -2012,12 +2035,36 @@ window.GW_WIRE = function () {
     var s = document.getElementById('radio-station');
     if (s) s.textContent = stations[v] || '';
     relight3d('radio-preset', cadVals, v);
+    noseHint();
   });
   wireFace('.transport-btn', function (b) {
     relight3d('radio-tpt', tptVals, b.getAttribute('data-val'));
     readout();
+    noseHint();
   });
   readout();
+  // the nose-in hint follows the channel and the tape: the card's
+  // table (GW_NOSE, one angle per channel and direction) is read
+  // for whichever stands lit, and its set button writes it onto the exact wheel
+  function noseHint () {
+    var el = document.getElementById('gw-nose-hint');
+    var tbl = window.GW_NOSE;
+    if (!el || !tbl) return;
+    var cb = document.querySelector('.cadence-btn.lit'), tb = document.querySelector('.transport-btn.lit');
+    var row = tbl[cb ? cb.getAttribute('data-val') : ':SLOW']; if (!row) return;
+    var d = row[tb ? tb.getAttribute('data-val') : ':PLAY'];
+    if (typeof d !== 'number') return;
+    window.GW_NOSE_DEG = d;
+    el.innerHTML = 'nose-in on the next turn, coasting: <b>' + turnPhrase(d) + '</b> <button type=button class=rbtn onclick=GW_NOSE_SET()>set</button>';
+  }
+  window.GW_NOSE_SET = function () {
+    if (lockState().wheel) return;
+    var d = window.GW_NOSE_DEG;
+    if (typeof d !== 'number') return;
+    var a = angleInput(); if (a) a.value = d.toFixed(1);
+    if (wheelSel) { wheelSel.value = ':EXACT'; readout(); }
+  };
+  noseHint();
   function faceClick (cls, val) {
     var btns = document.querySelectorAll(cls);
     for (var i = 0; i < btns.length; i++)
@@ -2211,6 +2258,37 @@ window.GW_WIRE = function () {
    (cadence-seconds (ecase (the cadence-control value)
                       (:slow 60) (:medium 600)
                       (:fast 3600) (:fastest 86400)))
+   ;; THE NOSE-IN HINT: the wheel angle that leaves her nosed-in on
+   ;; the world at the END of the next turn, coasting, so a pilot
+   ;; ticking round the ring can keep the world square in the glass
+   ;; by hand -- the turn-based cousin of the watch that used to
+   ;; wheel the scene for her.  One figure per channel and tape
+   ;; direction; the card shows the one for the channel that stands
+   ;; and the page's script swaps it as the pilot changes channel;
+   ;; "set" writes it onto the exact wheel.  Port positive, the
+   ;; presets' own sign.  Nil on the ground.
+   (nose-in-turns
+    (unless (the landed?)
+      (loop for (cad secs) in '((:slow 60) (:medium 600)
+                                (:fast 3600) (:fastest 86400))
+            collect (list cad
+                          (the (nose-in-turn-deg secs))
+                          (the (nose-in-turn-deg (- secs)))))))
+   (nose-in-json
+    (if (the nose-in-turns)
+        (format nil "{~{~a~^,~}}"
+                (mapcar (lambda (row)
+                          (format nil "\"~s\":{\":PLAY\":~,1f,\":REWIND\":~,1f}"
+                                  (first row) (second row) (third row)))
+                        (the nose-in-turns)))
+        "null"))
+   (nose-in-hint-html
+    (let ((row (assoc (the cadence-control value) (the nose-in-turns))))
+      (if row
+          (format nil "nose-in on the next turn, coasting: <b>~a</b> <button type=button class=rbtn onclick=GW_NOSE_SET()>set</button>"
+                  (turn-phrase (if (eql (the transport-control value) :rewind)
+                                   (third row) (second row))))
+          "")))
    ;; the pilot this cockpit's hands belong to, once the browser
    ;; signs the log book at boarding (check-in!).  NIL until then --
    ;; an unsigned hand flies fine; only the book ignores him.
@@ -2654,8 +2732,9 @@ window.GW_WIRE = function () {
               (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
+            (the nose-in-json)
             (if (the transit-samples) "Date.now() + 2000" "null")
             ;; the scene refresh is gated on the scene GENERATION
             ;; (moves-count, the gw-gen-N stamp every move path
@@ -2688,6 +2767,7 @@ window.GW_WIRE = function () {
             (case (the wheel-control value)
               (:hard-port "hard port") (:easy-port "easy port")
               (:easy-starboard "easy stbd") (:hard-starboard "hard stbd")
+              (:exact (turn-phrase (or (the wheel-angle-control value) 0)))
               (otherwise "amidships"))
             (if (eql (the transport-control value) :rewind) " ◀◀" "")))
 
@@ -2696,6 +2776,11 @@ window.GW_WIRE = function () {
       (:div :style "display:flex;flex-direction:column;gap:4px;"
         (:div (str (the voyage-control html-string)))
         (:div (str (the wheel-control html-string)))
+        (:div :style "display:flex;gap:6px;align-items:center;"
+          (str (the wheel-angle-control html-string))
+          (:span :style "font-size:10px;color:#8a7a2f;" "degrees, port positive"))
+        (:div :id "gw-nose-hint" :style "font-size:10px;color:#c9a227;letter-spacing:0.04em;min-height:14px;"
+          (str (the nose-in-hint-html)))
         (:div (str (the shifter-control html-string)))
         (:div (str (the pedal-control html-string)))
         ;; the dash radio: cadence presets and the tape transport.
@@ -2742,6 +2827,7 @@ window.GW_WIRE = function () {
        :onclick (the (gdl-ajax-call
                       :form-controls (list (the voyage-control)
                                            (the wheel-control)
+                                           (the wheel-angle-control)
                                            (the shifter-control)
                                            (the pedal-control)
                                            (the cadence-control)
@@ -3009,7 +3095,16 @@ function toggleHelm () {
                                       :easy-port "easy, to port"
                                       :amidships "amidships"
                                       :easy-starboard "easy, to starboard"
-                                      :hard-starboard "hard over, to starboard"))
+                                      :hard-starboard "hard over, to starboard"
+                                      :exact "exact — the angle below"))
+
+   ;; the exact wheel: a turn in degrees, port positive (the
+   ;; presets' own sign), taken when the wheel stands on "exact" --
+   ;; what the nose-in hint's "set" writes
+   (wheel-angle-control :type 'gwl:number-form-control
+                        :prompt "angle: "
+                        :size 6
+                        :default 0)
 
    ;; the shifter carries direction and nothing else: forward,
    ;; neutral, reverse.  In neutral no pedal reaches the engines,
@@ -3945,6 +4040,19 @@ function toggleHelm () {
       (tally! (intern (concatenate 'string (symbol-name to-world) "-VOYAGES")
                       :keyword))))
 
+   ;; the wheel angle that leaves her nosed-in on the world at the
+   ;; end of a coast of DT seconds: fall the turn, aim at the center
+   ;; from where it ends, and read the difference off her heading,
+   ;; folded to a half-turn either way.  Port positive.
+   (nose-in-turn-deg
+    (dt)
+    (destructuring-bind (vx vy px py)
+        (the (fall (the vel-x) (the vel-y) (the pos-x) (the pos-y) dt))
+      (declare (ignore vx vy))
+      (let* ((want (* (/ 180 pi) (atan (- py) (- px))))
+             (turn (- want (the heading-deg))))
+        (- (mod (+ turn 180) 360) 180))))
+
    ;; a move spends game-time: the ship's clock runs by that much
    ;; and no more -- between moves it is stopped -- and every world
    ;; turns by what his day makes of it.  SECS may be negative on a
@@ -3964,7 +4072,8 @@ function toggleHelm () {
         (the make-parked-move!)
         (let* ((turn (ecase (the wheel-control value)
                        (:hard-port 30) (:easy-port 10) (:amidships 0)
-                       (:easy-starboard -10) (:hard-starboard -30)))
+                       (:easy-starboard -10) (:hard-starboard -30)
+                       (:exact (or (the wheel-angle-control value) 0))))
                (shifter (the shifter-control value))
                (pedal (the pedal-control value))
                (rewind? (eql (the transport-control value) :rewind))
