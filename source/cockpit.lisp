@@ -2363,7 +2363,9 @@ window.GW_HAILS = function () {
   try { if (sessionStorage.getItem('gw-hails-collapsed') === '1') { var b0 = document.getElementById('hails-body'); if (b0) b0.style.display = 'none'; var c0 = document.getElementById('hails-caret'); if (c0) c0.textContent = '\\u25b8'; } } catch (e) {}
   // a name to say: the pilot's token is long and private-ish, so its
   // tail; an unsigned hand goes by its cockpit's tail
-  function who (r) { return (r.pilot ? ('pilot ' + String(r.pilot).slice(-5)) : ('cockpit ' + String(r.id).slice(-4))); }
+  function who (r) { if (r.bridge) return 'the bridge'; return (r.pilot ? ('pilot ' + String(r.pilot).slice(-5)) : ('cockpit ' + String(r.id).slice(-4))); }
+  var inp0 = document.querySelector('#hails-card input[type=text]');
+  if (inp0) inp0.setAttribute('placeholder', 'hail the bridge');
   function paint (D) {
     var ro = document.getElementById('hails-roster'), lg = document.getElementById('hails-log'), ct = document.getElementById('hails-count');
     if (!ro || !lg) return;
@@ -2378,7 +2380,7 @@ window.GW_HAILS = function () {
     D.hails.forEach(function (h) {
       var line = document.createElement('div');
       var age = h.age < 60 ? h.age + 's' : h.age < 3600 ? Math.round(h.age / 60) + 'm' : Math.round(h.age / 3600) + 'h';
-      var w = document.createElement('span'); w.style.color = '#c9a227'; w.textContent = who(h) + ' \\u00b7 ' + age + ' ago: ';
+      var w = document.createElement('span'); w.style.color = '#c9a227'; w.textContent = age + ' ago \\u00b7 ' + who(h) + ': ';
       line.appendChild(w); line.appendChild(document.createTextNode(h.text));
       lg.appendChild(line);
     });
@@ -3060,75 +3062,200 @@ window.GW_WIRE = function () {
 })();
 ")
 
-;; THE MOTHER SHIP (S5, ruled 2026-09-03): one cockpit PILOTS THE
-;; BASILISK -- her state is the ship's -- and every other cockpit on
-;; this backend is a SHUTTLE on a road of its own.  The most recently
-;; boarded session has the ship: a fresh session boards by taking the
-;; ship's state as it stands (board!) and the previous pilot is bumped
-;; to a shuttle from that same state.  The helm tells each which it
-;; is, and shows a shuttle where the ship stands (ship-line).  Held
-;; per backend process as the session's key in the instance table.
-(defvar *mother* nil)
+;; THE SHIP AND HER BRIDGE (ruled 2026-09-03 evening): the ship is the
+;; basilisk itself -- the docker network the rooms share, minted a
+;; name at every raising (basilisk/.ship) and crewed by the keepers on
+;; the muster (basilisk/.muster) -- and THE BRIDGE is a SINGULAR
+;; object living in this process, the bridge container's own resident
+;; in software: one per backend, never one per session.  She holds
+;; who pilots the ship, the hails log and the roster, and she is the
+;; only one a cockpit ever speaks to.  bridge-view (the page at
+;; /bridge) is a window onto her, not her.  Stood up on first call.
+(defun read-first-line (path)
+  (ignore-errors
+   (with-open-file (s path :if-does-not-exist nil)
+     (when s
+       (let ((l (read-line s nil)))
+         (and l (string-trim '(#\Space #\Tab #\Return #\Newline) l)))))))
 
-;; HAILS (ruled 2026-09-03): every cockpit on this backend can see
-;; who else is aboard and speak to all of them at once, and only to
-;; all of them -- there is NO private channel, by design: most of what
-;; goes wrong in online play and social rooms is avoided structurally
-;; by never providing one, and none will be added without a strong
-;; business case AND a compelling safety story.  The log is one list
-;; per backend process, newest first, capped; each entry is (unix
-;; seconds session-key pilot-id world-name text).  The roster is
-;; whoever polled the hails endpoint lately (seen-at).
-(defvar *hails* nil)
+(defun read-muster (path)
+  "basilisk/.muster as an alist: (\"BASILISK_CREW_BRIDGE\" . \"Nymund\") ..."
+  (ignore-errors
+   (with-open-file (s path :if-does-not-exist nil)
+     (when s
+       (loop for l = (read-line s nil) while l
+             for p = (position #\= l)
+             when p collect (cons (subseq l 0 p)
+                                  (string-trim '(#\Space #\Return) (subseq l (1+ p)))))))))
+
+;; A BERTH: the ship's own handle on one cockpit aboard.  The cockpits
+;; themselves stay ROOT instances in gwl's instance table (the whole
+;; of GWL is wired that way -- sessions, ajax, snapshots); the berths
+;; are the ship's quantified children standing for them, keyed by the
+;; sessions' keys on the bridge's roster, so (the (berths key)) is the
+;; ship's view of that cockpit.
+(define-object berth ()
+  :documentation (:description "One cockpit aboard, as the ship sees it: a proxy onto the root session instance, keyed by that session's key.")
+  :input-slots (key bridge)
+  :computed-slots
+  ((session (first (gethash (the key) gwl::*instance-hash-table*)))
+   (pilot? (eq (the key) (the-object (the bridge) pilot-key)))
+   (pilot-id (and (the session) (the-object (the session) pilot-id)))
+   (who (if (the session) (the-object (the session) (hail-name)) "a cockpit"))
+   (world-name (if (the session) (the-object (the session) world-name) "the ship"))
+   (where (if (and (the session) (the-object (the session) landed?)) "down" "aloft"))))
+
+(define-object ship ()
+  :documentation (:description "The basilisk herself: the ship the rooms share, named from basilisk/.ship at every raising, crewed from basilisk/.muster; one per backend process (the-ship), the bridge her child, and a berth for every cockpit aboard.")
+  :computed-slots
+  ((name (or (read-first-line "/projects/basilisk/.ship") "the ship"))
+   (styled-name (format nil "R.V. ~a" (the name)))
+   (muster (read-muster "/projects/basilisk/.muster"))
+   ;; the keeper standing this room, by the muster
+   (bridge-keeper (cdr (assoc "BASILISK_CREW_BRIDGE" (the muster) :test #'string=))))
+  :objects
+  ((bridge :type 'bridge)
+   ;; the cockpits aboard, one berth each, keyed by session: the
+   ;; sequence follows the bridge's roster (refresh-roster!)
+   (berths :type 'berth
+           :sequence (:indices (the bridge roster-keys))
+           :key (the-child index)
+           :bridge (the bridge))))
+
+(define-object bridge ()
+  :documentation (:description "THE BRIDGE: singular, this process's own.  Holds who pilots the ship (pilot-key), the hails log and the roster, and speaks to every cockpit at once; a cockpit only ever hails HER.")
+  :computed-slots
+  (;; the session that pilots the ship (S5): the most recently boarded
+   (pilot-key nil :settable)
+   ;; the keys of the cockpits aboard, as last taken (refresh-roster!);
+   ;; the ship's berths sequence is keyed by these
+   (roster-keys nil :settable)
+   ;; the log, newest first, capped: (unix-seconds from pilot-id
+   ;; world-name text to), FROM a session key or :bridge, TO :bridge
+   ;; (a cockpit's hail) or :all (the bridge's word)
+   (hails nil :settable))
+  :functions
+  (;; take the roster afresh: when the cockpits aboard changed, the
+   ;; keys are re-set and the ship's berths follow
+   (refresh-roster!
+    ()
+    (let ((keys (mapcar #'second (the roster))))
+      (unless (equal keys (the roster-keys))
+        (the (set-slot! :roster-keys keys)))
+      keys))
+
+   (cap!
+    ()
+    (when (> (length (the hails)) +hails-kept+)
+      (the (set-slot! :hails (subseq (the hails) 0 +hails-kept+)))))
+
+   ;; the bridge speaks to every cockpit: her own word, or a relay
+   (says
+    (text &optional (world "the ship"))
+    (the (set-slot! :hails (cons (list (unix-now) :bridge nil world text :all) (the hails))))
+    (the cap!))
+
+   ;; a cockpit hails the bridge: logged as told, then relayed to
+   ;; every cockpit in her own voice, with attribution
+   (hear!
+    (key pilot world who shuttle? text)
+    (the (set-slot! :hails (cons (list (unix-now) key pilot world text :bridge) (the hails))))
+    (the cap!)
+    (the (says (format nil "~a, ~a, hails: ~a"
+                       who (if shuttle? "aboard a shuttle" "with the ship") text)
+               world)))
+
+   ;; every cockpit on this backend seen within +roster-window+
+   ;; seconds: (object key) pairs, the ship's pilot first
+   (roster
+    ()
+    (let ((now (unix-now)) (rows nil) (pilot (the pilot-key)))
+      (maphash (lambda (key entry)
+                 (let ((o (first entry)))
+                   (when (and (typep o 'cockpit-view)
+                              (the-object o seen-at)
+                              (< (- now (the-object o seen-at)) +roster-window+))
+                     (push (list o key) rows))))
+               gwl::*instance-hash-table*)
+      (sort rows (lambda (a b)
+                   (cond ((eq (second a) pilot) t)
+                         ((eq (second b) pilot) nil)
+                         (t (> (or (the-object (first a) seen-at) 0)
+                               (or (the-object (first b) seen-at) 0))))))))
+
+   ;; the roster and the log as a COCKPIT polls them: who is aboard,
+   ;; who pilots the ship, and what the bridge has said to all lately
+   ;; (a cockpit never reads another cockpit's hails, only the
+   ;; bridge's word, relays included)
+   (hails-json
+    (cockpit)
+    (let* ((now (unix-now))
+           (said (remove-if-not (lambda (h) (eq (sixth h) :all)) (the hails))))
+      ;; the berths follow the roster; the JSON reads the berths
+      (the refresh-roster!)
+      (with-output-to-string (out)
+        (format out "{\"you\":~a,\"mother\":~a,\"ship\":~a,\"now\":~d,\"roster\":[~{~a~^,~}],\"hails\":[~{~a~^,~}]}"
+                (json-string (or (the-object cockpit instance-id) ""))
+                (if (the pilot-key) (json-string (string (the pilot-key))) "null")
+                (json-string (the-object (the-ship) styled-name))
+                (round now)
+                (mapcar (lambda (b)
+                          (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a}"
+                                  (json-string (string (the-object b key)))
+                                  (if (the-object b pilot-id) (json-string (string (the-object b pilot-id))) "null")
+                                  (json-string (the-object b world-name))
+                                  (json-string (the-object b where))
+                                  (if (the-object b pilot?) "true" "false")
+                                  (if (eq (the-object b session) cockpit) "true" "false")))
+                        (list-elements (the-object (the-ship) berths)))
+                (mapcar (lambda (h)
+                          (destructuring-bind (at from pilot world text to) h
+                            (declare (ignore to))
+                            (format nil "{\"age\":~d,\"bridge\":~a,\"id\":~a,\"pilot\":~a,\"world\":~a,\"text\":~a}"
+                                    (round (- now at))
+                                    (if (eq from :bridge) "true" "false")
+                                    (json-string (string from))
+                                    (if pilot (json-string (string pilot)) "null")
+                                    (json-string world)
+                                    (json-string text))))
+                        (subseq said 0 (min 30 (length said))))))))))
+
+(defvar *the-ship* nil)
+
+(defun the-ship ()
+  "The one ship this process is aboard, stood up on first call."
+  (or *the-ship* (setf *the-ship* (make-object 'ship))))
+
+(defun the-bridge ()
+  (the-object (the-ship) bridge))
+
+;; HAILS (ruled 2026-09-03, refined the same evening): every cockpit
+;; on this backend can see who else is aboard, and messages run
+;; between a COCKPIT and THE BRIDGE only -- the bridge being this very
+;; process, the ship's own room (the gendl-ccl container), never
+;; another cockpit.  A cockpit hails the bridge; the bridge speaks to
+;; every cockpit at once, relaying what it was told in its own voice
+;; with attribution, and saying its own piece at boardings, grips and
+;; landings.  There is NO cockpit-to-cockpit path and NO private
+;; channel, by design: most of what goes wrong in online play and
+;; social rooms is avoided structurally by never providing one, and
+;; none will be added without a strong business case AND a compelling
+;; safety story.  The log is one list per backend process, newest
+;; first, capped; each entry is (unix-seconds from pilot-id world-name
+;; text to), FROM a session key or :bridge, TO :bridge or :all.  A
+;; cockpit's card shows the :all entries.  The roster is whoever
+;; polled the hails endpoint lately (seen-at).
 (defparameter +hails-kept+ 200)
 (defparameter +hail-length+ 240)
 (defparameter +roster-window+ 90)
 
-(defun cockpit-roster ()
-  "Every cockpit on this backend seen within +roster-window+ seconds:
-(object key) pairs, the ship's pilot first."
-  (let ((now (unix-now)) (rows nil))
-    (maphash (lambda (key entry)
-               (let ((o (first entry)))
-                 (when (and (typep o 'cockpit-view)
-                            (the-object o seen-at)
-                            (< (- now (the-object o seen-at)) +roster-window+))
-                   (push (list o key) rows))))
-             gwl::*instance-hash-table*)
-    (sort rows (lambda (a b)
-                 (cond ((eq (second a) *mother*) t)
-                       ((eq (second b) *mother*) nil)
-                       (t (> (or (the-object (first a) seen-at) 0)
-                             (or (the-object (first b) seen-at) 0))))))))
+;; the bridge's word, from anywhere in the game
+(defun bridge-says (text &optional (world "the ship"))
+  (the-object (the-bridge) (says text world)))
 
-(defun hails-json (self)
-  "The roster and the log as the page polls them: who is aboard, who
-pilots the ship, and the latest hails from every cockpit."
-  (let ((now (unix-now)))
-    (with-output-to-string (out)
-      (format out "{\"you\":~a,\"mother\":~a,\"now\":~d,\"roster\":[~{~a~^,~}],\"hails\":[~{~a~^,~}]}"
-              (json-string (or (the-object self instance-id) ""))
-              (if *mother* (json-string (string *mother*)) "null")
-              (round now)
-              (mapcar (lambda (row)
-                        (destructuring-bind (o key) row
-                          (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a}"
-                                  (json-string (string key))
-                                  (if (the-object o pilot-id) (json-string (string (the-object o pilot-id))) "null")
-                                  (json-string (the-object o world-name))
-                                  (json-string (if (the-object o landed?) "down" "aloft"))
-                                  (if (eq key *mother*) "true" "false")
-                                  (if (eq o self) "true" "false"))))
-                      (cockpit-roster))
-              (mapcar (lambda (h)
-                        (destructuring-bind (at key pilot world text) h
-                          (format nil "{\"age\":~d,\"id\":~a,\"pilot\":~a,\"world\":~a,\"text\":~a}"
-                                  (round (- now at))
-                                  (json-string (string key))
-                                  (if pilot (json-string (string pilot)) "null")
-                                  (json-string world)
-                                  (json-string text))))
-                      (subseq *hails* 0 (min 30 (length *hails*))))))))
+;; what a cockpit polls (publish.lisp's hails-responder)
+(defun hails-json (cockpit)
+  (the-object (the-bridge) (hails-json cockpit)))
 
 (define-object cockpit-view (session-control-mixin base-html-page)
 
@@ -4122,7 +4249,7 @@ GW_CHECK_IN();"
       (:div :id "hails-card" :style "position:fixed;top:52px;left:14px;z-index:10;width:300px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "toggleHails()"
-          (:span "HAILS")
+          (:span (fmt "THE BRIDGE &middot; ~a" (the-object (the-ship) styled-name)))
           (:span :id "hails-count" :style "font-size:10px;color:#c9a227;" "")
           (:span :id "hails-caret" "▾"))
         (:div :id "hails-body" :style "margin-top:6px;"
@@ -4571,8 +4698,14 @@ function toggleHelm () {
           (the-object mother
                       (set-slot! :last-move-note
                                  "another cockpit boarded and took the ship -- you fly a SHUTTLE now, on your own road from this point; the helm shows where she stands"))
-          (the-object mother (set-slot! :clock-cuts (1+ (the-object mother clock-cuts))))))
-      (setq *mother* (the mother-key))))
+          (the-object mother (set-slot! :clock-cuts (1+ (the-object mother clock-cuts))))
+          (bridge-says (format nil "~a has boarded and taken the ship; ~a flies a shuttle from here"
+                               (the (hail-name)) (the-object mother (hail-name)))
+                       (the world-name)))
+        (unless mother
+          (bridge-says (format nil "~a has boarded and taken the ship" (the (hail-name)))
+                       (the world-name))))
+      (the-object (the-bridge) (set-slot! :pilot-key (the mother-key)))))
 
    ;; the session's key in the instance table, and the object that
    ;; pilots the ship (nil when none stands)
@@ -4581,24 +4714,36 @@ function toggleHelm () {
     (let ((iid (the instance-id)))
       (and iid (gwl::make-keyword-sensitive iid))))
 
-   ;; A HAIL: the line on the card goes to every cockpit on this
-   ;; backend, signed with this session, its pilot and its world;
-   ;; trimmed, capped, never private.  The line clears once sent.
+   ;; A HAIL: the line on the card goes to THE BRIDGE, signed with
+   ;; this session, its pilot and its world -- and the bridge relays
+   ;; it to every cockpit in its own voice, with attribution.
+   ;; Trimmed, capped, never private, never cockpit-to-cockpit.  The
+   ;; line clears once sent.
    (hail!
     ()
     (let* ((raw (or (the hail-control value) ""))
            (text (string-trim '(#\Space #\Tab #\Newline #\Return) raw)))
       (when (plusp (length text))
-        (push (list (unix-now) (the mother-key) (the pilot-id) (the world-name)
-                    (subseq text 0 (min +hail-length+ (length text))))
-              *hails*)
-        (when (> (length *hails*) +hails-kept+)
-          (setf *hails* (subseq *hails* 0 +hails-kept+)))
+        (the-object (the-bridge)
+                    (hear! (the mother-key) (the pilot-id) (the world-name)
+                           (the (hail-name))
+                           (not (eq (the mother-object) self))
+                           (subseq text 0 (min +hail-length+ (length text)))))
         (the hail-control (set-slot! :value "")))))
+
+   ;; a name the bridge can say: the pilot's token tail, or the
+   ;; cockpit's own
+   (hail-name
+    ()
+    (let ((pid (the pilot-id)) (key (the mother-key)))
+      (cond (pid (let ((s (string pid))) (format nil "pilot ~a" (subseq s (max 0 (- (length s) 5))))))
+            (key (let ((s (string key))) (format nil "cockpit ~a" (subseq s (max 0 (- (length s) 4))))))
+            (t "a cockpit"))))
 
    (mother-object
     ()
-    (and *mother* (first (gethash *mother* gwl::*instance-hash-table*))))
+    (let ((key (the-object (the-bridge) pilot-key)))
+      (and key (first (gethash key gwl::*instance-hash-table*)))))
 
    ;; where she stands THIS instant, without settling: the fall from
    ;; the anchor at the rate in force (nothing mutated)
@@ -5498,7 +5643,10 @@ function toggleHelm () {
                (tally! :landings)
                (tally! (intern (concatenate 'string (symbol-name (the world))
                                             "-LANDINGS")
-                               :keyword)))
+                               :keyword))
+               (bridge-says (format nil "~a is down on ~a, ~,2f km/s at the touch"
+                                    (the (hail-name)) (the world-name) contact-speed)
+                            (the world-name)))
               (crashed?
                (the (set-slot! :heading-deg 180))
                (the (set-slot! :vel-x 0))
@@ -5509,7 +5657,10 @@ function toggleHelm () {
                (the (set-slot! :last-move-note
                      (format nil "the world came up to meet you at ~,1f km/s -- back on the ring, falling clean.  Under ~,1f km/s at the touch would have been a landing"
                              contact-speed +landing-speed-cap+)))
-               (tally! :crashes))
+               (tally! :crashes)
+               (bridge-says (format nil "~a met the sky of ~a at ~,1f km/s and is back on the ring"
+                                    (the (hail-name)) (the world-name) contact-speed)
+                            (the world-name)))
               (t
                (the (set-slot! :vel-x (first state)))
                (the (set-slot! :vel-y (second state)))
@@ -5766,7 +5917,8 @@ function toggleHelm () {
                      (concatenate 'string (the last-move-note)
                                   " — and the moon's grip takes her: falling around the moon now")))
                (tally! :handoffs)
-               (tally! :handoffs-moonward))))
+               (tally! :handoffs-moonward)
+               (bridge-says (format nil "the moon's grip takes ~a" (the (hail-name))) "the moon"))))
           ((eql (the world) :moon)
            (let* ((hx (+ (the pos-x) +moon-x+))
                   (hy (the pos-y))
@@ -5779,7 +5931,8 @@ function toggleHelm () {
                      (concatenate 'string (the last-move-note)
                                   " — and home reclaims her: back in the big well")))
                (tally! :handoffs)
-               (tally! :handoffs-homeward))))
+               (tally! :handoffs-homeward)
+               (bridge-says (format nil "home reclaims ~a" (the (hail-name))) "home"))))
           (t nil)))
 
    ;; A move made on the ground.  Forward gear and the full pedal
@@ -6253,7 +6406,7 @@ function toggleHelm () {
       (:div :id "hails-card" :style "position:fixed;top:52px;left:14px;z-index:10;width:300px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "toggleHails()"
-          (:span "HAILS")
+          (:span (fmt "THE BRIDGE &middot; ~a" (the-object (the-ship) styled-name)))
           (:span :id "hails-count" :style "font-size:10px;color:#c9a227;" "")
           (:span :id "hails-caret" "▾"))
         (:div :id "hails-body" :style "margin-top:6px;"
