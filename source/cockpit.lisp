@@ -3139,7 +3139,18 @@ window.GW_WIRE = function () {
    ;; keys are re-set and the ship's berths follow
    (refresh-roster!
     ()
-    (let ((keys (mapcar #'second (the roster))))
+    (let* ((rows (the roster))
+           (keys (mapcar #'second rows))
+           (ship (the-ship)))
+      ;; MELDED TREES: a cockpit is a root of its own in gwl's table,
+      ;; and gendl tracks a dependency across two roots only when
+      ;; they are GODPARENTS of each other (same-tree?, base
+      ;; utilities) -- so every cockpit aboard and the ship adopt
+      ;; each other, and a berth's slots follow its session's
+      (dolist (row rows)
+        (let ((session (first row)))
+          (gdl:add-godparent ship session)
+          (gdl:add-godparent session ship)))
       (unless (equal keys (the roster-keys))
         (the (set-slot! :roster-keys keys)))
       keys))
