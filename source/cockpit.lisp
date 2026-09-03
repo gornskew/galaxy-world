@@ -216,28 +216,21 @@
    ;; glass, see plot-screen-x3d), grown to a squarer 0.30 x 0.235
    ;; face; the starboard one is the starboard reptile eye's feed,
    ;; dark glass where the renderer has no such feed.
+   ;; the STARBOARD flatscreen only: the port one lost its tile when
+   ;; the plot grew past it (ruled 2026-09-03 -- the plot quad stands
+   ;; on the dash by itself, plot-screen-x3d)
    (eye-screen-bezels :type 'box
-                      :sequence (:size 2)
-                      :center (make-point 0.728
-                                          (ecase (the-child index)
-                                            (0 0.40) (1 -0.75))
-                                          (ecase (the-child index)
-                                            (0 0.4275) (1 0.42)))
+                      :center (make-point 0.728 -0.75 0.42)
                       :width 0.015
-                      :length (ecase (the-child index) (0 0.33) (1 0.27))
-                      :height (ecase (the-child index) (0 0.265) (1 0.18))
+                      :length 0.27
+                      :height 0.18
                       :display-controls (list :color +chrome+))
 
    (eye-screens :type 'box
-                :sequence (:size 2)
-                :center (make-point 0.719
-                                    (ecase (the-child index)
-                                      (0 0.40) (1 -0.75))
-                                    (ecase (the-child index)
-                                      (0 0.4275) (1 0.42)))
+                :center (make-point 0.719 -0.75 0.42)
                 :width 0.01
-                :length (ecase (the-child index) (0 0.30) (1 0.24))
-                :height (ecase (the-child index) (0 0.235) (1 0.15))
+                :length 0.24
+                :height 0.15
                 :display-controls (list :color +gauge-face+))
 
    ;; the rear-view mirror, hung from the header at the cab's
@@ -740,6 +733,14 @@
 ;; near face scrolls starboard-to-port across the windshield -- and
 ;; the sky wheels clockwise with it.
 
+;; THE LIFT (ruled 2026-09-03): every world stands eight degrees above
+;; the eye line in the glass, the way a windshield sits above the
+;; hood -- nose-in on the ring the disc spans some eighteen degrees
+;; below the line and the dash top cuts the view at eleven, so the
+;; south pole was lost whatever the eye height (pt 69 tried).  One
+;; constant, on the frames' z, both renderers and every clip.
+(defparameter +body-lift+ (* 3000.0 (tan (/ (* 8 pi) 180))))
+
 (defun scene-body-frame (bearing-rad distance-km body-radius-km)
   "Scene translation (two values) and uniform scale for a body at
 the fixed scene distance, subtending its true angle."
@@ -796,15 +797,27 @@ scene is static between moves, so this bakes as a shader constant."
 (defparameter *earth-lights-vertex-glsl*
   "precision highp float; uniform mat4 x3d_ProjectionMatrix; uniform mat4 x3d_ModelViewMatrix; attribute vec4 x3d_Vertex; attribute vec3 x3d_Normal; attribute vec4 x3d_TexCoord0; varying vec3 vN; varying vec2 vUv; void main(){ vN = x3d_Normal; vUv = vec2(x3d_TexCoord0.s, 1.0 - x3d_TexCoord0.t); gl_Position = x3d_ProjectionMatrix * x3d_ModelViewMatrix * x3d_Vertex; }")
 
+;; LIVE since 2026-09-03: the sun direction is no longer baked -- the
+;; shader carries the sky's heading (skyRot, what sky-heading wears)
+;; and the world's spin (spinRot, what <prefix>-spin wears) as
+;; routable fields and derives sunLocal itself, exactly as
+;; earth-sun-local did in Lisp: H = -angle*sign(z) of the sky
+;; rotation, p = -angle*sign(y) of the spin (either sign convention a
+;; renderer normalizes to gives the same H and p), then
+;; (cos el sin(H-p), sin el, -cos el cos(H-p)).  A tape routes its nose
+;; and spin tracks into those fields, so the terminator stands where
+;; the sun is while the world turns and she rounds him.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec3 sunLocal; varying vec3 vN; varying vec2 vUv; void main(){ float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
-(defun earth-lights-appearance (prefix day-url night-url sun-local)
+(defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
+                                &optional (elevation 0.0))
   "A ComposedShader Appearance for the city-lights earth: DAY-URL and
-NIGHT-URL are raw paths, SUN-LOCAL the baked \"x y z\" from
-EARTH-SUN-LOCAL."
-  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"sunLocal\" type=\"SFVec3f\" accessType=\"inputOutput\" value=\"~a\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
-          prefix day-url night-url sun-local
+NIGHT-URL are raw paths; HEADING-RAD and PHASE-RAD author the sky's
+heading and the world's spin the shader starts from (a tape routes
+the live ones in)."
+  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
+          prefix prefix day-url night-url (- heading-rad) phase-rad elevation
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
 
@@ -932,7 +945,7 @@ nose track never jumps a lap."
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
                  &key phase diffuse emissive scale-override tilt adornment
-                      night-url sun-local)
+                      night-url sun)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  PHASE is the pole
 angle (radians) the body stands at: the scene is time-frozen
@@ -957,15 +970,17 @@ near ring arc lost the draw and hid behind the globe."
            ;; NIGHT-URL + SUN-LOCAL => the city-lights shader stands in
            ;; for the plain lit Material (earth, X_ITE parked view).
            (appearance
-            (if (and night-url sun-local day-url)
-                (earth-lights-appearance prefix day-url night-url sun-local)
+            ;; NIGHT-URL + SUN (heading-rad phase-rad) => the
+            ;; city-lights shader stands in for the plain Material
+            (if (and night-url sun day-url)
+                (earth-lights-appearance prefix day-url night-url (first sun) (second sun))
                 (format nil "<Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance>"
                         texture-id texture-id
                         (if day-url (format nil "&quot;~a&quot;" day-url) "")
                         prefix diffuse emissive))))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\" id=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
-             prefix prefix tx ty s s s
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f ~,1f\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\" id=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+             prefix prefix tx ty +body-lift+ s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
              prefix prefix
              ;; the pole turns about 0 -1 0 in this inner frame; the
@@ -1014,7 +1029,7 @@ near ring arc lost the draw and hid behind the globe."
 ;; as further values the routes as (from field to field) lists and
 ;; the nodes-only markup, for a page that must add the routes itself
 ;; (X_ITE parses a fragment in a namespace of its own).
-(defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map (tag ""))
+(defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map (tag "") shaded)
   (let ((keys (make-string-output-stream))
         (nose (make-string-output-stream))
         (tracks nil)
@@ -1037,7 +1052,7 @@ near ring arc lost the draw and hid behind the globe."
                          (scene-body-frame (bearing-to px py h tx ty)
                                            (dist-to px py tx ty)
                                            (getf body :radius))
-                       (format pos "~,1f ~,1f 0 " sx sy)
+                       (format pos "~,1f ~,1f ~,1f " sx sy +body-lift+)
                        (format scl "~,2f ~,2f ~,2f " sc sc sc)))))
         (push (list (getf body :prefix)
                     (get-output-stream-string pos)
@@ -1100,12 +1115,19 @@ near ring arc lost the draw and hid behind the globe."
                               (get-output-stream-string svals))
                       (route clock "fraction_changed" ispin "set_fraction")
                       (route ispin "value_changed" (format nil "~a-spin" (getf body :prefix))
-                             "set_rotation"))))))))
+                             "set_rotation")
+                      ;; the city-lights shader follows the spin
+                      (when (member (getf body :prefix) shaded :test #'equal)
+                        (route ispin "value_changed" (format nil "~a-sh" (getf body :prefix))
+                               "spinRot")))))))))
         (let ((inose (format nil "vy-nose~a" tag)))
           (format out "<OrientationInterpolator DEF=\"~a\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator>"
                   inose k (get-output-stream-string nose))
           (route clock "fraction_changed" inose "set_fraction")
-          (route inose "value_changed" "sky-heading" "set_rotation")))
+          (route inose "value_changed" "sky-heading" "set_rotation")
+          ;; ...and the city-lights shader follows the sky's heading
+          (dolist (p shaded)
+            (route inose "value_changed" (format nil "~a-sh" p) "skyRot"))))
       (let* ((routes (nreverse routes))
              (nodes (get-output-stream-string out))
              (inline (with-output-to-string (s)
@@ -1407,11 +1429,14 @@ X_ITE), because a fresh scene document stands with the light off.")
   ;; under its own TouchSensor: a tap on the glass zooms the plan
   ;; view out a level (S4, GW_ZOOM_CYCLE), both renderers
   (format nil "<Transform DEF=\"plot-hit\" id=\"plot-hit\"><TouchSensor DEF=\"plot-touch\" id=\"plot-touch\" description=\"the plot — tap to zoom out a level\"></TouchSensor>~a</Transform>"
+          ;; 0.36 x 0.27 (the canvas's own 4:3) on the port dash, a
+          ;; hair prouder than the dial faces, its top under the
+          ;; readout strip's cowl; no tile behind it any more
           (painted-quad-x3d "plot-tex"
-                            (list (list 0.7135 0.55 0.31)
-                                  (list 0.7135 0.25 0.31)
-                                  (list 0.7135 0.25 0.545)
-                                  (list 0.7135 0.55 0.545))
+                            (list (list 0.7125 0.60 0.275)
+                                  (list 0.7125 0.24 0.275)
+                                  (list 0.7125 0.24 0.545)
+                                  (list 0.7125 0.60 0.545))
                             ;; low emissive: the plot's black ground
                             ;; must read black, the gold lines lit
                             :emissive "0.2 0.2 0.2")))
@@ -2929,6 +2954,16 @@ window.GW_WIRE = function () {
 })();
 ")
 
+;; THE MOTHER SHIP (S5, ruled 2026-09-03): one cockpit PILOTS THE
+;; BASILISK -- her state is the ship's -- and every other cockpit on
+;; this backend is a SHUTTLE on a road of its own.  The most recently
+;; boarded session has the ship: a fresh session boards by taking the
+;; ship's state as it stands (board!) and the previous pilot is bumped
+;; to a shuttle from that same state.  The helm tells each which it
+;; is, and shows a shuttle where the ship stands (ship-line).  Held
+;; per backend process as the session's key in the instance table.
+(defvar *mother* nil)
+
 (define-object cockpit-view (session-control-mixin base-html-page)
 
   :input-slots
@@ -2990,6 +3025,9 @@ window.GW_WIRE = function () {
    ;; clock.
    (clock-anchor nil :settable)
    (clock-scale 0 :settable)
+   ;; boarded: this session has taken (or been given) its place --
+   ;; the ship or a shuttle (board!, once, at the first GET)
+   (boarded? nil :settable)
    ;; the rate the state calls for right now: PLAY and REWIND run
    ;; the clock at the channel's rate, on the ground and aloft;
    ;; STOP is the turn-based game -- a move spends the cadence and
@@ -3020,6 +3058,12 @@ window.GW_WIRE = function () {
    ;; of the whole scene being re-cut.  The serial suffixes the
    ;; clock's and interpolators' DEFs; the frames keep their names.
    (tape-serial 0 :settable)
+   ;; which riding bodies wear the city-lights shader on this page:
+   ;; home, under X_ITE (its tracks are routed into the shader)
+   (shaded-prefixes (when (the xr-scene?)
+                      (loop for b in (the transit-bodies)
+                            when (equal (getf b :texture) "earth-tex")
+                              collect (getf b :prefix))))
    (tape-tag (if (eql (the transit-target) :coast)
                  (format nil "-~d" (the tape-serial))
                  ""))
@@ -3029,7 +3073,8 @@ window.GW_WIRE = function () {
             (transit-anim-x3d (the transit-samples) (the transit-bodies)
                               :duration (the transit-duration)
                               :time-map (the transit-time-map)
-                              :tag (the tape-tag))
+                              :tag (the tape-tag)
+                              :shaded (the shaded-prefixes))
           (declare (ignore inline))
           (format nil "{\"serial\":~d,\"clock\":\"voyage-clock~a\",\"nodes\":~a,\"routes\":[~{[~{~a~^,~}]~^,~}]}"
                   (the tape-serial) (the tape-tag) (json-string nodes)
@@ -3367,13 +3412,21 @@ window.GW_WIRE = function () {
                                     :emissive (getf body :emissive)
                                     :scale-override (getf body :scale-override)
                                     :tilt (getf body :tilt)
-                                    :adornment (getf body :adornment)))))))
+                                    :adornment (getf body :adornment)
+                                    ;; city lights on a flown home too
+                                    ;; (X_ITE): the tape routes the
+                                    ;; live sky and spin into the shader
+                                    :night-url (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
+                                                 "/gw-tex/earth-night.jpg")
+                                    :sun (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
+                                           (list h0 (or (getf body :spin-phase) 0)))))))))
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (the transit-duration)
                                :time-map (the transit-time-map)
                                ;; a coast tape's clock wears its
                                ;; serial, so a seam can relieve it
                                :tag (the tape-tag)
+                               :shaded (the shaded-prefixes)
                                ;; a scene document carries its own
                                ;; ignition; the x3dom page lights the
                                ;; clock from script instead
@@ -3414,9 +3467,9 @@ window.GW_WIRE = function () {
                          ;; static between moves, so a constant serves.
                          :night-url (when (and (the xr-scene?) (eql (the world) :home))
                                       "/gw-tex/earth-night.jpg")
-                         :sun-local (when (and (the xr-scene?) (eql (the world) :home))
-                                      (earth-sun-local (the sky-authored-heading-rad)
-                                                       (the world-spin-rad)))
+                         :sun (when (and (the xr-scene?) (eql (the world) :home))
+                                (list (the sky-authored-heading-rad)
+                                      (the world-spin-rad)))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
@@ -3479,8 +3532,8 @@ window.GW_WIRE = function () {
                            (scene-body-frame (bearing-to px py h tx ty)
                                              (dist-to px py tx ty)
                                              (getf body :radius))
-                         (format out "~:[,~%           ~;~]['~a-frame', '~,1f ~,1f 0', '~,2f ~,2f ~,2f'~a]"
-                                 first (getf body :prefix) sx sy sc sc sc
+                         (format out "~:[,~%           ~;~]['~a-frame', '~,1f ~,1f ~,1f', '~,2f ~,2f ~,2f'~a]"
+                                 first (getf body :prefix) sx sy +body-lift+ sc sc sc
                                  ;; the face he lands with: the clock's
                                  ;; end read against his day
                                  (let ((ph (getf body :spin-phase))
@@ -3563,8 +3616,11 @@ window.GW_WIRE = function () {
                      (< (the altitude) (* 0.5 (the world-radius)))))
    ;; the plot canvas: the port flatscreen's own aspect (0.30 x
    ;; 0.235), one size -- it is painted onto the glass now
-   (plot-size 320)
-   (plot-height 250)
+   ;; POWERS OF TWO: X_ITE pads a texture that is not one to the next
+   ;; power without scaling it, so a 340 x 250 canvas showed its left
+   ;; two thirds on the glass and the rest was padding (2026-09-03)
+   (plot-size 512)
+   (plot-height 384)
 
    ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
    ;; view's canvas, painted onto the glass by the page a few times
@@ -4164,6 +4220,8 @@ function toggleHelm () {
                                         (the periapsis-alt))))))
                    (htm (:div :style "color:#e07050;"
                           "the road is unbound — the deep dark has you")))))
+          ;; the ship's line (S5): yours, or where she stands
+          (:div :id "gw-ship" :style "font-size:11px;color:#c9a227;" (str (the (ship-line))))
           (:div :id "gw-clock" (fmt "ship's clock: ~a" (the clock-string)))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :id "move-note"
@@ -4294,8 +4352,71 @@ function toggleHelm () {
    (before-present!
     ()
     (let ((*current-pilot* (the pilot-id)))
+      (the board!)
       (the settle-clock!)
       (the retape!)))
+
+   ;; BOARDING (S5): a fresh session takes the ship.  If another
+   ;; session pilots her, that one is settled and its state copied
+   ;; here -- the ship carries on under the new pilot from exactly
+   ;; where she stands -- and the old pilot is told he flies a
+   ;; shuttle now, on his own road from that same point.
+   (board!
+    ()
+    (unless (the boarded?)
+      (the (set-slot! :boarded? t))
+      (let ((mother (the mother-object)))
+        (when (and mother (not (eq mother self)))
+          (the-object mother (settle-clock!))
+          (dolist (slot '(:world :pos-x :pos-y :vel-x :vel-y :heading-deg
+                          :game-seconds :landed? :last-burn))
+            (the (set-slot! slot (the-object mother (evaluate slot)))))
+          (the (set-slot! :last-move-note
+                          "boarded, and the ship is yours -- she carries on from where the last pilot left her; he rides a shuttle from here"))
+          (the-object mother
+                      (set-slot! :last-move-note
+                                 "another cockpit boarded and took the ship -- you fly a SHUTTLE now, on your own road from this point; the helm shows where she stands"))
+          (the-object mother (set-slot! :clock-cuts (1+ (the-object mother clock-cuts))))))
+      (setq *mother* (the mother-key))))
+
+   ;; the session's key in the instance table, and the object that
+   ;; pilots the ship (nil when none stands)
+   (mother-key
+    ()
+    (let ((iid (the instance-id)))
+      (and iid (gwl::make-keyword-sensitive iid))))
+
+   (mother-object
+    ()
+    (and *mother* (first (gethash *mother* gwl::*instance-hash-table*))))
+
+   ;; where she stands THIS instant, without settling: the fall from
+   ;; the anchor at the rate in force (nothing mutated)
+   (position-now
+    ()
+    (let* ((rate (the clock-scale))
+           (dt (if (and (the clock-anchor) (/= rate 0) (not (the landed?)))
+                   (* (- (unix-now) (the clock-anchor)) rate)
+                   0)))
+      (if (zerop dt)
+          (values (the pos-x) (the pos-y))
+          (destructuring-bind (vx vy px py)
+              (the (fall (the vel-x) (the vel-y) (the pos-x) (the pos-y) dt))
+            (declare (ignore vx vy))
+            (values px py)))))
+
+   ;; the ship's line on the helm: the pilot is told he has her; a
+   ;; shuttle is told where she stands, live at each render
+   (ship-line
+    ()
+    (let ((mother (the mother-object)))
+      (cond ((or (null mother) (eq mother self))
+             "the ship: yours &mdash; this cockpit pilots the basilisk")
+            (t (multiple-value-bind (x y) (the-object mother (position-now))
+                 (format nil "the ship: x ~:d km &middot; y ~:d km &mdash; ~a frame, ~a &mdash; you fly a shuttle"
+                         (round x) (round y)
+                         (the-object mother world-name)
+                         (if (the-object mother landed?) "down" "aloft")))))))
 
    (after-set!
     ()
