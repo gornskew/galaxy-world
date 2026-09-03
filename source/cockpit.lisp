@@ -526,33 +526,33 @@
                  :radius 0.018
                  :display-controls (list :color +gauge-face+))
 
-   ;; the pedals: TWO, brake and gas, the way an automatic's floor
-   ;; is -- no clutch (the third pedal the light foot used to get
-   ;; read as one, 2026-09-03; feather is a light press of the gas
-   ;; now, see the hands script).  The brake is the wide one to
-   ;; port, the gas the tall narrow one to starboard.  They HANG
-   ;; from the dash, the way a real truck hangs them -- floor-
-   ;; mounted they sat below the glass line and no pointer could
-   ;; reach them -- and they hang SHORT, tucked up under the panel,
-   ;; so the foot of the frame stays squat.  The brake is fully
-   ;; present and does nothing whatsoever -- space doesn't brake,
-   ;; and the pedal is how the cockpit says so.
+   ;; the pedals: feather, brake, gas -- no clutch, she's an
+   ;; automatic, and the light foot gets the third pedal, standing
+   ;; where a clutch would (the user, 2026-09-03: it looked like a
+   ;; clutch, so it wears a FEATHER on its face now; each pedal
+   ;; carries its icon, see pedal-icon-x3d).  They HANG from the
+   ;; dash, the way a real truck hangs them -- floor-mounted they
+   ;; sat below the glass line and no pointer could reach them --
+   ;; and they hang SHORT, tucked up under the panel, so the foot
+   ;; of the frame stays squat.  The brake is fully present and
+   ;; does nothing whatsoever -- space doesn't brake, and the
+   ;; pedal is how the cockpit says so.
    (pedal-plates :type 'box
-                 :sequence (:size 2)
+                 :sequence (:size 3)
                  :center (make-point 0.695
-                                     (ecase (the-child index) (0 0.07) (1 -0.10))
-                                     (ecase (the-child index) (0 0.215) (1 0.20)))
+                                     (ecase (the-child index) (0 0.21) (1 0.06) (2 -0.10))
+                                     (ecase (the-child index) (0 0.215) (1 0.215) (2 0.20)))
                  :width 0.02
-                 :length (ecase (the-child index) (0 0.09) (1 0.05))
-                 :height (ecase (the-child index) (0 0.06) (1 0.10))
+                 :length (ecase (the-child index) (0 0.07) (1 0.09) (2 0.05))
+                 :height (ecase (the-child index) (0 0.06) (1 0.06) (2 0.10))
                  :display-controls (list :color +rubber+))
    (pedal-stalks :type 'c-cylinder
-                 :sequence (:size 2)
+                 :sequence (:size 3)
                  :start (make-point 0.72
-                                    (ecase (the-child index) (0 0.07) (1 -0.10))
+                                    (ecase (the-child index) (0 0.21) (1 0.06) (2 -0.10))
                                     0.275)
                  :end (make-point 0.70
-                                  (ecase (the-child index) (0 0.07) (1 -0.10))
+                                  (ecase (the-child index) (0 0.21) (1 0.06) (2 -0.10))
                                   0.24)
                  :radius 0.008
                  :display-controls (list :color +chrome+))))
@@ -1439,18 +1439,20 @@ X_ITE), because a fresh scene document stands with the light off.")
                                     (make-vector -0.06 -0.34 0.10))))
                (format nil "<Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material id=\"shifter-knob-mat\" DEF=\"shifter-knob-mat\" diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Sphere radius=\"0.018\"></Sphere></Shape></Transform>"
                        (get-x kc) (get-y kc) (get-z kc))))
-     ;; the pedal rigs, each with its own touch: brake and gas.
-     ;; The selected pedal STAYS pressed (the hands script sets the
-     ;; rig's translation), so the pedal reads its own state
+     ;; the pedal rigs, each with its own touch: feather, brake,
+     ;; gas, each wearing its icon.  The selected pedal STAYS
+     ;; pressed (the hands script sets the rig's translation), so
+     ;; the pedal reads its own state
      (apply #'string-append
             (mapcar (lambda (i)
-                      (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\"><TouchSensor DEF=\"pedal-touch-~d\" id=\"pedal-touch-~d\" description=\"~a\"></TouchSensor>~a~a</Transform>"
+                      (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\"><TouchSensor DEF=\"pedal-touch-~d\" id=\"pedal-touch-~d\" description=\"~a\"></TouchSensor>~a~a~a</Transform>"
                               i i i i
-                              (ecase i (0 "the brake")
-                                       (1 "gas — a tap feathers her, a second tap floors it"))
+                              (ecase i (0 "feather — a breath of gas")
+                                       (1 "the brake") (2 "gas — burn"))
                               (leaf-x3d (the-object cab (pedal-plates i)))
-                              (leaf-x3d (the-object cab (pedal-stalks i)))))
-                    (list 0 1)))
+                              (leaf-x3d (the-object cab (pedal-stalks i)))
+                              (pedal-icon-x3d i (the-object cab (pedal-plates i)))))
+                    (list 0 1 2)))
      ;; the steerage lamps: five ticks under the compass, the
      ;; active band lit -- script-lit under either renderer, so
      ;; the wheel's five in-place orientation calls read off the
@@ -1898,7 +1900,7 @@ window.GW_WIRE = function () {
     sensorEnable('wheel-sensor', !L.wheel);
     sensorEnable('horn-touch', !L.wheel);
     sensorEnable('shifter-touch', !L.gear);
-    [0, 1].forEach(function (i) { sensorEnable('pedal-touch-' + i, !L.pedal); });
+    [0, 1, 2].forEach(function (i) { sensorEnable('pedal-touch-' + i, !L.pedal); });
     Array.prototype.forEach.call(
       document.querySelectorAll('.cadence-btn, .transport-btn'),
       function (b) { b.disabled = L.radio; b.style.opacity = L.radio ? '0.35' : ''; });
@@ -1922,15 +1924,15 @@ window.GW_WIRE = function () {
     var rot = r.getAttribute('rotation').split(/\\s+/);
     r.setAttribute('rotation', rot[0] + ' ' + rot[1] + ' ' + rot[2] + ' ' + ang);
   }
-  // the pedals hold their press: rig 0 the brake, rig 1 the gas,
-  // pressed into the firewall and down by the selected depth.
-  // GW_PEDAL_DEPTH is shared with the X_ITE wire, which sets the
-  // same translations by SAI.
-  window.GW_PEDAL_DEPTH = { ':BRAKE': [0, 0.022], ':FEATHER': [1, 0.012], ':BURN': [1, 0.03] };
+  // the pedals hold their press: rig 0 the feather, 1 the brake,
+  // 2 the gas, pressed into the firewall and down by the selected
+  // depth.  GW_PEDAL_DEPTH is shared with the X_ITE wire, which
+  // sets the same translations by SAI.
+  window.GW_PEDAL_DEPTH = { ':FEATHER': [0, 0.02], ':BRAKE': [1, 0.022], ':BURN': [2, 0.03] };
   function pedalPose () {
     var v = pedalSel ? pedalSel.value : ':BURN';
-    var d = GW_PEDAL_DEPTH[v] || [1, 0];
-    [0, 1].forEach(function (i) {
+    var d = GW_PEDAL_DEPTH[v] || [2, 0];
+    [0, 1, 2].forEach(function (i) {
       var rig = document.getElementById('pedal-rig-' + i);
       if (!rig) return;
       var p = (i === d[0]) ? d[1] : 0;
@@ -2066,20 +2068,14 @@ window.GW_WIRE = function () {
     setShifterPose(gearPose[next]);
     readout();
   });
-  // two pedals, an automatic's floor: the brake to port, the gas
-  // to starboard.  A tap on the gas feathers her, a second tap
-  // floors it (and a third feathers again); a tap on the brake is
-  // the brake.  The selected pedal STAYS pressed -- its depth is
-  // the readout, a light press for feather and the floor for burn
-  touch('pedal-touch-0', function () {
-    if (lockState().pedal || !pedalSel) return;
-    pedalSel.value = ':BRAKE';
-    readout();
-  });
-  touch('pedal-touch-1', function () {
-    if (lockState().pedal || !pedalSel) return;
-    pedalSel.value = pedalSel.value === ':FEATHER' ? ':BURN' : ':FEATHER';
-    readout();
+  // three pedals, a tap each: feather, brake, gas.  The selected
+  // pedal STAYS pressed -- its depth is the readout
+  [':FEATHER', ':BRAKE', ':BURN'].forEach(function (v, i) {
+    touch('pedal-touch-' + i, function () {
+      if (lockState().pedal || !pedalSel) return;
+      pedalSel.value = v;
+      readout();
+    });
   });
   if (pedalSel) pedalSel.addEventListener('change', readout);
   // the dash radio: preset buttons drive the hidden radio inputs,
@@ -2228,6 +2224,22 @@ window.GW_WIRE = function () {
 (defun painted-quad-x3d (texture-id corners &key (emissive "0.3 0.3 0.3"))
   (format nil "<Shape><Appearance><ImageTexture DEF=\"~a\" id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"1 1 1\" emissiveColor=\"~a\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"~{~{~,4f~^ ~}~^, ~}\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
           texture-id texture-id emissive corners))
+
+;; A pedal's icon: a square painted quad on the plate's face (the
+;; side toward the driver), sized to the plate's shorter edge, so
+;; the feather, the brake mark and the flame ride the pedal and
+;; press with it.  Painted by the paint shop as pedal-tex-N.
+(defun pedal-icon-x3d (i plate)
+  (let* ((c (the-object plate center))
+         (s (- (/ (min (the-object plate length) (the-object plate height)) 2) 0.004))
+         (x (- (get-x c) (/ (the-object plate width) 2) 0.0006))
+         (y (get-y c)) (z (get-z c)))
+    (painted-quad-x3d (format nil "pedal-tex-~d" i)
+                      (list (list x (+ y s) (- z s))
+                            (list x (- y s) (- z s))
+                            (list x (- y s) (+ z s))
+                            (list x (+ y s) (+ z s)))
+                      :emissive "0.5 0.5 0.5")))
 
 ;; The dash displays the page paints (see *paint-shop-js*): the
 ;; three dial faces -- ticks and numerals on the speedo, the
@@ -2407,6 +2419,53 @@ window.GW_WIRE = function () {
     });
   };
   GW_PAINT_READOUT('N · amidships');
+  // the pedal icons: a feather for the light foot, the brake's
+  // mark (a disc between its pads) for the brake, a flame for the
+  // gas -- pale line work on the rubber
+  function pedalIcon (id, draw) {
+    tex([id], 128, 128, function (g, w, h) {
+      g.clearRect(0, 0, w, h);
+      g.strokeStyle = '#d8dce0'; g.fillStyle = '#d8dce0';
+      g.lineWidth = 5; g.lineCap = 'round'; g.lineJoin = 'round';
+      draw(g, w, h);
+    });
+  }
+  pedalIcon('pedal-tex-0', function (g, w, h) {
+    // the quill from lower left to upper right, the vane a leaf
+    // about it, barbs slanting off the quill
+    g.save(); g.translate(w / 2, h / 2); g.rotate(-0.75);
+    g.beginPath(); g.moveTo(0, 50); g.lineTo(0, -46); g.stroke();
+    g.beginPath(); g.moveTo(0, -50);
+    g.bezierCurveTo(26, -30, 26, 10, 0, 40);
+    g.bezierCurveTo(-26, 10, -26, -30, 0, -50);
+    g.closePath(); g.stroke();
+    g.lineWidth = 3;
+    [-30, -16, -2, 12].forEach(function (y) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(18, y - 12); g.stroke();
+      g.beginPath(); g.moveTo(0, y); g.lineTo(-18, y - 12); g.stroke();
+    });
+    g.restore();
+  });
+  pedalIcon('pedal-tex-1', function (g, w, h) {
+    var cx = w / 2, cy = h / 2;
+    g.lineWidth = 7;
+    g.beginPath(); g.arc(cx, cy, 30, 0, 6.2832); g.stroke();
+    g.beginPath(); g.arc(cx, cy, 48, 2.4, 3.9); g.stroke();
+    g.beginPath(); g.arc(cx, cy, 48, -0.75, 0.75); g.stroke();
+    g.beginPath(); g.moveTo(cx, cy - 16); g.lineTo(cx, cy + 4); g.stroke();
+    g.beginPath(); g.arc(cx, cy + 14, 4, 0, 6.2832); g.fill();
+  });
+  pedalIcon('pedal-tex-2', function (g, w, h) {
+    var cx = w / 2, cy = h / 2;
+    g.beginPath(); g.moveTo(cx, cy - 52);
+    g.bezierCurveTo(cx + 34, cy - 14, cx + 30, cy + 20, cx, cy + 50);
+    g.bezierCurveTo(cx - 30, cy + 20, cx - 34, cy - 14, cx, cy - 52);
+    g.closePath(); g.stroke();
+    g.beginPath(); g.moveTo(cx + 4, cy - 10);
+    g.bezierCurveTo(cx + 18, cy + 10, cx + 12, cy + 26, cx, cy + 34);
+    g.bezierCurveTo(cx - 12, cy + 26, cx - 14, cy + 8, cx + 4, cy - 10);
+    g.closePath(); g.fill();
+  });
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
     var pips = [[[0.5,0.5]],
@@ -4551,17 +4610,13 @@ function toggleHelm () {
       gearSel.value = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
       changed(gearSel);
     });
-    // two pedals (see the hands script): the brake, and the gas
-    // that feathers on a tap and floors on the next
-    onRelease('pedal-touch-0', function () {
-      if (locks().pedal || !pedalSel) return;
-      pedalSel.value = ':BRAKE';
-      changed(pedalSel);
-    });
-    onRelease('pedal-touch-1', function () {
-      if (locks().pedal || !pedalSel) return;
-      pedalSel.value = pedalSel.value === ':FEATHER' ? ':BURN' : ':FEATHER';
-      changed(pedalSel);
+    // three pedals, a tap each (see the hands script)
+    [':FEATHER', ':BRAKE', ':BURN'].forEach(function (v, i) {
+      onRelease('pedal-touch-' + i, function () {
+        if (locks().pedal || !pedalSel) return;
+        pedalSel.value = v;
+        changed(pedalSel);
+      });
     });
     onRelease('horn-touch', function () {
       if (locks().wheel) return;
@@ -4657,11 +4712,12 @@ function toggleHelm () {
       en('shifter-touch', !L.gear);
       en('pedal-touch-0', !L.pedal);
       en('pedal-touch-1', !L.pedal);
+      en('pedal-touch-2', !L.pedal);
       // the pedals hold their press: the selected one stays down
       // by its depth (the table the hands script shares)
       var pd = window.GW_PEDAL_DEPTH || {};
-      var dd = pd[pedalSel ? pedalSel.value : ':BURN'] || [1, 0];
-      [0, 1].forEach(function (i) {
+      var dd = pd[pedalSel ? pedalSel.value : ':BURN'] || [2, 0];
+      [0, 1, 2].forEach(function (i) {
         var rig = named('pedal-rig-' + i); if (!rig) return;
         var p = (i === dd[0]) ? dd[1] : 0;
         try { rig.getField('translation').setValue(new X3D.SFVec3f(p, 0, -p / 2)); } catch (e) {}
