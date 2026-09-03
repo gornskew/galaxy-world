@@ -61,7 +61,13 @@
    ;; flatscreens in the instrument panel instead.
    (cowl-center (make-point -1.067 -0.36 0.55))
    (cowl-radius 2.097)
-   (header-center (make-point -1.11 -0.36 1.05))
+   ;; the roofline stands at 1.12 (raised from 1.05, 2026-09-03):
+   ;; from the driver's eye the header rail and the front roof
+   ;; strip lay a wide band across the top of the glass, right
+   ;; through the crown of the world nosed-in ahead.  Every roof
+   ;; member reads (the roof-z); the header rail is thinner too.
+   (roof-z 1.12)
+   (header-center (make-point -1.11 -0.36 (the roof-z)))
    (header-radius 2.0)
    (greenhouse-span (deg->rad 48))
    ;; the cab's inner walls, where the glass sweep lands -- a roomy
@@ -76,6 +82,12 @@
                  (add-vectors
                   (scalar*vector (* (the wheel-radius) (cos alpha)) (the wheel-up))
                   (scalar*vector (* (the wheel-radius) (sin alpha)) (the wheel-across)))))
+
+   (rim-tangent
+    (alpha)  ; the rim's running direction at alpha, unit
+    (add-vectors
+     (scalar*vector (- (sin alpha)) (the wheel-up))
+     (scalar*vector (cos alpha) (the wheel-across))))
 
    (arc-point
     (center radius theta)  ; azimuth from +x, in center's z plane
@@ -100,18 +112,21 @@
     (theta)  ; horizontal tangent along the sweep
     (make-vector (- (sin theta)) (cos theta) 0))
 
-   ;; the rim, translucent now: the leather wrap is gone so the
-   ;; gauges read straight through the wheel.  Still a fine
-   ;; smooth-shaded mesh so the silhouette stays round.
+   ;; the rim, wrapped in leather again (2026-09-03): the wheel is
+   ;; small and low enough now that the dials clear it, so the
+   ;; grain comes back -- the page paints it (leather-tex) and
+   ;; both renderers drink it.  A fine smooth-shaded mesh so the
+   ;; silhouette stays round; the near-white diffuse is for X_ITE,
+   ;; which modulates the texture by it.
    (wheel-rim-x3d
     ()
     (torus-x3d :center (the wheel-center)
                :axis (the column-axis)
                :across (the wheel-across)
                :major-radius (the wheel-radius)
-               :minor-radius 0.011
-               :fallback-color "0.72 0.82 0.88"
-               :transparency 0.55)))
+               :minor-radius 0.013
+               :texture-id "leather-tex"
+               :fallback-color "0.95 0.9 0.85")))
 
   :objects
   (;; the shell of the room: floor, bench, instrument panel
@@ -219,7 +234,7 @@
    ;; the rear-view mirror, hung from the header at the cab's
    ;; centerline
    (mirror-stem :type 'c-cylinder
-                :start (make-point 0.86 -0.36 1.03)
+                :start (make-point 0.86 -0.36 (- (the roof-z) 0.02))
                 :end (make-point 0.78 -0.36 0.98)
                 :radius 0.008
                 :display-controls (list :color +chrome+))
@@ -270,7 +285,7 @@
                 :sequence (:size 10)
                 :start (the (header-point (the (span-theta (the-child index) 10))))
                 :end (the (header-point (the (span-theta (1+ (the-child index)) 10))))
-                :radius 0.02
+                :radius 0.012
                 :display-controls (list :color +paint+))
 
    (a-pillars :type 'c-cylinder
@@ -336,8 +351,8 @@
                  :end (make-point -1.65
                                   (ecase (the-child index)
                                     (0 (the port-wall)) (1 (the starboard-wall)))
-                                  1.03)
-                 :radius 0.02
+                                  (- (the roof-z) 0.02))
+                 :radius 0.014
                  :display-controls (list :color +paint+))
 
    (rear-posts :type 'c-cylinder
@@ -349,7 +364,7 @@
                :end (make-point -1.65
                                 (ecase (the-child index)
                                   (0 (the port-wall)) (1 (the starboard-wall)))
-                                1.03)
+                                (- (the roof-z) 0.02))
                :radius 0.028
                :display-controls (list :color +paint+))
 
@@ -357,10 +372,10 @@
                :sequence (:size 2)
                :center (make-point -0.415
                                    (ecase (the-child index) (0 0.488) (1 -1.208))
-                                   0.795)
+                                   (/ (+ 0.55 (- (the roof-z) 0.02)) 2))
                :width 2.48
                :length 0.012
-               :height 0.45
+               :height (- (the roof-z) 0.02 0.55)
                :display-controls +glass-controls+)
 
    ;; the body below the beltline, so the glasshouse stands on
@@ -410,30 +425,32 @@
               :display-controls (list :color +paint+))
 
    (rear-header :type 'c-cylinder
-                :start (make-point -1.65 (the starboard-wall) 1.03)
-                :end (make-point -1.65 (the port-wall) 1.03)
-                :radius 0.02
+                :start (make-point -1.65 (the starboard-wall) (- (the roof-z) 0.02))
+                :end (make-point -1.65 (the port-wall) (- (the roof-z) 0.02))
+                :radius 0.014
                 :display-controls (list :color +paint+))
 
    (rear-glass :type 'box
-               :center (make-point -1.645 -0.36 0.795)
+               :center (make-point -1.645 -0.36 (/ (+ 0.55 (- (the roof-z) 0.02)) 2))
                :width 0.012
                :length 1.58
-               :height 0.45
+               :height (- (the roof-z) 0.02 0.55)
                :display-controls +glass-controls+)
 
    ;; the roof is OPEN: a painted rim around the edge, and over the
    ;; opening the glass bubble star-roof (see star-dome-x3d).  Strips
    ;; run front, rear, port, starboard, leaving the center to the sky.
+   ;; The front strip is a narrow lip now: at 0.26 wide its underside
+   ;; was the broad band across the top of the driver's glass.
    (roof-rims :type 'box
               :sequence (:size 4)
               :center (ecase (the-child index)
-                        (0 (make-point 0.73 -0.36 1.055))    ; front
-                        (1 (make-point -1.62 -0.36 1.055))   ; rear
-                        (2 (make-point -0.45 0.435 1.055))   ; port
-                        (3 (make-point -0.45 -1.155 1.055))) ; starboard
+                        (0 (make-point 0.82 -0.36 (+ (the roof-z) 0.005)))    ; front
+                        (1 (make-point -1.62 -0.36 (+ (the roof-z) 0.005)))   ; rear
+                        (2 (make-point -0.45 0.435 (+ (the roof-z) 0.005)))   ; port
+                        (3 (make-point -0.45 -1.155 (+ (the roof-z) 0.005)))) ; starboard
               :width (ecase (the-child index)
-                       (0 0.26) (1 0.24) (2 2.10) (3 2.10))
+                       (0 0.12) (1 0.24) (2 2.10) (3 2.10))
               :length (ecase (the-child index)
                         (0 1.80) (1 1.80) (2 0.21) (3 0.21))
               :height 0.03
@@ -472,14 +489,26 @@
            :radius 0.008
            :display-controls (list :color +chrome+))
 
-   ;; the brody knob's stalk: the knob itself is hand-cut markup in
-   ;; helm-rigs-x3d, because it PULSES -- a slow ember glow that
-   ;; says "grab me" without waiting on anyone's cursor
-   (brody-stalk :type 'c-cylinder
+   ;; the brody knob's hardware: a chrome clamp collar wrapping the
+   ;; rim at half past ten, and the shank standing out of the wheel
+   ;; plane toward the driver.  The knob itself is hand-cut markup
+   ;; in helm-rigs-x3d, because it PULSES -- a slow ember glow that
+   ;; says "grab me" without waiting on anyone's cursor.  (A ball
+   ;; on a wire read as a ball on a wire, 2026-09-03: a real spinner
+   ;; is a barrel on a bracket that clamps the rim.)
+   (brody-clamp :type 'c-cylinder
+                :start (add-vectors (the (rim-point (deg->rad 45)))
+                                    (scalar*vector -0.016 (the (rim-tangent (deg->rad 45)))))
+                :end (add-vectors (the (rim-point (deg->rad 45)))
+                                  (scalar*vector 0.016 (the (rim-tangent (deg->rad 45)))))
+                :radius 0.019
+                :number-of-sections 20
+                :display-controls (list :color +chrome+))
+   (brody-shank :type 'c-cylinder
                 :start (the (rim-point (deg->rad 45)))
                 :end (add-vectors (the (rim-point (deg->rad 45)))
-                                  (scalar*vector 0.035 (the column-axis)))
-                :radius 0.005
+                                  (scalar*vector 0.04 (the column-axis)))
+                :radius 0.007
                 :display-controls (list :color +chrome+))
 
    ;; the column shift of an automatic: forward, neutral, reverse
@@ -497,33 +526,34 @@
                  :radius 0.018
                  :display-controls (list :color +gauge-face+))
 
-   ;; the pedals: feather, brake, gas -- no clutch, she's an
-   ;; automatic, and the light foot gets the third pedal instead.
-   ;; They HANG from the dash, the way a real truck hangs them --
-   ;; floor-mounted they sat below the glass line and no pointer
-   ;; could reach them.  The brake is fully present and does
-   ;; nothing whatsoever -- space doesn't brake, and the pedal is
-   ;; how the cockpit says so.
+   ;; the pedals: TWO, brake and gas, the way an automatic's floor
+   ;; is -- no clutch (the third pedal the light foot used to get
+   ;; read as one, 2026-09-03; feather is a light press of the gas
+   ;; now, see the hands script).  The brake is the wide one to
+   ;; port, the gas the tall narrow one to starboard.  They HANG
+   ;; from the dash, the way a real truck hangs them -- floor-
+   ;; mounted they sat below the glass line and no pointer could
+   ;; reach them -- and they hang SHORT, tucked up under the panel,
+   ;; so the foot of the frame stays squat.  The brake is fully
+   ;; present and does nothing whatsoever -- space doesn't brake,
+   ;; and the pedal is how the cockpit says so.
    (pedal-plates :type 'box
-                 :sequence (:size 3)
+                 :sequence (:size 2)
                  :center (make-point 0.695
-                                     (ecase (the-child index)
-                                       (0 0.22) (1 0.05) (2 -0.14))
-                                     0.18)
+                                     (ecase (the-child index) (0 0.07) (1 -0.10))
+                                     (ecase (the-child index) (0 0.215) (1 0.20)))
                  :width 0.02
-                 :length (ecase (the-child index) (0 0.09) (1 0.09) (2 0.06))
-                 :height (ecase (the-child index) (0 0.08) (1 0.08) (2 0.15))
+                 :length (ecase (the-child index) (0 0.09) (1 0.05))
+                 :height (ecase (the-child index) (0 0.06) (1 0.10))
                  :display-controls (list :color +rubber+))
    (pedal-stalks :type 'c-cylinder
-                 :sequence (:size 3)
+                 :sequence (:size 2)
                  :start (make-point 0.72
-                                    (ecase (the-child index)
-                                      (0 0.22) (1 0.05) (2 -0.14))
-                                    0.27)
+                                    (ecase (the-child index) (0 0.07) (1 -0.10))
+                                    0.275)
                  :end (make-point 0.70
-                                  (ecase (the-child index)
-                                    (0 0.22) (1 0.05) (2 -0.14))
-                                  0.21)
+                                  (ecase (the-child index) (0 0.07) (1 -0.10))
+                                  0.24)
                  :radius 0.008
                  :display-controls (list :color +chrome+))))
 
@@ -1146,8 +1176,8 @@ X_ITE), because a fresh scene document stands with the light off.")
 ;; an ellipsoidal dome meshed band by band, its rim landing on the
 ;; painted roof strips.  solid=false so the glass reads from the
 ;; bench seats below it, which is the whole point.
-(defun star-dome-x3d (&key (center (make-point -0.45 -0.36 1.05))
-                           (rx 1.10) (ry 0.72) (rz 0.48)
+(defun star-dome-x3d (&key (center (make-point -0.45 -0.36 1.12))
+                           (rx 1.22) (ry 0.72) (rz 0.48)
                            (bands 8) (sectors 28))
   (let ((points (make-string-output-stream))
         (idx (make-string-output-stream)))
@@ -1273,16 +1303,38 @@ X_ITE), because a fresh scene document stands with the light off.")
 ;; the move.  Renders per cockpit -- the lit key is session state
 ;; -- and the page's script wires the clicks into the same hidden
 ;; form controls everything else drives.
+;; The key icons: chevrons on the key face, a fan-speed count for
+;; the channels (one for slow, four for fastest) and the tape's own
+;; marks on the transport (two pointing back for rewind, one ahead
+;; for play).  Geometry, not Text: neither renderer's built-in
+;; fonts are a sure thing, and a triangle is.  Pale, so they read
+;; on the lit key and the dark one alike.  DIR is the way the
+;; chevrons point: -1 to starboard (the driver's right, the way
+;; play points), +1 to port.
+(defun chevrons-x3d (y z n dir)
+  (let ((pitch 0.0085) (half 0.0055) (tip 0.0045) (base 0.003))
+    (with-output-to-string (out)
+      (format out "<Shape><Appearance><Material diffuseColor=\"0 0 0\" emissiveColor=\"0.78 0.86 0.92\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"")
+      (dotimes (i n) (format out "~d ~d ~d -1 " (* 3 i) (+ 1 (* 3 i)) (+ 2 (* 3 i))))
+      (format out "\"><Coordinate point=\"")
+      (dotimes (i n)
+        (let* ((yc (+ y (* (- i (/ (1- n) 2.0)) pitch (- dir))))
+               (yb (- yc (* dir base)))
+               (yt (+ yc (* dir tip))))
+          (format out "0.7133 ~,4f ~,4f, 0.7133 ~,4f ~,4f, 0.7133 ~,4f ~,4f, "
+                  yb (- z half) yt z yb (+ z half))))
+      (format out "\"></Coordinate></IndexedFaceSet></Shape>"))))
+
 (defun dash-radio-x3d (cadence transport)
-  (labels ((key-x3d (id mat-id y z len lit? description)
+  (labels ((key-x3d (id mat-id y z len lit? description icon)
              ;; every key carries its own TouchSensor: sensor
              ;; output events are the reliable interaction channel
              ;; in x3dom, and the forgiving one under a touchpad
-             (format nil "<Transform id=\"~a\" DEF=\"~a\"><TouchSensor id=\"~a-touch\" DEF=\"~a-touch\" description=\"~a\"></TouchSensor><Transform translation=\"0.7185 ~,4f ~,4f\"><Shape><Appearance><Material id=\"~a\" DEF=\"~a\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Box size=\"0.009 ~,4f 0.028\"></Box></Shape></Transform></Transform>"
+             (format nil "<Transform id=\"~a\" DEF=\"~a\"><TouchSensor id=\"~a-touch\" DEF=\"~a-touch\" description=\"~a\"></TouchSensor><Transform translation=\"0.7185 ~,4f ~,4f\"><Shape><Appearance><Material id=\"~a\" DEF=\"~a\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Box size=\"0.009 ~,4f 0.028\"></Box></Shape></Transform>~a</Transform>"
                      id id id id (or description "") y z mat-id mat-id
                      (if lit? "0.91 0.78 0.22" "0.13 0.15 0.17")
                      (if lit? "0.55 0.45 0.10" "0.05 0.06 0.07")
-                     len)))
+                     len icon)))
     (string-append
      ;; the plate
      "<Transform translation=\"0.7245 0 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
@@ -1296,12 +1348,15 @@ X_ITE), because a fresh scene document stands with the light off.")
              do (format out "~a"
                         (key-x3d (format nil "radio-preset-~d" i)
                                  (format nil "radio-preset-mat-~d" i)
-                                 y 0.331 0.048 (eql cadence val) label))))
+                                 y 0.331 0.048 (eql cadence val) label
+                                 (chevrons-x3d y 0.331 (1+ i) -1)))))
      ;; the transport: rewind to port, play to starboard
      (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.035 0.292 0.05
-              (eql transport :rewind) "rewind — the turn falls into the past")
+              (eql transport :rewind) "rewind — the turn falls into the past"
+              (chevrons-x3d 0.035 0.292 2 1))
      (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.035 0.292 0.05
-              (eql transport :play) "play — the turn runs forward")
+              (eql transport :play) "play — the turn runs forward"
+              (chevrons-x3d -0.035 0.292 1 -1))
      ;; the starter, under the climb gauge: press it and the move
      ;; is made
      "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
@@ -1345,16 +1400,27 @@ X_ITE), because a fresh scene document stands with the light off.")
               (apply #'string-append
                      (mapcar #'leaf-x3d
                              (list-elements (the-object cab spokes))))
-              (leaf-x3d (the-object cab brody-stalk))
+              (leaf-x3d (the-object cab brody-clamp))
+              (leaf-x3d (the-object cab brody-shank))
               ;; the brody knob, pulsing like an ember: the glow is
               ;; the affordance -- it turns with the wheel and grabs
-              ;; like the wheel, riding inside the same sensor rig
-              (let ((kc (add-vectors
-                         (the-object cab (rim-point (deg->rad 45)))
-                         (scalar*vector 0.048
-                                        (the-object cab column-axis)))))
-                (format nil "<TimeSensor DEF=\"brody-pulse\" cycleInterval=\"2.6\" loop=\"true\"></TimeSensor><ColorInterpolator DEF=\"brody-glow\" key=\"0 0.5 1\" keyValue=\"0.45 0.10 0.06 0.95 0.42 0.18 0.45 0.10 0.06\"></ColorInterpolator><Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material DEF=\"brody-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.45 0.10 0.06\" specularColor=\"0.6 0.4 0.3\" shininess=\"0.5\"></Material></Appearance><Sphere radius=\"0.022\"></Sphere></Shape></Transform><ROUTE fromNode=\"brody-pulse\" fromField=\"fraction_changed\" toNode=\"brody-glow\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"brody-glow\" fromField=\"value_changed\" toNode=\"brody-mat\" toField=\"set_emissiveColor\"></ROUTE>"
-                        (get-x kc) (get-y kc) (get-z kc))))
+              ;; like the wheel, riding inside the same sensor rig.
+              ;; A spinner's shape: a chrome ferrule where the shank
+              ;; meets it, a red BARREL standing along the column
+              ;; axis (the same y-up-the-column rotation the sensor
+              ;; rig uses), and a domed top.  Safety red, though
+              ;; this wheel never spins back on its own.
+              (let* ((rp (the-object cab (rim-point (deg->rad 45))))
+                     (ax (the-object cab column-axis))
+                     (fc (add-vectors rp (scalar*vector 0.042 ax)))
+                     (kc (add-vectors rp (scalar*vector 0.068 ax)))
+                     (dc (add-vectors rp (scalar*vector 0.093 ax))))
+                (format nil "<TimeSensor DEF=\"brody-pulse\" cycleInterval=\"2.6\" loop=\"true\"></TimeSensor><ColorInterpolator DEF=\"brody-glow\" key=\"0 0.5 1\" keyValue=\"0.30 0.04 0.03 0.80 0.20 0.10 0.30 0.04 0.03\"></ColorInterpolator><Transform translation=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f ~,5f\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\" specularColor=\"0.7 0.7 0.7\" shininess=\"0.7\"></Material></Appearance><Cylinder radius=\"0.0195\" height=\"0.008\"></Cylinder></Shape></Transform><Transform translation=\"~,4f ~,4f ~,4f\" rotation=\"~,5f ~,5f ~,5f ~,5f\"><Shape><Appearance><Material DEF=\"brody-mat\" diffuseColor=\"0.80 0.10 0.08\" emissiveColor=\"0.30 0.04 0.03\" specularColor=\"0.8 0.6 0.6\" shininess=\"0.6\"></Material></Appearance><Cylinder radius=\"0.017\" height=\"0.05\"></Cylinder></Shape></Transform><Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material USE=\"brody-mat\"></Material></Appearance><Sphere radius=\"0.017\"></Sphere></Shape></Transform><ROUTE fromNode=\"brody-pulse\" fromField=\"fraction_changed\" toNode=\"brody-glow\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"brody-glow\" fromField=\"value_changed\" toNode=\"brody-mat\" toField=\"set_emissiveColor\"></ROUTE>"
+                        (get-x fc) (get-y fc) (get-z fc)
+                        (get-x u) (get-y u) (get-z u) phi
+                        (get-x kc) (get-y kc) (get-z kc)
+                        (get-x u) (get-y u) (get-z u) phi
+                        (get-x dc) (get-y dc) (get-z dc))))
              (the-object cab wheel-rim-x3d))
      ;; the shifter rig: swings about the column axis at the pivot.
      ;; A TouchSensor makes the grab RELIABLE -- x3dom's bare DOM
@@ -1373,16 +1439,18 @@ X_ITE), because a fresh scene document stands with the light off.")
                                     (make-vector -0.06 -0.34 0.10))))
                (format nil "<Transform translation=\"~,4f ~,4f ~,4f\"><Shape><Appearance><Material id=\"shifter-knob-mat\" DEF=\"shifter-knob-mat\" diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Sphere radius=\"0.018\"></Sphere></Shape></Transform>"
                        (get-x kc) (get-y kc) (get-z kc))))
-     ;; the pedal rigs, each with its own touch
+     ;; the pedal rigs, each with its own touch: brake and gas.
+     ;; The selected pedal STAYS pressed (the hands script sets the
+     ;; rig's translation), so the pedal reads its own state
      (apply #'string-append
             (mapcar (lambda (i)
                       (format nil "<Transform DEF=\"pedal-rig-~d\" id=\"pedal-rig-~d\"><TouchSensor DEF=\"pedal-touch-~d\" id=\"pedal-touch-~d\" description=\"~a\"></TouchSensor>~a~a</Transform>"
                               i i i i
-                              (ecase i (0 "feather — a breath of gas")
-                                       (1 "the brake") (2 "gas — burn"))
+                              (ecase i (0 "the brake")
+                                       (1 "gas — a tap feathers her, a second tap floors it"))
                               (leaf-x3d (the-object cab (pedal-plates i)))
                               (leaf-x3d (the-object cab (pedal-stalks i)))))
-                    (list 0 1 2)))
+                    (list 0 1)))
      ;; the steerage lamps: five ticks under the compass, the
      ;; active band lit -- script-lit under either renderer, so
      ;; the wheel's five in-place orientation calls read off the
@@ -1830,7 +1898,7 @@ window.GW_WIRE = function () {
     sensorEnable('wheel-sensor', !L.wheel);
     sensorEnable('horn-touch', !L.wheel);
     sensorEnable('shifter-touch', !L.gear);
-    [0, 1, 2].forEach(function (i) { sensorEnable('pedal-touch-' + i, !L.pedal); });
+    [0, 1].forEach(function (i) { sensorEnable('pedal-touch-' + i, !L.pedal); });
     Array.prototype.forEach.call(
       document.querySelectorAll('.cadence-btn, .transport-btn'),
       function (b) { b.disabled = L.radio; b.style.opacity = L.radio ? '0.35' : ''; });
@@ -1853,6 +1921,21 @@ window.GW_WIRE = function () {
     if (!r) return;
     var rot = r.getAttribute('rotation').split(/\\s+/);
     r.setAttribute('rotation', rot[0] + ' ' + rot[1] + ' ' + rot[2] + ' ' + ang);
+  }
+  // the pedals hold their press: rig 0 the brake, rig 1 the gas,
+  // pressed into the firewall and down by the selected depth.
+  // GW_PEDAL_DEPTH is shared with the X_ITE wire, which sets the
+  // same translations by SAI.
+  window.GW_PEDAL_DEPTH = { ':BRAKE': [0, 0.022], ':FEATHER': [1, 0.012], ':BURN': [1, 0.03] };
+  function pedalPose () {
+    var v = pedalSel ? pedalSel.value : ':BURN';
+    var d = GW_PEDAL_DEPTH[v] || [1, 0];
+    [0, 1].forEach(function (i) {
+      var rig = document.getElementById('pedal-rig-' + i);
+      if (!rig) return;
+      var p = (i === d[0]) ? d[1] : 0;
+      rig.setAttribute('translation', p.toFixed(3) + ' 0 ' + (-p / 2).toFixed(3));
+    });
   }
   function bandFor (ang) {
     if (ang > 0.9) return ':HARD-PORT';
@@ -1943,6 +2026,9 @@ window.GW_WIRE = function () {
     el.textContent = (gearSel ? (gmap[gearSel.value] || '·') : '·')
       + ' · ' + (wheelSel ? (wheelSel.value === ':EXACT' ? turnPhrase(exactDeg()) : (wmap[wheelSel.value] || '')) : '')
       + (rw ? ' ◀◀' : '');
+    // the same line on the dash strip (GW_TEX carries it to X_ITE)
+    if (window.GW_PAINT_READOUT) { try { GW_PAINT_READOUT(el.textContent); } catch (e) {} }
+    pedalPose();
     var kc = { ':FORWARD': '0.30 0.75 0.35', ':NEUTRAL': '0.85 0.87 0.88',
                ':REVERSE': '0.91 0.60 0.18' };
     var km = document.getElementById('shifter-knob-mat');
@@ -1980,18 +2066,22 @@ window.GW_WIRE = function () {
     setShifterPose(gearPose[next]);
     readout();
   });
-  var pedalVals = [':FEATHER', ':BRAKE', ':BURN'];
-  [0, 1, 2].forEach(function (i) {
-    touch('pedal-touch-' + i, function () {
-      if (lockState().pedal) return;
-      var rig = document.getElementById('pedal-rig-' + i);
-      if (rig) {
-        rig.setAttribute('translation', '0.025 0 -0.012');
-        setTimeout(function () { rig.setAttribute('translation', '0 0 0'); }, 160);
-      }
-      if (pedalSel) pedalSel.value = pedalVals[i];
-    });
+  // two pedals, an automatic's floor: the brake to port, the gas
+  // to starboard.  A tap on the gas feathers her, a second tap
+  // floors it (and a third feathers again); a tap on the brake is
+  // the brake.  The selected pedal STAYS pressed -- its depth is
+  // the readout, a light press for feather and the floor for burn
+  touch('pedal-touch-0', function () {
+    if (lockState().pedal || !pedalSel) return;
+    pedalSel.value = ':BRAKE';
+    readout();
   });
+  touch('pedal-touch-1', function () {
+    if (lockState().pedal || !pedalSel) return;
+    pedalSel.value = pedalSel.value === ':FEATHER' ? ':BURN' : ':FEATHER';
+    readout();
+  });
+  if (pedalSel) pedalSel.addEventListener('change', readout);
   // the dash radio: preset buttons drive the hidden radio inputs,
   // and the station readout names the channel playing
   var stations = { ':SLOW': 'drone 33', ':MEDIUM': 'dub 72',
@@ -2129,7 +2219,45 @@ window.GW_WIRE = function () {
                    (write-the-object cab (geom-base::cad-output-tree))))
                (helm-rigs-x3d cab)
                (wood-panel-x3d)
+               (dash-displays-x3d)
                (star-dome-x3d))))))
+
+;; A textured quad standing in the y-z plane (facing the driver),
+;; the page painting its face: corners run bottom-left, bottom-
+;; right, top-right, top-left as the DRIVER sees them (left = +y).
+(defun painted-quad-x3d (texture-id corners &key (emissive "0.3 0.3 0.3"))
+  (format nil "<Shape><Appearance><ImageTexture DEF=\"~a\" id=\"~a\" url=\"\"></ImageTexture><Material diffuseColor=\"1 1 1\" emissiveColor=\"~a\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"~{~{~,4f~^ ~}~^, ~}\"></Coordinate><TextureCoordinate point=\"0 0, 1 0, 1 1, 0 1\"></TextureCoordinate></IndexedFaceSet></Shape>"
+          texture-id texture-id emissive corners))
+
+;; The dash displays the page paints (see *paint-shop-js*): the
+;; three dial faces -- ticks and numerals on the speedo, the
+;; compass rose, the climb scale -- as quads a hair proud of the
+;; bare faces and behind the needles; and THE READOUT, the title
+;; bar's gear-and-wheel line worn on the dash itself, a lit strip
+;; on the cowl over the port flatscreen, tilted to the driver.
+;; Over the port screen and not over the speedo: from the driver's
+;; eye anything standing on the cowl at center bites the bottom of
+;; the world nosed-in ahead, and out here it stands clear of the
+;; disc.  Visible with the helm card folded or open.
+(defun dash-displays-x3d ()
+  (flet ((dial (id y z r)
+           (painted-quad-x3d id (list (list 0.7150 (+ y r) (- z r))
+                                      (list 0.7150 (- y r) (- z r))
+                                      (list 0.7150 (- y r) (+ z r))
+                                      (list 0.7150 (+ y r) (+ z r))))))
+    (string-append
+     (dial "speedo-face-tex" 0 0.46 0.075)
+     (dial "compass-face-tex" 0.19 0.45 0.047)
+     (dial "climb-face-tex" -0.19 0.45 0.047)
+     ;; the readout's backing plate, dark, a little larger, a hair
+     ;; behind the lit face
+     "<Shape><Appearance><Material diffuseColor=\"0.05 0.06 0.08\" specularColor=\"0.2 0.2 0.2\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7520 0.4600 0.5480, 0.7520 0.2200 0.5480, 0.7674 0.2200 0.6043, 0.7674 0.4600 0.6043\"></Coordinate></IndexedFaceSet></Shape>"
+     (painted-quad-x3d "readout-tex"
+                       (list (list 0.7480 0.45 0.555)
+                             (list 0.7480 0.23 0.555)
+                             (list 0.7634 0.23 0.5973)
+                             (list 0.7634 0.45 0.5973))
+                       :emissive "0.45 0.45 0.45"))))
 
 ;; The page: the view from the driver's seat, the galaxy out past
 ;; where the glass will go.
@@ -2182,6 +2310,103 @@ window.GW_WIRE = function () {
     }
     g.fillStyle = 'rgba(255,220,170,0.05)'; g.fillRect(0, 0, w, h * 0.25);
   });
+  // the dial faces: ticks and numerals, painted to the gauges'
+  // own sweeps (gauge-needle-x3d: phi clockwise from straight up;
+  // canvas angles run clockwise from +x, so phi - 90).  The speedo
+  // recalibrates for the world it serves, so it is a function the
+  // state script calls with the scale; the other two stand.
+  function ang (phi) { return (phi - 90) * Math.PI / 180; }
+  function ticks (g, cx, cy, R, phis, r0, r1, width, color) {
+    g.strokeStyle = color; g.lineWidth = width; g.lineCap = 'round';
+    phis.forEach(function (phi) {
+      var a = ang(phi);
+      g.beginPath();
+      g.moveTo(cx + R * r0 * Math.cos(a), cy + R * r0 * Math.sin(a));
+      g.lineTo(cx + R * r1 * Math.cos(a), cy + R * r1 * Math.sin(a));
+      g.stroke();
+    });
+  }
+  function label (g, cx, cy, R, phi, r, text, font, color) {
+    var a = ang(phi);
+    g.font = font; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, cx + R * r * Math.cos(a), cy + R * r * Math.sin(a));
+  }
+  function face (g, w, h) {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#101418'; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, 6.2832); g.fill();
+    g.strokeStyle = 'rgba(200,210,220,0.25)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 2, 0, 6.2832); g.stroke();
+  }
+  window.GW_PAINT_DIALS = function (full) {
+    full = (typeof full === 'number' && full > 0) ? full : 8;
+    var steps = [0.5, 1, 2, 2.5, 5, 10, 20, 50], step = steps[steps.length - 1];
+    for (var s = 0; s < steps.length; s++) if (steps[s] >= full / 8) { step = steps[s]; break; }
+    tex(['speedo-face-tex'], 256, 256, function (g, w, h) {
+      var cx = w / 2, cy = h / 2, R = w / 2;
+      face(g, w, h);
+      var majors = [], minors = [], v;
+      for (v = 0; v <= full + 1e-6; v += step) majors.push(-120 + 240 * v / full);
+      for (v = step / 2; v < full; v += step) minors.push(-120 + 240 * v / full);
+      ticks(g, cx, cy, R, minors, 0.86, 0.94, 2, '#8a96a4');
+      ticks(g, cx, cy, R, majors, 0.78, 0.94, 3.5, '#e8e0c8');
+      for (v = 0; v <= full + 1e-6; v += step)
+        label(g, cx, cy, R, -120 + 240 * v / full, 0.6,
+              (step < 1 ? v.toFixed(1) : String(Math.round(v))), 'bold 30px sans-serif', '#e8e0c8');
+      label(g, cx, cy, R, 180, 0.42, 'km/s', '20px sans-serif', '#c9a227');
+      g.fillStyle = '#d9dde1'; g.beginPath(); g.arc(cx, cy, 7, 0, 6.2832); g.fill();
+    });
+  };
+  GW_PAINT_DIALS(8);
+  tex(['compass-face-tex'], 256, 256, function (g, w, h) {
+    var cx = w / 2, cy = h / 2, R = w / 2, mn = [], mj = [], d;
+    face(g, w, h);
+    for (d = 0; d < 360; d += 10) (d % 30 ? mn : mj).push(d);
+    ticks(g, cx, cy, R, mn, 0.86, 0.94, 2, '#8a96a4');
+    ticks(g, cx, cy, R, mj, 0.76, 0.94, 3.5, '#e8e0c8');
+    [[0, 'N'], [90, 'E'], [180, 'S'], [270, 'W']].forEach(function (c) {
+      label(g, cx, cy, R, c[0], 0.56, c[1], 'bold 40px sans-serif', c[0] ? '#e8e0c8' : '#e8c839');
+    });
+    [30, 60, 120, 150, 210, 240, 300, 330].forEach(function (d) {
+      label(g, cx, cy, R, d, 0.6, String(d / 10), 'bold 22px sans-serif', '#b8c0c8');
+    });
+    g.fillStyle = '#d9dde1'; g.beginPath(); g.arc(cx, cy, 6, 0, 6.2832); g.fill();
+  });
+  tex(['climb-face-tex'], 256, 256, function (g, w, h) {
+    // level at 9 o'clock, climb toward noon, descent toward the
+    // floor: phi = -90 + 60 * v / 1.5
+    var cx = w / 2, cy = h / 2, R = w / 2, mn = [], mj = [], v;
+    face(g, w, h);
+    for (v = -1.5; v <= 1.5 + 1e-6; v += 0.25) ((Math.round(v * 4) % 2) ? mn : mj).push(-90 + 40 * v);
+    ticks(g, cx, cy, R, mn, 0.86, 0.94, 2, '#8a96a4');
+    ticks(g, cx, cy, R, mj, 0.76, 0.94, 3.5, '#e8e0c8');
+    ticks(g, cx, cy, R, [-90], 0.62, 0.94, 5, '#e8c839');
+    [[-1.5, '1.5'], [-1, '1'], [-0.5, '.5'], [0, '0'], [0.5, '.5'], [1, '1'], [1.5, '1.5']].forEach(function (c) {
+      label(g, cx, cy, R, -90 + 40 * c[0], 0.56, c[1], 'bold 24px sans-serif', c[0] ? '#e8e0c8' : '#e8c839');
+    });
+    label(g, cx, cy, R, -22, 0.78, 'UP', 'bold 18px sans-serif', '#8ec8a0');
+    label(g, cx, cy, R, -158, 0.78, 'DOWN', 'bold 18px sans-serif', '#d88a6a');
+    label(g, cx, cy, R, 90, 0.5, 'climb', '20px sans-serif', '#c9a227');
+    label(g, cx, cy, R, 110, 0.62, 'km/s', '16px sans-serif', '#8a7a2f');
+    g.fillStyle = '#d9dde1'; g.beginPath(); g.arc(cx, cy, 6, 0, 6.2832); g.fill();
+  });
+  // THE READOUT on the dash: the title bar's line (gear, wheel,
+  // the rewind arrows) painted onto the lit strip over the port
+  // flatscreen.  The hands script calls this on every change.
+  window.GW_PAINT_READOUT = function (text) {
+    tex(['readout-tex'], 512, 104, function (g, w, h) {
+      g.clearRect(0, 0, w, h);
+      g.fillStyle = '#07090c'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = 'rgba(232,200,57,0.35)'; g.lineWidth = 3; g.strokeRect(3, 3, w - 6, h - 6);
+      var size = 60;
+      g.font = 'bold ' + size + 'px monospace';
+      while (size > 20 && g.measureText(text).width > w - 40) { size -= 2; g.font = 'bold ' + size + 'px monospace'; }
+      g.fillStyle = '#f4dc6a'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.shadowColor = 'rgba(244,220,106,0.6)'; g.shadowBlur = 10;
+      g.fillText(text, w / 2, h / 2 + 2);
+      g.shadowBlur = 0;
+    });
+  };
+  GW_PAINT_READOUT('N · amidships');
   tex(['dice-tex-0', 'dice-tex-1'], 192, 128, function (g, w, h) {
     g.fillStyle = '#f2efe6'; g.fillRect(0, 0, w, h);
     var pips = [[[0.5,0.5]],
@@ -2732,10 +2957,12 @@ window.GW_WIRE = function () {
               (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
             (the nose-in-json)
             (if (the transit-samples) "Date.now() + 2000" "null")
+            ;; the speedo face is painted to the world's own scale
+            (the speedo-full-scale)
             ;; the scene refresh is gated on the scene GENERATION
             ;; (moves-count, the gw-gen-N stamp every move path
             ;; bumps), not merely on the page being loaded: the
@@ -2882,13 +3109,13 @@ GW_CHECK_IN();"
              (cons :drivers-seat
                    (viewpoint-x3d "drivers-seat" "Driver's seat"
                                   (make-point -0.02 0 0.78)
-                                  ;; lifted from -0.24: the wheel is
-                                  ;; smaller and lower now, so the
-                                  ;; glass gets the vertical back.
-                                  ;; The wider glass takes in the
-                                  ;; hanging pedals at the frame's
-                                  ;; foot.
-                                  (make-vector 0.99 0 -0.15)
+                                  ;; lifted from -0.24, then -0.15:
+                                  ;; the wheel is smaller and lower,
+                                  ;; the roofline higher and the
+                                  ;; pedals tucked, so the glass
+                                  ;; gets the vertical.  The frame's
+                                  ;; foot still takes in the pedals.
+                                  (make-vector 0.99 0 -0.13)
                                   "1.25" :z-near "0.05" :z-far "8000" :up up))
              (cons :jump-seat
                    (viewpoint-x3d "jump-seat" "Jump seat"
@@ -4324,11 +4551,17 @@ function toggleHelm () {
       gearSel.value = gearCycle[(gearCycle.indexOf(gearSel.value) + 1) % gearCycle.length];
       changed(gearSel);
     });
-    [':FEATHER', ':BRAKE', ':BURN'].forEach(function (v, i) {
-      onRelease('pedal-touch-' + i, function () {
-        if (locks().pedal) return;
-        if (pedalSel) pedalSel.value = v;
-      });
+    // two pedals (see the hands script): the brake, and the gas
+    // that feathers on a tap and floors on the next
+    onRelease('pedal-touch-0', function () {
+      if (locks().pedal || !pedalSel) return;
+      pedalSel.value = ':BRAKE';
+      changed(pedalSel);
+    });
+    onRelease('pedal-touch-1', function () {
+      if (locks().pedal || !pedalSel) return;
+      pedalSel.value = pedalSel.value === ':FEATHER' ? ':BURN' : ':FEATHER';
+      changed(pedalSel);
     });
     onRelease('horn-touch', function () {
       if (locks().wheel) return;
@@ -4424,11 +4657,30 @@ function toggleHelm () {
       en('shifter-touch', !L.gear);
       en('pedal-touch-0', !L.pedal);
       en('pedal-touch-1', !L.pedal);
-      en('pedal-touch-2', !L.pedal);
+      // the pedals hold their press: the selected one stays down
+      // by its depth (the table the hands script shares)
+      var pd = window.GW_PEDAL_DEPTH || {};
+      var dd = pd[pedalSel ? pedalSel.value : ':BURN'] || [1, 0];
+      [0, 1].forEach(function (i) {
+        var rig = named('pedal-rig-' + i); if (!rig) return;
+        var p = (i === dd[0]) ? dd[1] : 0;
+        try { rig.getField('translation').setValue(new X3D.SFVec3f(p, 0, -p / 2)); } catch (e) {}
+      });
+      // the readout strip on the dash drinks the freshly painted
+      // line (the hands script's readout paints before this runs)
+      var rt = named('readout-tex');
+      if (rt && window.GW_TEX && GW_TEX['readout-tex']) {
+        try { rt.getField('url').setValue(new X3D.MFString(GW_TEX['readout-tex'])); } catch (e) {
+          try { rt.url = new X3D.MFString(GW_TEX['readout-tex']); } catch (e2) {}
+        }
+      }
     }
     if (gearSel) gearSel.addEventListener('change', indicators);
     if (wheelSel) wheelSel.addEventListener('change', indicators);
+    if (pedalSel) pedalSel.addEventListener('change', indicators);
     if (roadSel) roadSel.addEventListener('change', indicators);
+    var angleIn = document.querySelector('#helm-body input[step=any]');
+    if (angleIn) angleIn.addEventListener('input', indicators);
     Array.prototype.forEach.call(
       document.querySelectorAll('.cadence-btn, .transport-btn'),
       function (b) {
