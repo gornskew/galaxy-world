@@ -24,6 +24,16 @@
 (defparameter +gauge-face+ "#101418")
 (defparameter +needle+ "#d84b2a")
 (defparameter +glass+ "#aac4d0")        ; barely-there, the stars do the rest
+;; The glass is UNLIT (2026-09-02, the sun's arrival): a lit pane at
+;; twelve to fifteen percent opacity lays a flat grey haze over
+;; whatever stands behind it -- invisible over a headlit globe,
+;; plain as day over the night side of one.  Black diffuse, no
+;; specular, a faint emissive tint: the tinted window of a car at
+;; night, reading only against the stars.
+(defparameter +glass-tint+ "#1c2426")
+(defparameter +glass-controls+
+  (list :color "#000000" :emissive-color +glass-tint+
+        :specular-color "#000000" :transparency 0.85))
 
 (defparameter +wheel-rake+ (deg->rad 38))
 
@@ -288,7 +298,7 @@
                      :height (3d-distance (the-child sill) (the-child head))
                      :length 0.34
                      :width 0.012
-                     :display-controls (list :color +glass+ :transparency 0.85))
+                     :display-controls +glass-controls+)
 
    ;; the cowl deck closes the gap between panel top and glass base
    (cowl-deck :type 'box
@@ -351,7 +361,7 @@
                :width 2.48
                :length 0.012
                :height 0.45
-               :display-controls (list :color +glass+ :transparency 0.85))
+               :display-controls +glass-controls+)
 
    ;; the body below the beltline, so the glasshouse stands on
    ;; something: door sides, the panel below the rear window, and
@@ -410,7 +420,7 @@
                :width 0.012
                :length 1.58
                :height 0.45
-               :display-controls (list :color +glass+ :transparency 0.85))
+               :display-controls +glass-controls+)
 
    ;; the roof is OPEN: a painted rim around the edge, and over the
    ;; opening the glass bubble star-roof (see star-dome-x3d).  Strips
@@ -616,7 +626,7 @@
               :sky +sky-radius+ :ring +ring-radius+
               :sun-radius +au+
               :texture "earth-tex"
-              :diffuse "0.10 0.18 0.85" :emissive "0.05 0.07 0.12")
+              :diffuse "0.10 0.18 0.85" :emissive "0.02 0.03 0.05")
         ;; the moon rides HOME, not the sun: no :sun-radius, so the
         ;; outbound popup never offers a sun road from or to him.
         ;; He stands at his node (no clock yet); dominance handoff
@@ -625,27 +635,27 @@
               :sky (+ +moon-radius+ 100)
               :ring +moon-watch-radius+
               :texture "moon-tex"
-              :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+              :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")
         (list :mars :name "Mars" :mu +mu-mars+ :radius +mars-radius+
               :sky (+ +mars-radius+ 100)
               :ring +mars-ring-radius+
               :sun-radius +mars-sun-radius+
               :texture "mars-tex"
-              :diffuse "0.62 0.32 0.18" :emissive "0.10 0.05 0.03")
+              :diffuse "0.62 0.32 0.18" :emissive "0.04 0.02 0.01")
         (list :jupiter :name "Jupiter" :mu +mu-jupiter+
               :radius +jupiter-radius+
               :sky (+ +jupiter-radius+ 100)
               :ring +jupiter-ring-radius+
               :sun-radius +jupiter-sun-radius+
               :texture "jupiter-tex"
-              :diffuse "0.72 0.60 0.44" :emissive "0.12 0.10 0.07")
+              :diffuse "0.72 0.60 0.44" :emissive "0.04 0.03 0.02")
         (list :saturn :name "Saturn" :mu +mu-saturn+
               :radius +saturn-radius+
               :sky (+ +saturn-radius+ 100)
               :ring +saturn-ring-radius+
               :sun-radius +saturn-sun-radius+
               :texture "saturn-tex"
-              :diffuse "0.78 0.68 0.50" :emissive "0.13 0.11 0.08"
+              :diffuse "0.78 0.68 0.50" :emissive "0.05 0.04 0.03"
               :tilt +saturn-tilt+
               :adornment (saturn-rings-x3d))))
 
@@ -740,7 +750,7 @@ near ring arc lost the draw and hid behind the globe."
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
              prefix texture-id texture-id
@@ -842,6 +852,97 @@ near ring arc lost the draw and hid behind the globe."
 
 ;; The night itself drifts: the whole starfield swings slowly about
 ;; the scene's zenith, the way the sky wheels past a ship falling
+;; THE SUN.  Until 2026-09-02 the scene carried no light at all, so
+;; the renderer's default HEADLIGHT lit every face from the camera
+;; and every world glowed on its own emissive term: no day side, no
+;; night side, the moon never anything but full.  Now the headlight
+;; is off and one global DirectionalLight stands for the sun.  It
+;; rides INSIDE the sky-heading transform, so it is fixed in the
+;; sky like the stars: the nose swing of a flown road and the moon
+;; watch's wheeling sky turn it for free, no interpolator of its
+;; own.  Where the sun stands: the game keeps no ephemeris yet
+;; (the departure-epochs talk), so the sun stands at a fixed world
+;; heading: +y, square to the home--moon line.  From the starting
+;; ring at +x, nose-in, that is a half-lit home with the
+;; terminator running pole to pole down the glass -- the day side
+;; to starboard -- and the moon a quarter from home's ring; every
+;; lap runs her through full and new.  (Along the home--moon axis
+;; the game would open on a dark home or a dark moon.)  Lights
+;; carry no elevation in orbit (the ecliptic is the plane she
+;; flies); on the ground the sun climbs so the plain is lit rather
+;; than grazed.
+;; THE FLOODLIGHT: a second global light from the opposite quarter,
+;; dark (intensity 0) until the helm's "floodlight" button raises
+;; it, to see the night side -- the pilot's lantern, not physics.
+;; It is switched by INTENSITY, never by the on field: under X_ITE
+;; writing on=false into the off light through the SAI after a
+;; scene stood killed the sun's diffuse term for the whole scene
+;; (2026-09-02 webshots -- served document fine in isolation, dark
+;; disc through the page's wire), and intensity carries no such
+;; trap.  Under x3dom the light is page DOM (intensity= attribute);
+;; under X_ITE the scene is a document and the SAI sets the field
+;; (see *flood-js*; a #gwflood hash forces it on, for webshots).
+(defparameter *sun-world-heading* (/ pi 2)
+  "World-frame angle the sun lies at, radians: +y, see above.")
+
+(defun sun-light-x3d (&key (elevation 0.0))
+  "The sun and the floodlight, for the inside of sky-heading.
+ELEVATION lifts the sun above the plane (radians)."
+  (let* ((c (cos elevation)) (z (- (sin elevation)))
+         (sx (* c (cos *sun-world-heading*)))
+         (sy (* c (sin *sun-world-heading*))))
+    ;; direction is the way the light TRAVELS: from the sun in
+    (format nil "<DirectionalLight DEF=\"sun-light\" id=\"sun-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"1\" ambientIntensity=\"0.06\" color=\"1 0.98 0.94\"></DirectionalLight><DirectionalLight DEF=\"flood-light\" id=\"flood-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"0\" ambientIntensity=\"0\" color=\"0.85 0.9 1\"></DirectionalLight>"
+            (- sx) (- sy) z
+            sx sy z)))
+
+(defun cab-light-x3d ()
+  "The cab's own lamp: a PointLight over the driver's shoulder whose
+RADIUS ends a few units out, so the dash, the wheel and the dice stay
+readable whichever way the sun stands while the worlds, thousands of
+units off, never see it.  Radius, not scoping: a DirectionalLight
+with global=false lit the whole sky under both renderers (2026-09-02
+webshots -- x3dom treats every light as global, and X_ITE's ambient
+term leaked too), and a point light's reach is honored by both.  No
+ambient on either lamp: X_ITE spreads a light's ambient term over
+the whole scene regardless of radius (the grey night side of the
+second webshot round); a low fill from under the dash does the job
+instead."
+  "<PointLight DEF=\"cab-light\" location=\"-0.4 0.2 1.0\" radius=\"8\" attenuation=\"1 0 0\" intensity=\"0.9\" ambientIntensity=\"0\" color=\"1 0.97 0.9\"></PointLight><PointLight DEF=\"cab-fill\" location=\"0.3 -0.6 -0.2\" radius=\"6\" attenuation=\"1 0 0\" intensity=\"0.35\" ambientIntensity=\"0\" color=\"0.9 0.95 1\"></PointLight>")
+
+(defparameter *flood-js*
+  "window.GW_FLOOD_ON = function () { if ((location.hash + location.search).indexOf('gwflood') > -1) return true; try { return localStorage.getItem('gw-flood') === '1'; } catch (e) { return false; } };
+window.GW_FLOOD_APPLY = function (browser) {
+  var on = GW_FLOOD_ON();
+  var b = document.getElementById('gw-flood-btn');
+  if (b) { if (on) b.classList.add('lit'); else b.classList.remove('lit'); }
+  var level = on ? 0.6 : 0;
+  // x3dom: the light is page DOM (the live scene AND the hidden template both carry the id)
+  var els = document.querySelectorAll('#flood-light');
+  for (var i = 0; i < els.length; i++) { try { els[i].setAttribute('intensity', String(level)); } catch (e) {} }
+  // X_ITE: the scene is a document; reach the node by SAI, and write
+  // only on a real change (see the note at sun-light-x3d)
+  try {
+    var cv = document.querySelector('x3d-canvas');
+    var br = browser || (cv && cv.browser);
+    var n = br && br.currentScene && br.currentScene.getNamedNode('flood-light');
+    if (n) {
+      var f = n.getField('intensity');
+      var cur = null; try { cur = f.getValue(); } catch (e) { try { cur = n.intensity; } catch (e2) {} }
+      var same = (typeof cur === 'number') && Math.abs(cur - level) < 0.001;
+      if (!same) { try { f.setValue(level); } catch (e) { n.intensity = level; } }
+    }
+  } catch (e) {}
+};
+window.GW_FLOOD_TOGGLE = function () {
+  var on = !GW_FLOOD_ON();
+  try { localStorage.setItem('gw-flood', on ? '1' : '0'); } catch (e) {}
+  GW_FLOOD_APPLY();
+};"
+  "The floodlight switch: remembered per browser, re-applied after
+every scene swap (the state script under x3dom, the wire under
+X_ITE), because a fresh scene document stands with the light off.")
+
 ;; around a world.  One revolution in twenty minutes -- game time
 ;; runs generous.
 (defparameter *sky-drift-x3d*
@@ -922,7 +1023,7 @@ near ring arc lost the draw and hid behind the globe."
         (let ((p00 (+ (* b (1+ sectors)) s)))
           (format idx "~d ~d ~d ~d -1 "
                   p00 (1+ p00) (+ p00 sectors 2) (+ p00 sectors 1)))))
-    (format nil "<Shape><Appearance><Material diffuseColor=\"0.67 0.77 0.82\" specularColor=\"0.5 0.55 0.6\" shininess=\"0.6\" transparency=\"0.88\"></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate></IndexedFaceSet></Shape>"
+    (format nil "<Shape><Appearance><Material diffuseColor=\"0 0 0\" emissiveColor=\"0.11 0.14 0.15\" transparency=\"0.88\"></Material></Appearance><IndexedFaceSet solid=\"false\" creaseAngle=\"3.14159\" coordIndex=\"~a\"><Coordinate point=\"~a\"></Coordinate></IndexedFaceSet></Shape>"
             (get-output-stream-string idx)
             (get-output-stream-string points))))
 
@@ -2144,6 +2245,10 @@ window.GW_WIRE = function () {
                                  (second (first (the transit-samples)))
                                  (deg->rad (the heading-deg))))
 
+   ;; the sun's height: in the plane aloft, climbed on the ground
+   ;; (a grazing sun leaves the plain black) -- see sun-light-x3d
+   (sun-elevation (if (the landed?) 0.6 0.0))
+
    (bodies-x3d
     (let ((samples (the transit-samples)))
       (if samples
@@ -2223,7 +2328,7 @@ window.GW_WIRE = function () {
                   (string-append
                    (body-x3d "moon" "moon-tex"
                              (the moon-bearing) (the moon-distance) +moon-radius+
-                             :diffuse "0.75 0.74 0.70" :emissive "0.10 0.10 0.09")
+                             :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")
                    (if (the moon-orbit?)
                        (moon-ambient-x3d (the planet-bearing)
                                          (- (deg->rad (the heading-deg)))
@@ -2239,7 +2344,7 @@ window.GW_WIRE = function () {
                             (dist-to (the pos-x) (the pos-y) (- +moon-x+) 0)
                             +planet-radius+
                             :diffuse "0.10 0.18 0.85"
-                            :emissive "0.05 0.07 0.12"))
+                            :emissive "0.02 0.03 0.05"))
                  (t ""))))))
 
    ;; the voyage's page script: first load arms the one-shot clock;
@@ -2379,28 +2484,43 @@ window.GW_WIRE = function () {
             ;; the universe turns around the ship, never the ship
             ;; around the universe -- and inside the heading, the
             ;; night drifts on its own clock
+            (:|NavigationInfo| :headlight "false")
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
                                 (- (the sky-authored-heading-rad)))
+              (str (sun-light-x3d :elevation (the sun-elevation)))
               (:|Transform| :|DEF| "sky-drift"
                 (str (starfield-x3d :radius 5000.0d0))))
             (str *sky-drift-x3d*)
             (str (the bodies-x3d))
-            (str (cockpit-x3d))
-            (str (dice-x3d (the dice-lean)))
-            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
-            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
-            (str (dash-radio-x3d (the cadence-control value)
-                                 (the transport-control value)))
-            (str (the port-feed-x3d))
-            (str (starboard-eye-feed-x3d))))
+            ;; the cab under its own lamp (see cab-light-x3d)
+            (:|Group|
+              (str (cab-light-x3d))
+              (str (cockpit-x3d))
+              (str (dice-x3d (the dice-lean)))
+              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+              (str (dash-radio-x3d (the cadence-control value)
+                                   (the transport-control value)))
+              (str (the port-feed-x3d))
+              (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_LOADED) { ~a }~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_VOYAGE_T0 = ~a;~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
             (if (the transit-samples) "Date.now() + 2000" "null")
-            (the scene-refresh-js)))
+            ;; the scene refresh is gated on the scene GENERATION
+            ;; (moves-count, the gw-gen-N stamp every move path
+            ;; bumps), not merely on the page being loaded: the
+            ;; boarding check-in returns this section too, and
+            ;; re-pointing the canvas at the generation it is still
+            ;; fetching aborted the first load in production (X_ITE
+            ;; AbortError, 2026-09-02) -- and reloaded the x3dom page
+            ;; at every first boarding.
+            (the moves-count)
+            (the scene-refresh-js)
+            (the moves-count)))
 
    ;; how this renderer takes the new scene after a move: the
    ;; scene-section was just swapped in place, so re-init x3dom
@@ -2458,6 +2578,16 @@ window.GW_WIRE = function () {
             (str (the transport-control html-string))
             (:span :id "gw-signature"
               (str (the pilot-control html-string))))))
+      ;; the floodlight: the sun lights the day side only (see
+      ;; sun-light-x3d); this lantern lights the night side on
+      ;; request, remembered per browser
+      (:div :style "display:flex;gap:6px;align-items:center;margin-top:6px;"
+        (:button :type "button" :id "gw-flood-btn" :class "rbtn"
+          :onclick "GW_FLOOD_TOGGLE()"
+          :title "floodlight — light the night side of the world; off, the sun alone lights her"
+          "floodlight")
+        (:span :style "font-size:10px;color:#8a7a2f;letter-spacing:0.08em;" "the sun lights the day side"))
+      (:script (str *flood-js*))
       ;; the move posts through the stock gdlAjax pipe: the six
       ;; controls bash, after-set! runs, and the page's sections
       ;; re-render in place -- no reload, no splash, no re-init
@@ -2871,20 +3001,24 @@ function toggleHelm () {
             ;; the universe turns around the ship, never the ship
             ;; around the universe -- and inside the heading, the
             ;; night drifts on its own clock
+            (:|NavigationInfo| :headlight "false")
             (:|Transform| :|DEF| "sky-heading" :|id| "sky-heading"
               :rotation (format nil "0 0 1 ~,5f"
                                 (- (the sky-authored-heading-rad)))
+              (str (sun-light-x3d :elevation (the sun-elevation)))
               (:|Transform| :|DEF| "sky-drift"
                 (str (starfield-x3d :radius 5000.0d0))))
             (str *sky-drift-x3d*)
             (str (the bodies-x3d))
-            (str (cockpit-x3d))
-            (str (dice-x3d (the dice-lean)))
-            (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
-            (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-            (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
-            (str (dash-radio-x3d (the cadence-control value)
-                                 (the transport-control value)))
+            (:|Group|
+              (str (cab-light-x3d))
+              (str (cockpit-x3d))
+              (str (dice-x3d (the dice-lean)))
+              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+              (str (dash-radio-x3d (the cadence-control value)
+                                   (the transport-control value))))
 ))))
 
   :functions
@@ -3794,6 +3928,9 @@ function toggleHelm () {
   var gearCycle = [':FORWARD', ':NEUTRAL', ':REVERSE'];
   function wire (browser) {
     var scene = browser.currentScene;
+    // the floodlight stands as remembered: a fresh scene document
+    // always arrives with it off
+    try { if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY(browser); } catch (e) {}
     function named (n) { try { return scene.getNamedNode(n); } catch (e) { return null; } }
     function onRelease (def, fn) {
       var node = named(def); if (!node) return;
@@ -4104,17 +4241,22 @@ function toggleHelm () {
      ;; visible tumble at load was the transition animation).  NOT
      ;; transitionType TELEPORT -- under X_ITE that mode reported
      ;; the bind and never moved the camera (benchmark datum #3).
-     "<NavigationInfo transitionTime=\"0\"></NavigationInfo>"
+     ;; headlight OFF: the sun lights the worlds (sun-light-x3d)
+     "<NavigationInfo headlight=\"false\" transitionTime=\"0\"></NavigationInfo>"
      ;; NO y-up wrapper: X_ITE binds a Transform-wrapped Viewpoint
      ;; without applying the parent transform (benchmark datum #2),
      ;; so the world stays z-up here and the y-up question waits
      ;; for authored-in-y-up viewpoints on the WebXR slice
      (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
-     (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"sky-drift\">~a</Transform></Transform>"
+     (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\">~a<Transform DEF=\"sky-drift\">~a</Transform></Transform>"
              (- (the sky-authored-heading-rad))
+             (sun-light-x3d :elevation (the sun-elevation))
              (starfield-x3d :radius 5000.0d0))
      *sky-drift-x3d*
      (the bodies-x3d)
+     ;; the cab under its own lamp (see cab-light-x3d)
+     "<Group>"
+     (cab-light-x3d)
      (cockpit-x3d)
      (dice-x3d (the dice-lean))
      (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055)
@@ -4122,6 +4264,7 @@ function toggleHelm () {
      (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
+     "</Group>"
      "</Scene></X3D>"))
 
    (body
