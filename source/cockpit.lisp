@@ -732,8 +732,43 @@ the given heading; positive to port."
         ((equal texture-id "jupiter-tex") "/gw-tex/jupiter.jpg")
         ((equal texture-id "saturn-tex") "/gw-tex/saturn.jpg")))
 
+(defun earth-sun-local (heading-rad phase-rad &optional (elevation 0.0))
+  "The direction TO the sun in the earth sphere's OWN object frame, as
+an X3D \"x y z\" string.  The sun is fixed at world +y inside
+sky-heading (rotated -HEADING about z); the sphere sits under
+tip=Rx(pi/2) then spin=R(0 -1 0, PHASE).  Undoing those brings the
+world sun direction into sphere space, closed-form:
+sunLocal = (cos el * sin(H-p), sin el, -cos el * cos(H-p)).  The
+scene is static between moves, so this bakes as a shader constant."
+  (let* ((h heading-rad) (p phase-rad) (el elevation)
+         (d (- h p)))
+    (format nil "~,5f ~,5f ~,5f"
+            (* (cos el) (sin d)) (sin el) (- (* (cos el) (cos d))))))
+
+;; The city-lights shader (X_ITE / GLSL): the day face is lambert-lit
+;; by the baked sun direction, the night face shows the Black Marble
+;; lights, and smoothstep crosses them at the terminator.  Its own
+;; lighting means the scene DirectionalLight does not touch this
+;; Shape -- no double-lighting.  Newlines survive as %0A through the
+;; data: URI; no // comments (they would swallow the rest of a line).
+(defparameter *earth-lights-vertex-glsl*
+  "precision highp float; uniform mat4 x3d_ProjectionMatrix; uniform mat4 x3d_ModelViewMatrix; attribute vec4 x3d_Vertex; attribute vec3 x3d_Normal; attribute vec4 x3d_TexCoord0; varying vec3 vN; varying vec2 vUv; void main(){ vN = x3d_Normal; vUv = x3d_TexCoord0.st; gl_Position = x3d_ProjectionMatrix * x3d_ModelViewMatrix * x3d_Vertex; }")
+
+(defparameter *earth-lights-fragment-glsl*
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec3 sunLocal; varying vec3 vN; varying vec2 vUv; void main(){ float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+
+(defun earth-lights-appearance (prefix day-url night-url sun-local)
+  "A ComposedShader Appearance for the city-lights earth: DAY-URL and
+NIGHT-URL are raw paths, SUN-LOCAL the baked \"x y z\" from
+EARTH-SUN-LOCAL."
+  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"sunLocal\" type=\"SFVec3f\" accessType=\"inputOutput\" value=\"~a\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
+          prefix day-url night-url sun-local
+          (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
+          (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
+
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
-                 &key spin? phase diffuse emissive scale-override tilt adornment)
+                 &key spin? phase diffuse emissive scale-override tilt adornment
+                      night-url sun-local)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  SPIN? adds the
 pole-spin CLOCK -- a body on a flown road, where real time (and so
@@ -754,24 +789,31 @@ near ring arc lost the draw and hid behind the globe."
   (multiple-value-bind (tx ty s)
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
+    (let* ((day-url (texture-url-for texture-id))
+           ;; NIGHT-URL + SUN-LOCAL => the city-lights shader stands in
+           ;; for the plain lit Material (earth, X_ITE parked view).
+           (appearance
+            (if (and night-url sun-local day-url)
+                (earth-lights-appearance prefix day-url night-url sun-local)
+                (format nil "<Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance>"
+                        texture-id texture-id
+                        (if day-url (format nil "&quot;~a&quot;" day-url) "")
+                        prefix diffuse emissive))))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"~a><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
              prefix
              ;; the pole spins about 0 -1 0 in this inner frame (the
              ;; clock's own axis); a frozen world stands at PHASE
              (if phase (format nil " rotation=\"0 -1 0 ~,5f\"" phase) "")
-             texture-id texture-id
-             (let ((u (texture-url-for texture-id)))
-               (if u (format nil "&quot;~a&quot;" u) ""))
-             prefix diffuse emissive
+             appearance
              (or adornment "")
              (if tilt "</Transform>" ""))
      (if (and spin? (not phase))
          (format nil "<TimeSensor DEF=\"~a-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"~a-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"~a-clock\" fromField=\"fraction_changed\" toNode=\"~a-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-swing\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
                  prefix prefix prefix prefix prefix prefix)
-         ""))))
+         "")))))
 
 ;; The parked orbit: once she has taken the moon's ring she rides
 ;; it NOSE-IN, the way she rode at home -- the moon square in the
@@ -2341,6 +2383,15 @@ window.GW_WIRE = function () {
                (body-x3d "planet" (world-figure (the world) :texture)
                          (the planet-bearing) (the radius) (the world-radius)
                          :phase (the world-spin-rad)
+                         ;; city lights: earth's night side, X_ITE only.
+                         ;; the sun is baked into the shader in the
+                         ;; sphere's own frame -- the parked scene is
+                         ;; static between moves, so a constant serves.
+                         :night-url (when (and (the xr-scene?) (eql (the world) :home))
+                                      "/gw-tex/earth-night.jpg")
+                         :sun-local (when (and (the xr-scene?) (eql (the world) :home))
+                                      (earth-sun-local (the sky-authored-heading-rad)
+                                                       (the world-spin-rad)))
                          :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)

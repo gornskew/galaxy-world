@@ -96,6 +96,8 @@
   ;; checkouts both find the files.
   (dolist (spec '(("/gw-tex/earth.jpg" "earth.jpg")
                   ("/galaxy-world/gw-tex/earth.jpg" "earth.jpg")
+                  ("/gw-tex/earth-night.jpg" "earth-night.jpg")
+                  ("/galaxy-world/gw-tex/earth-night.jpg" "earth-night.jpg")
                   ("/gw-tex/moon.jpg" "moon.jpg")
                   ("/galaxy-world/gw-tex/moon.jpg" "moon.jpg")
                   ("/gw-tex/mars.jpg" "mars.jpg")
