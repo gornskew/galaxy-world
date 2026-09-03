@@ -625,7 +625,7 @@
   (list (list :home :name "home" :mu +mu+ :radius +planet-radius+
               :sky +sky-radius+ :ring +ring-radius+
               :sun-radius +au+
-              :texture "earth-tex"
+              :texture "earth-tex" :day-seconds 86164
               :diffuse "0.10 0.18 0.85" :emissive "0.02 0.03 0.05")
         ;; the moon rides HOME, not the sun: no :sun-radius, so the
         ;; outbound popup never offers a sun road from or to him.
@@ -634,27 +634,27 @@
         (list :moon :name "the moon" :mu +mu-moon+ :radius +moon-radius+
               :sky (+ +moon-radius+ 100)
               :ring +moon-watch-radius+
-              :texture "moon-tex"
+              :texture "moon-tex" :day-seconds 2360591
               :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")
         (list :mars :name "Mars" :mu +mu-mars+ :radius +mars-radius+
               :sky (+ +mars-radius+ 100)
               :ring +mars-ring-radius+
               :sun-radius +mars-sun-radius+
-              :texture "mars-tex"
+              :texture "mars-tex" :day-seconds 88643
               :diffuse "0.62 0.32 0.18" :emissive "0.04 0.02 0.01")
         (list :jupiter :name "Jupiter" :mu +mu-jupiter+
               :radius +jupiter-radius+
               :sky (+ +jupiter-radius+ 100)
               :ring +jupiter-ring-radius+
               :sun-radius +jupiter-sun-radius+
-              :texture "jupiter-tex"
+              :texture "jupiter-tex" :day-seconds 35730
               :diffuse "0.72 0.60 0.44" :emissive "0.04 0.03 0.02")
         (list :saturn :name "Saturn" :mu +mu-saturn+
               :radius +saturn-radius+
               :sky (+ +saturn-radius+ 100)
               :ring +saturn-ring-radius+
               :sun-radius +saturn-sun-radius+
-              :texture "saturn-tex"
+              :texture "saturn-tex" :day-seconds 38362
               :diffuse "0.78 0.68 0.50" :emissive "0.05 0.04 0.03"
               :tilt +saturn-tilt+
               :adornment (saturn-rings-x3d))))
@@ -733,10 +733,15 @@ the given heading; positive to port."
         ((equal texture-id "saturn-tex") "/gw-tex/saturn.jpg")))
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
-                 &key spin? diffuse emissive scale-override tilt adornment)
+                 &key spin? phase diffuse emissive scale-override tilt adornment)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  SPIN? adds the
-pole-spin clock.  SCALE-OVERRIDE authors a different scale than the
+pole-spin CLOCK -- a body on a flown road, where real time (and so
+game time) is passing.  PHASE authors a STATIC pole rotation
+(radians) and no clock: the PARKED view is time-frozen between
+moves (turn-based), and each move advances the world's rotation by
+the game-time it spent (see spin-seconds / advance-spin!).  A body
+gets one or the other, never both.  SCALE-OVERRIDE authors a different scale than the
 subtended one -- a voyage page hides a body until its clock's first
 key sets the true size.  ADORNMENT is extra markup riding the frame
 in body-radius units (Saturn's rings), and TILT leans body and
@@ -750,16 +755,20 @@ near ring arc lost the draw and hid behind the globe."
       (scene-body-frame bearing-rad distance-km body-radius-km)
     (when scale-override (setq s scale-override))
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f 0\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\"~a><Shape><Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance><Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
              prefix prefix tx ty s s s
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
-             prefix texture-id texture-id
+             prefix
+             ;; the pole spins about 0 -1 0 in this inner frame (the
+             ;; clock's own axis); a frozen world stands at PHASE
+             (if phase (format nil " rotation=\"0 -1 0 ~,5f\"" phase) "")
+             texture-id texture-id
              (let ((u (texture-url-for texture-id)))
                (if u (format nil "&quot;~a&quot;" u) ""))
              prefix diffuse emissive
              (or adornment "")
              (if tilt "</Transform>" ""))
-     (if spin?
+     (if (and spin? (not phase))
          (format nil "<TimeSensor DEF=\"~a-clock\" cycleInterval=\"240\" loop=\"true\"></TimeSensor><OrientationInterpolator DEF=\"~a-swing\" key=\"0 0.25 0.5 0.75 1\" keyValue=\"0 -1 0 0 0 -1 0 1.5708 0 -1 0 3.14159 0 -1 0 4.71239 0 -1 0 6.28319\"></OrientationInterpolator><ROUTE fromNode=\"~a-clock\" fromField=\"fraction_changed\" toNode=\"~a-swing\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"~a-swing\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
                  prefix prefix prefix prefix prefix prefix)
          ""))))
@@ -2052,6 +2061,16 @@ window.GW_WIRE = function () {
    ;; center, the world square in the windshield, the ring flown
    ;; sideways.
    (heading-deg 180 :settable)
+   ;; the world's accumulated rotation, in game-seconds: time is
+   ;; frozen between moves, and each move adds the seconds it spent
+   ;; (advance-spin!).  world-spin-rad turns it into the parked
+   ;; body's static pole angle -- the day/night terminator the sun
+   ;; casts then sits still until the pilot moves, and the face he
+   ;; sees lights and darkens as he goes AROUND the orbit, not as
+   ;; the world whirls in place.
+   (spin-seconds 0 :settable)
+   (world-spin-rad (mod (* 2 pi (/ (the spin-seconds) (the world-day-seconds)))
+                        (* 2 pi)))
    (vel-x 0 :settable)
    (vel-y +ring-speed+ :settable)
    (pos-x +ring-radius+ :settable)
@@ -2078,6 +2097,7 @@ window.GW_WIRE = function () {
    (world-mu (world-figure (the world) :mu))
    (world-radius (world-figure (the world) :radius))
    (world-sky (world-figure (the world) :sky))
+   (world-day-seconds (or (world-figure (the world) :day-seconds) 86400))
    (world-ring (world-figure (the world) :ring))
    (world-ring-speed (sqrt (/ (the world-mu) (the world-ring))))
 
@@ -2320,7 +2340,8 @@ window.GW_WIRE = function () {
                (ground-x3d (the world))
                (body-x3d "planet" (world-figure (the world) :texture)
                          (the planet-bearing) (the radius) (the world-radius)
-                         :spin? t :diffuse (world-figure (the world) :diffuse)
+                         :phase (the world-spin-rad)
+                         :diffuse (world-figure (the world) :diffuse)
                          :emissive (world-figure (the world) :emissive)
                          :tilt (world-figure (the world) :tilt)
                          :adornment (world-figure (the world) :adornment)))
@@ -3369,6 +3390,7 @@ function toggleHelm () {
       (the (set-slot! :pos-y 0))
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (advance-spin! (* tof-days 86400)))
       (the (set-slot! :transit-samples samples))
       (the (set-slot! :transit-target :moon))
       (the (set-slot! :transit-bodies
@@ -3467,6 +3489,7 @@ function toggleHelm () {
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (advance-spin! (* tof-days 86400)))
       (the (set-slot! :transit-samples samples))
       (the (set-slot! :transit-target :homeward))
       (the (set-slot! :transit-bodies
@@ -3620,6 +3643,7 @@ function toggleHelm () {
       (the (set-slot! :last-burn :none))
       (the (set-slot! :moon-orbit? nil))
       (the (set-slot! :moves-count (1+ (the moves-count))))
+      (the (advance-spin! (* tof-days 86400)))
       (the (set-slot! :transit-samples samples))
       (the (set-slot! :transit-target to-world))
       (the (set-slot! :transit-bodies
@@ -3694,6 +3718,13 @@ function toggleHelm () {
       (tally! :voyages)
       (tally! (intern (concatenate 'string (symbol-name to-world) "-VOYAGES")
                       :keyword))))
+
+   ;; a move spends game-time; earth turns by that much (and no more
+   ;; -- between moves the clock is stopped).  SECS may be negative
+   ;; on a rewind, unwinding the rotation with the fall.
+   (advance-spin!
+    (secs)
+    (the (set-slot! :spin-seconds (+ (the spin-seconds) secs))))
 
    (make-helm-move!
     ()
@@ -3802,6 +3833,7 @@ function toggleHelm () {
                                            ((eql shifter :reverse) :retro)
                                            (t :forward))))
           (the (set-slot! :moves-count (1+ (the moves-count))))
+          (the (advance-spin! dt))
           (the (set-slot! :last-move-note note))
           (tally! :moves)
           (tally! (cond (rewind? :rewinds)
