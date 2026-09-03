@@ -211,29 +211,33 @@
    ;; climb gauge now, reading the session's own radial speed, so
    ;; like the speedo and compass needles it renders per cockpit
 
-   ;; the eye displays: two flatscreens in the instrument panel,
-   ;; fed by the basilisk's own port and starboard reptile eyes.
-   ;; Dark glass until the feeds are wired.
+   ;; the flatscreens in the instrument panel: the PORT one is THE
+   ;; PLOT now (ruled 2026-09-03 -- the plan view painted onto the
+   ;; glass, see plot-screen-x3d), grown to a squarer 0.30 x 0.235
+   ;; face; the starboard one is the starboard reptile eye's feed,
+   ;; dark glass where the renderer has no such feed.
    (eye-screen-bezels :type 'box
                       :sequence (:size 2)
                       :center (make-point 0.728
                                           (ecase (the-child index)
-                                            (0 0.34) (1 -0.75))
-                                          0.42)
+                                            (0 0.40) (1 -0.75))
+                                          (ecase (the-child index)
+                                            (0 0.4275) (1 0.42)))
                       :width 0.015
-                      :length 0.27
-                      :height 0.18
+                      :length (ecase (the-child index) (0 0.33) (1 0.27))
+                      :height (ecase (the-child index) (0 0.265) (1 0.18))
                       :display-controls (list :color +chrome+))
 
    (eye-screens :type 'box
                 :sequence (:size 2)
                 :center (make-point 0.719
                                     (ecase (the-child index)
-                                      (0 0.34) (1 -0.75))
-                                    0.42)
+                                      (0 0.40) (1 -0.75))
+                                    (ecase (the-child index)
+                                      (0 0.4275) (1 0.42)))
                 :width 0.01
-                :length 0.24
-                :height 0.15
+                :length (ecase (the-child index) (0 0.30) (1 0.24))
+                :height (ecase (the-child index) (0 0.235) (1 0.15))
                 :display-controls (list :color +gauge-face+))
 
    ;; the rear-view mirror, hung from the header at the cab's
@@ -1003,10 +1007,19 @@ near ring arc lost the draw and hid behind the globe."
   (+ *unix-epoch-anchor*
      (/ (get-internal-real-time) (float internal-time-units-per-second 1d0))))
 
-(defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map)
+;; TAG suffixes every DEF this clip owns -- its clock and its
+;; interpolators -- so a stretch of coast tape can stand beside the
+;; one it relieves (the seam, GW_TAPE_APPLY); the frames it drives
+;; keep their names.  Returns the markup with its ROUTEs inline, and
+;; as further values the routes as (from field to field) lists and
+;; the nodes-only markup, for a page that must add the routes itself
+;; (X_ITE parses a fragment in a namespace of its own).
+(defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map (tag ""))
   (let ((keys (make-string-output-stream))
         (nose (make-string-output-stream))
-        (tracks nil))
+        (tracks nil)
+        (routes nil)
+        (clock (format nil "voyage-clock~a" tag)))
     (dolist (s samples)
       (destructuring-bind (key h px py) s
         (declare (ignore px py))
@@ -1030,15 +1043,22 @@ near ring arc lost the draw and hid behind the globe."
                     (get-output-stream-string pos)
                     (get-output-stream-string scl))
               tracks)))
-    (let ((k (get-output-stream-string keys)))
-      (with-output-to-string (out)
-        (format out "<TimeSensor DEF=\"voyage-clock\" id=\"voyage-clock\" cycleInterval=\"~d\" loop=\"false\"~@[ startTime=\"~,1f\"~]></TimeSensor>"
-                duration start-time)
+    (let ((k (get-output-stream-string keys))
+          (out (make-string-output-stream)))
+      (flet ((route (from ff to tf) (push (list from ff to tf) routes)))
+        (format out "<TimeSensor DEF=\"~a\" id=\"~a\" cycleInterval=\"~d\" loop=\"false\"~@[ startTime=\"~,1f\"~]></TimeSensor>"
+                clock clock duration start-time)
         (dolist (track (nreverse tracks))
           (destructuring-bind (prefix pos scl) track
-            (format out "<PositionInterpolator DEF=\"vy-~a-pos\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"vy-~a-scl\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-pos\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-scl\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-pos\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_translation\"></ROUTE><ROUTE fromNode=\"vy-~a-scl\" fromField=\"value_changed\" toNode=\"~a-frame\" toField=\"set_scale\"></ROUTE>"
-                    prefix k pos prefix k scl
-                    prefix prefix prefix prefix prefix prefix)))
+            (let ((ipos (format nil "vy-~a-pos~a" prefix tag))
+                  (iscl (format nil "vy-~a-scl~a" prefix tag))
+                  (frame (format nil "~a-frame" prefix)))
+              (format out "<PositionInterpolator DEF=\"~a\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator><PositionInterpolator DEF=\"~a\" key=\"~a\" keyValue=\"~a\"></PositionInterpolator>"
+                      ipos k pos iscl k scl)
+              (route clock "fraction_changed" ipos "set_fraction")
+              (route clock "fraction_changed" iscl "set_fraction")
+              (route ipos "value_changed" frame "set_translation")
+              (route iscl "value_changed" frame "set_scale"))))
         ;; the pole tracks: a riding world's face turns on from its
         ;; departure phase by the game-time the road spends, read off
         ;; TIME-MAP, so the face at the clip's end is the face the
@@ -1073,13 +1093,42 @@ near ring arc lost the draw and hid behind the globe."
                                                     (mod (+ phase (* rate secs)) (* 2 pi)))
                                             (setq prev-key key))))
                                (setq first? nil)))
-                    (format out "<OrientationInterpolator DEF=\"vy-~a-spin\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-~a-spin\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-~a-spin\" fromField=\"value_changed\" toNode=\"~a-spin\" toField=\"set_rotation\"></ROUTE>"
-                            (getf body :prefix)
-                            (get-output-stream-string skeys)
-                            (get-output-stream-string svals)
-                            (getf body :prefix) (getf body :prefix) (getf body :prefix))))))))
-        (format out "<OrientationInterpolator DEF=\"vy-nose\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator><ROUTE fromNode=\"voyage-clock\" fromField=\"fraction_changed\" toNode=\"vy-nose\" toField=\"set_fraction\"></ROUTE><ROUTE fromNode=\"vy-nose\" fromField=\"value_changed\" toNode=\"sky-heading\" toField=\"set_rotation\"></ROUTE>"
-                k (get-output-stream-string nose))))))
+                    (let ((ispin (format nil "vy-~a-spin~a" (getf body :prefix) tag)))
+                      (format out "<OrientationInterpolator DEF=\"~a\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator>"
+                              ispin
+                              (get-output-stream-string skeys)
+                              (get-output-stream-string svals))
+                      (route clock "fraction_changed" ispin "set_fraction")
+                      (route ispin "value_changed" (format nil "~a-spin" (getf body :prefix))
+                             "set_rotation"))))))))
+        (let ((inose (format nil "vy-nose~a" tag)))
+          (format out "<OrientationInterpolator DEF=\"~a\" key=\"~a\" keyValue=\"~a\"></OrientationInterpolator>"
+                  inose k (get-output-stream-string nose))
+          (route clock "fraction_changed" inose "set_fraction")
+          (route inose "value_changed" "sky-heading" "set_rotation")))
+      (let* ((routes (nreverse routes))
+             (nodes (get-output-stream-string out))
+             (inline (with-output-to-string (s)
+                       (write-string nodes s)
+                       (dolist (r routes)
+                         (format s "<ROUTE fromNode=\"~a\" fromField=\"~a\" toNode=\"~a\" toField=\"~a\"></ROUTE>"
+                                 (first r) (second r) (third r) (fourth r))))))
+        (values inline routes nodes)))))
+
+;; a JSON string literal for S: the tape fragment rides the state
+;; script as data, quotes and all
+(defun json-string (s)
+  (with-output-to-string (out)
+    (write-char #\" out)
+    (loop for c across s
+          do (case c
+               (#\" (write-string "\\\"" out))
+               (#\\ (write-string "\\\\" out))
+               (#\Newline (write-string "\\n" out))
+               (#\Return (write-string "\\r" out))
+               (#\Tab (write-string "\\t" out))
+               (t (write-char c out))))
+    (write-char #\" out)))
 
 ;; THE SUN.  Until 2026-09-02 the scene carried no light at all, so
 ;; the renderer's default HEADLIGHT lit every face from the camera
@@ -1350,6 +1399,23 @@ X_ITE), because a fresh scene document stands with the light off.")
                 (look-at-orientation (make-vector 0 -1 0) (make-vector 0 0 1))
                 -0.63 -0.87))
 
+;; THE PLOT on the port flatscreen: a painted quad the page feeds
+;; from the plan view's canvas (plot-tex, a few frames a second),
+;; the corners the driver's own -- left is +y.  Sized to the plot
+;; canvas's 320 x 250, on the grown port screen (eye-screens 0).
+(defun plot-screen-x3d ()
+  ;; under its own TouchSensor: a tap on the glass zooms the plan
+  ;; view out a level (S4, GW_ZOOM_CYCLE), both renderers
+  (format nil "<Transform DEF=\"plot-hit\" id=\"plot-hit\"><TouchSensor DEF=\"plot-touch\" id=\"plot-touch\" description=\"the plot — tap to zoom out a level\"></TouchSensor>~a</Transform>"
+          (painted-quad-x3d "plot-tex"
+                            (list (list 0.7135 0.55 0.31)
+                                  (list 0.7135 0.25 0.31)
+                                  (list 0.7135 0.25 0.545)
+                                  (list 0.7135 0.55 0.545))
+                            ;; low emissive: the plot's black ground
+                            ;; must read black, the gold lines lit
+                            :emissive "0.2 0.2 0.2")))
+
 ;; The dash radio in the metal, with the starter beside it: the
 ;; whole turn drives from inside the scene now.  Four preset keys
 ;; and the tape transport sit on a plate under the speedo, the
@@ -1532,6 +1598,27 @@ X_ITE), because a fresh scene document stands with the light off.")
 ;; scene's own voyage clock, and write the ship's coordinates onto
 ;; the helm as they change -- then settle onto the arrival orbit.
 (defparameter *plan-view-js* "
+// THE ZOOM (S4): three levels -- the world (1), the system (2), the
+// sun's roads (3) -- kept per tab; a level out presses the channel
+// that suits it (Thompson: scaling the view scales the clock),
+// medium / fast / fastest, and the radio stays free to override by
+// hand.  A tap on the port screen cycles it; the card's keys step it.
+window.GW_ZOOM = (function () { try { return parseInt(sessionStorage.getItem('gw-zoom') || '1', 10) || 1; } catch (e) { return 1; } })();
+window.GW_ZOOM_SET = function (z) {
+  z = ((z - 1) % 3 + 3) % 3 + 1;
+  var was = window.GW_ZOOM || 1;
+  window.GW_ZOOM = z;
+  try { sessionStorage.setItem('gw-zoom', '' + z); } catch (e) {}
+  var lbl = document.getElementById('plot-zoom-label');
+  if (lbl) lbl.textContent = ['', 'the world', 'the system', 'the sun\\'s roads'][z];
+  if (z !== was) {
+    var chan = { 1: ':MEDIUM', 2: ':FAST', 3: ':FASTEST' }[z];
+    var b = document.querySelector('.cadence-btn[data-val=\"' + chan + '\"]');
+    if (b && !b.classList.contains('lit')) b.click();
+  }
+  if (window.GW_DRAW) GW_DRAW();
+};
+window.GW_ZOOM_CYCLE = function () { GW_ZOOM_SET((window.GW_ZOOM || 1) % 3 + 1); };
 window.togglePlot = function () {
   var b = document.getElementById('plot-body');
   var collapsed = b.style.display === 'none';
@@ -1541,7 +1628,7 @@ window.togglePlot = function () {
 };
 (function () {
   try {
-    if (sessionStorage.getItem('gw-plot-collapsed') === '1') {
+    if (sessionStorage.getItem('gw-plot-collapsed') !== '0') {
       document.getElementById('plot-body').style.display = 'none';
       document.getElementById('plot-caret').textContent = '\\u25b8';
     }
@@ -1555,6 +1642,43 @@ window.GW_DRAW = function () {
   var ctx = cv.getContext('2d');
   var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
   function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = H / 2; }
+  // THE MIRROR: every frame drawn here is painted onto the port
+  // flatscreen in the cab (plot-tex), a few times a second -- by
+  // DOM attribute under x3dom, by the SAI setter the xr wire
+  // leaves on GW_XR_SETTEX under X_ITE.  JPEG: the canvas's clear
+  // ground comes out black, which is what a screen wants.
+  function mirror () {
+    var now = Date.now();
+    if (now - (GW_DRAW.pushed || 0) < 250) return;
+    GW_DRAW.pushed = now;
+    try {
+      // PNG, as the dial faces are (x3dom took no JPEG data url),
+      // and only when the picture changed: a parked orbit is
+      // painted once, a coast a few times a second
+      var u = cv.toDataURL();
+      window.GW_TEX = window.GW_TEX || {};
+      // the LIVE screen, not the x3dom template's copy (GW_LIVE)
+      var el = window.GW_LIVE ? GW_LIVE('plot-tex') : document.getElementById('plot-tex');
+      var same = window.GW_TEX['plot-tex'] === u;
+      // x3dom takes the attribute again every couple of seconds
+      // even unchanged: a single push can land before its runtime
+      // reads the node, and then the glass stays blank
+      if (same && (!el || now - (GW_DRAW.repushed || 0) < 2000)) return;
+      GW_DRAW.repushed = now;
+      window.GW_TEX['plot-tex'] = u;
+      if (el) el.setAttribute('url', u);
+      else if (window.GW_XR_SETTEX) GW_XR_SETTEX('plot-tex', u);
+    } catch (e) {}
+  }
+  // the pump: whatever the canvas shows goes to the glass a few
+  // times a second, whichever draw put it there (the card itself
+  // stays folded out of the way by default -- the screen IS the
+  // plot; the caret opens the card)
+  (function pump () {
+    if (gen !== GW_DRAW.gen) return;
+    mirror();
+    setTimeout(pump, 250);
+  })();
   // THE PLOT promotes to a HEADS-UP while a voyage flies: centered
   // on the glass, enlarged, translucent -- there is little to see
   // out the windshield mid-road, and the plot IS the show.  The
@@ -1632,9 +1756,53 @@ window.GW_DRAW = function () {
     ctx.fillStyle = '#ffffff'; ctx.fill();
   }
   var O = P.orbit;
+  // a level out (S4): the system frames the world's riders
+  function sysExt () {
+    var e = O.ringR * 1.15;
+    if (P.zoom && P.zoom.system) P.zoom.system.forEach(function (b) {
+      var d = (Math.sqrt(b.x*b.x + b.y*b.y) + b.r) * 1.12; if (d > e) e = d;
+    });
+    return e;
+  }
+  // two levels out: the sun's roads -- every ringed world on his
+  // ring, the world that has her lit, and she a white dot on it.
+  // Schematic: the sun's roads keep no phase, so each world stands
+  // at +x on his ring.
+  function drawSolar () {
+    dims();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#05070c'; ctx.fillRect(0, 0, W, H);
+    var S = P.zoom && P.zoom.solar;
+    if (!S || !S.rings.length) { drawOrbit(); return; }
+    var maxR = 0; S.rings.forEach(function (r) { if (r.r > maxR) maxR = r.r; });
+    var s = (Math.min(W, H)/2 - 12) / (maxR * 1.05);
+    ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2*Math.PI);
+    ctx.fillStyle = '#ffd76a'; ctx.fill();
+    var here = null;
+    S.rings.forEach(function (r) {
+      var mine = r.name === S.here; if (mine) here = r;
+      ctx.beginPath(); ctx.arc(cx, cy, r.r*s, 0, 2*Math.PI);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = mine ? 'rgba(232,200,57,0.85)' : 'rgba(232,200,57,0.35)';
+      ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(cx + r.r*s, cy, mine ? 3.5 : 2.5, 0, 2*Math.PI);
+      ctx.fillStyle = col(r.color); ctx.fill();
+      ctx.font = '10px sans-serif'; ctx.fillStyle = '#c9a227'; ctx.textAlign = 'left';
+      ctx.fillText(r.name, cx + r.r*s + 6, cy - 5);
+    });
+    if (here) {
+      ctx.beginPath(); ctx.arc(cx + here.r*s, cy, 1.8, 0, 2*Math.PI);
+      ctx.fillStyle = '#ffffff'; ctx.fill();
+    }
+    var pl = document.getElementById('plot-frame-label');
+    if (pl) pl.textContent = 'the sun\\'s roads \\u2014 ' + Math.round(maxR / 1e6) + ' Mkm across';
+  }
   function drawOrbit () {
     dims();
     ctx.clearRect(0, 0, W, H);
+    // a dark ground of its own: painted onto the flatscreen, a
+    // clear canvas came through as lit grey under x3dom
+    ctx.fillStyle = '#05070c'; ctx.fillRect(0, 0, W, H);
     var ext = O.ringR * 1.15;
     if (O.a !== null && O.a !== undefined) {
       var apo = O.a * (1 + O.e);
@@ -1642,11 +1810,14 @@ window.GW_DRAW = function () {
     }
     var rr = Math.sqrt(O.x*O.x + O.y*O.y);
     if (rr * 1.15 > ext) ext = rr * 1.15;
-    var s = (W/2 - 8) / ext;
+    var Z = window.GW_ZOOM || 1;
+    if (Z === 2) ext = sysExt();
+    var s = (Math.min(W, H)/2 - 8) / ext;
     ctx.beginPath(); ctx.arc(cx, cy, O.ringR*s, 0, 2*Math.PI);
     ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(232,200,57,0.45)';
     ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
     disk(0, 0, O.worldR, s, col(O.color), 2.5);
+    if (Z === 2 && P.zoom) P.zoom.system.forEach(function (b) { disk(b.x, b.y, b.r, s, col(b.color), 3); });
     if (O.moon && Math.abs(O.moon.x)*s < W/2) {
       disk(O.moon.x, O.moon.y, O.moon.r, s, '#c8c8c2', 3);
       // close aboard the moon, the watch shows itself: a faint
@@ -1746,6 +1917,8 @@ window.GW_DRAW = function () {
     coords(O.x, O.y, false, O.frame);
   }
   var V = P.voyage;
+  // two levels out the road is a dot on a ring: the sun's roads
+  if ((window.GW_ZOOM || 1) === 3) { hudOff(); drawSolar(); return; }
   if (!V) { hudOff(); drawOrbit(); return; }
   // frame the whole road and every rider: the view centers on the
   // track's own bounding box, not the frame's origin
@@ -1771,7 +1944,9 @@ window.GW_DRAW = function () {
   });
   var oxW = (minX + maxX) / 2, oyW = (minY + maxY) / 2;
   var span = Math.max(maxX - minX, maxY - minY, 1) / 2;
-  var vs = (W/2 - 10) / (span * 1.12), mkm = span > 2.5e6;
+  // a level out (S4): the system's frame instead of the road's
+  if ((window.GW_ZOOM || 1) === 2) { oxW = 0; oyW = 0; span = sysExt() / 1.12; }
+  var vs = (Math.min(W, H)/2 - 10) / (span * 1.12), mkm = span > 2.5e6;
   function vpx (x) { return cx + (x - oxW) * vs; }
   function vpy (y) { return cy - (y - oyW) * vs; }
   function vDisk (x, y, r, fill, minPx) {
@@ -1792,6 +1967,9 @@ window.GW_DRAW = function () {
   function drawVoyage (f) {
     dims();
     ctx.clearRect(0, 0, W, H);
+    // a dark ground of its own: painted onto the flatscreen, a
+    // clear canvas came through as lit grey under x3dom
+    ctx.fillStyle = '#05070c'; ctx.fillRect(0, 0, W, H);
     ctx.beginPath();
     S.forEach(function (sm, i) {
       if (i) ctx.lineTo(vpx(sm[2]), vpy(sm[3]));
@@ -1957,7 +2135,8 @@ window.GW_CLOCK_TICK = function () {
   }
   // the tick: a settle pressed through the lit channel key, the
   // same path a hand takes (debounced there)
-  function tick () {
+  function tick (why) {
+    try { (window.GW_TICK_LOG = window.GW_TICK_LOG || []).push([why, Date.now(), window.GW_VOYAGE_T0, window.GW_CLOCK && GW_CLOCK.cycle, window.GW_CLOCK && GW_CLOCK.serial, window.GW_CLOCK && GW_CLOCK.coast]); } catch (e) {}
     try { var b = document.querySelector('.cadence-btn.lit'); if (b) b.click(); } catch (e) {}
   }
   function step () {
@@ -1968,13 +2147,13 @@ window.GW_CLOCK_TICK = function () {
     if (C && C.scale) {
       if (C.coast) {
         // the tape (S3): at tickAt the next stretch is cut while
-        // this one still plays, once per stretch
-        if (f !== null && f >= (C.tickAt || 1) && ticked !== window.GW_GEN) { ticked = window.GW_GEN; tick(); }
+        // this one still plays, once per stretch (its serial)
+        if (f !== null && f >= (C.tickAt || 1) && ticked !== C.serial) { ticked = C.serial; tick('tape f=' + f); }
       } else if (inClip && !running) {
         // a road at its end: on the ground the arrival scene has
         // no day clock in it, aloft the tape begins where the road
         // ends -- one settle re-cuts the scene either way
-        tick();
+        tick('road-end f=' + f);
       }
     }
     inClip = running;
@@ -1982,11 +2161,80 @@ window.GW_CLOCK_TICK = function () {
   }
   step();
 };
+// THE SEAM (the tape extension): the next stretch of coast arrives
+// as data on GW_TAPE -- the clip's nodes and its routes -- and is
+// spliced into the standing scene beside the stretch it relieves:
+// appended to the live <scene> under x3dom (ROUTE elements built
+// from the list), created from a string and added root by root
+// under X_ITE with the routes added through the SAI (a fragment
+// parses in a namespace of its own, so its named nodes are kept on
+// GW_TAPE_NODES for the seeding).  The relieved clock is stopped at
+// the seam and the new one seeded to the elapsed game-time
+// (GW_DAY_WIRE), so nothing snaps and nothing is refetched.
+// the LIVE scene element for a DEF/id: the x3dom page also carries a
+// hidden scene template (re-rendered every post) with the same ids,
+// and getElementById may answer with the template's copy
+window.GW_LIVE = function (id) {
+  var sc = document.querySelector('x3d scene');
+  return sc ? sc.querySelector('[id=\"' + id + '\"]') : document.getElementById(id);
+};
+window.GW_TAPE_APPLY = function () {
+  var T = window.GW_TAPE; if (!T || !T.nodes) return;
+  window.GW_TAPE_NODES = window.GW_TAPE_NODES || {};
+  function have (id) {
+    if (GW_LIVE(id)) return true;
+    if (window.GW_TAPE_NODES[id]) return true;
+    try { return !!(window.GW_XR_NAMED && GW_XR_NAMED(id)); } catch (e) { return false; }
+  }
+  if (have(T.clock)) { window.GW_TAPE_CLOCK = T.clock; return; }
+  var prev = window.GW_TAPE_CLOCK || 'voyage-clock';
+  function stopPrev () {
+    if (!prev || prev === T.clock) return;
+    var now = Date.now() / 1000;
+    var el = GW_LIVE(prev);
+    if (el) { el.setAttribute('stopTime', '' + now); return; }
+    var n = window.GW_TAPE_NODES[prev];
+    if (!n) { try { n = window.GW_XR_NAMED && GW_XR_NAMED(prev); } catch (e) { n = null; } }
+    if (n) { try { n.getField('stopTime').setValue(now); } catch (e) {} }
+  }
+  var scene = document.querySelector('x3d scene');
+  if (scene) {
+    // x3dom (measured 2026-09-03): elements spliced into its live
+    // scene never get runtime nodes, and a running TimeSensor
+    // ignores a stopTime set by attribute -- so the classic page
+    // takes the seam its own way, a reload, which the GET settle
+    // turns into a freshly baked tape (the voyage script's played
+    // key carries the serial, so the reload plays it, not snaps)
+    window.GW_TAPE_CLOCK = T.clock;
+    location.reload();
+    return;
+  }
+  var cv = document.querySelector('x3d-canvas'); var br = cv && cv.browser; var sc = br && br.currentScene;
+  if (!sc) return;
+  var xml = '<?xml version=\"1.0\" encoding=\"UTF-8\"?><X3D profile=\"Full\" version=\"4.0\"><Scene>' + T.nodes + '</Scene></X3D>';
+  Promise.resolve(br.createX3DFromString(xml)).then(function (frag) {
+    var roots = frag.rootNodes;
+    for (var i = 0; i < roots.length; i++) {
+      sc.addRootNode(roots[i]);
+    }
+    function named (name) {
+      try { var n = frag.getNamedNode(name); if (n) { window.GW_TAPE_NODES[name] = n; return n; } } catch (e) {}
+      try { return sc.getNamedNode(name); } catch (e2) { return null; }
+    }
+    T.routes.forEach(function (r) {
+      try { sc.addRoute(named(r[0]), r[1], named(r[2]), r[3]); } catch (e) {}
+    });
+    window.GW_TAPE_CLOCK = T.clock;
+    stopPrev();
+    if (window.GW_DAY_WIRE) GW_DAY_WIRE();
+  }).catch(function (e) {});
+};
 window.GW_DAY_WIRE = function () {
   var C = window.GW_CLOCK; if (!C || !C.scale) return;
   var now = Date.now() / 1000;
   function node (id) {
-    var el = document.getElementById(id); if (el) return { dom: el };
+    var el = GW_LIVE(id); if (el) return { dom: el };
+    if (window.GW_TAPE_NODES && window.GW_TAPE_NODES[id]) return { sai: window.GW_TAPE_NODES[id] };
     var n = window.GW_XR_NAMED ? window.GW_XR_NAMED(id) : null;
     return n ? { sai: n } : null;
   }
@@ -2004,7 +2252,7 @@ window.GW_DAY_WIRE = function () {
     var f = horizon ? eg / horizon : 0;
     if (f < 0) f = 0; if (f > 1) f = 1;
     var start = now - f * C.cycle;
-    set('voyage-clock', 'startTime', start);
+    set(C.clock || 'voyage-clock', 'startTime', start);
     window.GW_VOYAGE_T0 = start * 1000;
   }
   if (!C.ground || !C.day) return;
@@ -2365,6 +2613,8 @@ window.GW_WIRE = function () {
     if (st) st.setAttribute('emissiveColor', '0.75 0.25 0.12');
     var b = document.getElementById('gw-move-btn'); if (b) b.click();
   });
+  // the port screen: a tap zooms the plot out a level (S4)
+  touch('plot-touch', function () { if (window.GW_ZOOM_CYCLE) GW_ZOOM_CYCLE(); });
   // what is grabbable says so, straight from the sensors' own
   // isOver: an arrow everywhere, the grab hand over wheel,
   // shifter, pedals and horn, the plain pointer over the keys
@@ -2390,7 +2640,7 @@ window.GW_WIRE = function () {
   });
   ['radio-preset-0-touch', 'radio-preset-1-touch', 'radio-preset-2-touch',
    'radio-preset-3-touch', 'radio-tpt-0-touch', 'radio-tpt-1-touch',
-   'radio-tpt-2-touch', 'starter-touch'].forEach(function (id) {
+   'radio-tpt-2-touch', 'starter-touch', 'plot-touch'].forEach(function (id) {
     overCursor(id, 'pointer');
   });
 };")
@@ -2763,6 +3013,28 @@ window.GW_WIRE = function () {
    (nose-in? (the nose-in-control value))
    ;; the game-seconds a standing coast tape spans (coast-tape!)
    (coast-span nil :settable)
+   ;; THE SEAM: every stretch of tape wears a serial, and at a seam
+   ;; the page receives the next stretch as DATA -- the clip's nodes
+   ;; and routes (tape-json) -- and splices it into the standing
+   ;; scene beside the stretch it relieves (GW_TAPE_APPLY), instead
+   ;; of the whole scene being re-cut.  The serial suffixes the
+   ;; clock's and interpolators' DEFs; the frames keep their names.
+   (tape-serial 0 :settable)
+   (tape-tag (if (eql (the transit-target) :coast)
+                 (format nil "-~d" (the tape-serial))
+                 ""))
+   (tape-json
+    (if (eql (the transit-target) :coast)
+        (multiple-value-bind (inline routes nodes)
+            (transit-anim-x3d (the transit-samples) (the transit-bodies)
+                              :duration (the transit-duration)
+                              :time-map (the transit-time-map)
+                              :tag (the tape-tag))
+          (declare (ignore inline))
+          (format nil "{\"serial\":~d,\"clock\":\"voyage-clock~a\",\"nodes\":~a,\"routes\":[~{[~{~a~^,~}]~^,~}]}"
+                  (the tape-serial) (the tape-tag) (json-string nodes)
+                  (mapcar (lambda (r) (mapcar #'json-string r)) routes)))
+        "null"))
    ;; the sky's riders on the ground: the one other world hanging
    ;; at the horizon -- (prefix phase-rad day-seconds), the face he
    ;; shows and how fast it turns
@@ -2784,11 +3056,12 @@ window.GW_WIRE = function () {
            ;; a road's clock already carries its whole time; a
            ;; coast tape starts at the settled reading
            (total (cond ((null tm) nil) (coast? 0) (t (cdr (car (last tm)))))))
-      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"ground\":~a,\"coast\":~a,\"tickAt\":~a,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
+      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"ground\":~a,\"coast\":~a,\"serial\":~d,\"clock\":\"voyage-clock~a\",\"tickAt\":~a,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
               (round (the game-seconds)) (the clock-scale)
               (the world-day-seconds)
               (if (the landed?) "true" "false")
               (if coast? "true" "false")
+              (the tape-serial) (the tape-tag)
               ;; a tape ticks at three quarters, so the next stretch
               ;; is cut while this one still plays; a road at its end
               (if coast? "0.75" "1")
@@ -2938,6 +3211,27 @@ window.GW_WIRE = function () {
         (format out ",\"moon\":{\"x\":~,1f,\"y\":0,\"r\":~,1f}"
                 +moon-x+ +moon-radius+))
       (format out "}")
+      ;; THE ZOOM (S4): what the plot draws a level out -- the
+      ;; SYSTEM (the world's riders, in his frame) and the SUN'S
+      ;; ROADS (every ringed world; schematic, since the sun's roads
+      ;; keep no phase: each stands at +x on his ring, and she rides
+      ;; the ring of the world that has her -- home's, from the moon)
+      (format out ",\"zoom\":{\"system\":[~{~a~^,~}],\"solar\":{\"here\":~s,\"rings\":[~{~a~^,~}]}}"
+              (case (the world)
+                (:home (list (format nil "{\"name\":\"the moon\",\"x\":~,1f,\"y\":0,\"r\":~,1f,\"color\":\"0.75 0.74 0.70\"}"
+                                     +moon-x+ +moon-radius+)))
+                (:moon (list (format nil "{\"name\":\"home\",\"x\":~,1f,\"y\":0,\"r\":~,1f,\"color\":\"0.10 0.18 0.85\"}"
+                                     (- +moon-x+) +planet-radius+)))
+                (t nil))
+              (if (world-figure (the world) :sun-radius)
+                  (the world-name)
+                  (world-figure :home :name))
+              (loop for row in *worlds*
+                    for sr = (world-figure (first row) :sun-radius)
+                    when sr
+                      collect (format nil "{\"name\":~s,\"r\":~,1f,\"color\":~s}"
+                                      (world-figure (first row) :name) sr
+                                      (world-figure (first row) :diffuse))))
       (when (the transit-samples)
         (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~a,\"samples\":["
                 (case (the transit-target)
@@ -3077,6 +3371,9 @@ window.GW_WIRE = function () {
              (transit-anim-x3d samples (the transit-bodies)
                                :duration (the transit-duration)
                                :time-map (the transit-time-map)
+                               ;; a coast tape's clock wears its
+                               ;; serial, so a seam can relieve it
+                               :tag (the tape-tag)
                                ;; a scene document carries its own
                                ;; ignition; the x3dom page lights the
                                ;; clock from script instead
@@ -3205,7 +3502,7 @@ window.GW_WIRE = function () {
         ;; would read as already-played and snap to arrival
         (format nil "
 (function () {
-  var key = 'gw-voyage-~a-~a', played = false;
+  var key = 'gw-voyage-~a-~a-~d', played = false;
   try { played = !!sessionStorage.getItem(key); } catch (e) {}
   if (played) {
     window.GW_VOYAGE_T0 = null;
@@ -3230,9 +3527,10 @@ window.GW_WIRE = function () {
     });
   }
 })();"
-                ;; keyed on the scene generation: every stretch of
-                ;; coast tape is its own clip
-                (or (the instance-id) "local") (the scene-gen)
+                ;; keyed on the scene generation AND the tape serial:
+                ;; every stretch of coast tape is its own clip, even
+                ;; across a same-generation reload (x3dom's seam)
+                (or (the instance-id) "local") (the scene-gen) (the tape-serial)
                 (the voyage-fin-js)
                 ;; where the ground stands when the clip is snapped
                 ;; past: home for a landing, struck for a lift-off
@@ -3263,20 +3561,17 @@ window.GW_WIRE = function () {
    ;; becomes the landing eye
    (plot-close? (and (not (the landed?))
                      (< (the altitude) (* 0.5 (the world-radius)))))
-   (plot-size (if (the plot-close?) 340 210))
+   ;; the plot canvas: the port flatscreen's own aspect (0.30 x
+   ;; 0.235), one size -- it is painted onto the glass now
+   (plot-size 320)
+   (plot-height 250)
 
-   ;; the port flatscreen: the port reptile eye on the open road;
-   ;; on final -- and on the ground -- it gazes at the world
-   ;; instead, the landing eye watching the surface come up
-   (port-feed-x3d (if (or (the plot-close?) (the landed?))
-                     (eye-feed-x3d "0 0 0.6"
-                                   (look-at-orientation
-                                    (make-vector (cos (the planet-bearing))
-                                                 (sin (the planet-bearing))
-                                                 0)
-                                    (make-vector 0 0 1))
-                                   0.46 0.22)
-                     (port-eye-feed-x3d)))
+   ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
+   ;; view's canvas, painted onto the glass by the page a few times
+   ;; a second (plot-screen-x3d; the mirror step in *plan-view-js*),
+   ;; both renderers alike.  The port reptile eye's feed it replaced
+   ;; stands in git history (port-eye-feed-x3d).
+   (port-feed-x3d (plot-screen-x3d))
 
    ;; the big readout in the helm's title bar: gear letter and
    ;; steerage at a glance, visible even with the card folded.
@@ -3324,17 +3619,24 @@ window.GW_WIRE = function () {
               (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_CLOCK = ~a;~%window.GW_CLOCK.wall = Date.now();~%if (!window.GW_LOADED || window.GW_GEN !== '~a') window.GW_SCENE_T = window.GW_CLOCK.t;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();~%if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_CLOCK = ~a;~%window.GW_CLOCK.wall = Date.now();~%window.GW_TAPE = ~a;~%if (!window.GW_LOADED || window.GW_GEN !== '~a') window.GW_SCENE_T = window.GW_CLOCK.t;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') !== '0') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();~%if (window.GW_LOADED && window.GW_GEN === '~a' && window.GW_TAPE_APPLY) { try { GW_TAPE_APPLY(); } catch (e) {} }~%if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
             (the nose-in-json)
             ;; the clock the page ticks; GW_SCENE_T remembers the
             ;; reading the standing scene was cut at, so a re-wire
             ;; seeds the ground sensors to the time elapsed since
             (the clock-json)
+            ;; the next stretch of tape as data, for a seam (only
+            ;; applied when the scene generation stands: a re-cut
+            ;; scene carries its tape baked in)
+            (the tape-json)
             (the scene-gen)
             (if (the transit-samples) "Date.now() + 2000" "null")
             ;; the speedo face is painted to the world's own scale
             (the speedo-full-scale)
+            ;; the seam applies only while the scene generation
+            ;; stands (a re-cut scene carries its tape baked in)
+            (the scene-gen)
             ;; the scene refresh is gated on the scene GENERATION
             ;; (scene-gen: moves-count plus the ground settles, the
             ;; gw-gen-N stamp every move path bumps), not merely on
@@ -3593,6 +3895,13 @@ GW_CHECK_IN();"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
           (:span "THE PLOT")
+          ;; the zoom keys (S4): a level in, a level out, the level named
+          (:span :style "display:flex;gap:4px;align-items:center;font-size:10px;letter-spacing:0.04em;"
+            (:button :type "button" :class "rbtn" :title "zoom in a level"
+              :onclick "event.stopPropagation(); GW_ZOOM_SET((window.GW_ZOOM||1) - 1)" "−")
+            (:span :id "plot-zoom-label" "the world")
+            (:button :type "button" :class "rbtn" :title "zoom out a level"
+              :onclick "event.stopPropagation(); GW_ZOOM_SET((window.GW_ZOOM||1) + 1)" "+"))
           (:span :id "plot-caret" "▾"))
         (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
@@ -3870,7 +4179,7 @@ function toggleHelm () {
       (:div :id "plot-body" :style "margin-top:6px;"
           (:canvas :id "plot-canvas"
             :width (format nil "~d" (the plot-size))
-            :height (format nil "~d" (the plot-size))
+            :height (format nil "~d" (the plot-height))
             :style "display:block;")
           (:div :id "plot-coords"
             :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
@@ -4751,18 +5060,25 @@ function toggleHelm () {
           (was (the clock-scale))
           (rate (the idle-scale)))
       (when (and (the clock-anchor) (/= was 0))
-        (let ((dt (* (- now (the clock-anchor)) was)))
-          (if (the landed?)
+        (let ((dt (* (- now (the clock-anchor)) was))
+              (world0 (the world))
+              (landed0 (the landed?)))
+          (if landed0
               (the (set-slot! :game-seconds (+ (the game-seconds) dt)))
               ;; aloft she rode the road meanwhile: carry her along
               ;; it -- the fall, the sky, the grips (coast!)
-              (the (coast! dt))))
-        ;; whatever clip stood is over by now -- the landing that
-        ;; brought her down, a road just flown, the last stretch of
-        ;; tape: retire it, or the re-cut scene replays it from a
-        ;; fresh clock (and a landing's end would settle forever)
-        (the retire-clip!)
-        (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
+              (the (coast! dt)))
+          ;; whatever clip stood is over by now -- the landing that
+          ;; brought her down, a road just flown, the last stretch of
+          ;; tape: retire it, or the re-cut scene replays it from a
+          ;; fresh clock (and a landing's end would settle forever)
+          (the retire-clip!)
+          ;; the scene is re-cut on the ground (its sensors are cut
+          ;; into it) and at an EVENT aloft -- a landing, another
+          ;; world's grip; a plain stretch of coast is relieved at
+          ;; the seam instead (retape! :seam)
+          (when (or landed0 (the landed?) (not (eql world0 (the world))))
+            (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))))
       (the (set-slot! :clock-anchor now))
       (unless (= rate was)
         (the (set-slot! :clock-scale rate)))))
@@ -4781,20 +5097,31 @@ function toggleHelm () {
    ;; play just pressed, the law just turned)
    (settle-post!
     ()
-    (let ((*current-pilot* (the pilot-id)))
+    (let ((*current-pilot* (the pilot-id))
+          (was (the clock-scale)))
       (the settle-clock!)
-      (the retape!)))
+      (the (retape! :seam t))
+      ;; just STOPPED: the scene stands still where she is -- the
+      ;; turn-based game's own view -- so it is re-cut, or the
+      ;; page's tape would play on to its end under a stopped clock
+      (when (and (not (the playing?)) (/= was 0))
+        (the retire-clip!)
+        (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))))
 
    ;; THE TAPE, kept standing (S3): playing and aloft with no road
    ;; clip showing, the coast ahead is cut fresh from the state.
    ;; Every hand move ends here, every settle post, every page GET.
+   ;; At a SEAM (the settle post: the tick, the radio, the switch)
+   ;; the new stretch rides to the page as data and the scene
+   ;; stands; otherwise the scene is re-cut around it.
    (retape!
-    ()
+    (&key seam)
     (cond ((and (the playing?) (not (the landed?))
                 (or (null (the transit-samples))
                     (eql (the transit-target) :coast)))
            (the coast-tape!)
-           (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
+           (unless seam
+             (the (set-slot! :clock-cuts (1+ (the clock-cuts))))))
           ;; STOP retires a standing tape: the scene stands still
           ;; where she is, the turn-based game's own view
           ((and (not (the playing?)) (eql (the transit-target) :coast))
@@ -4934,6 +5261,7 @@ function toggleHelm () {
               (mapcar (lambda (s) (cons (/ (first s) denom) (* sign (first s))))
                       samples)))
         (the (set-slot! :coast-span total))
+        (the (set-slot! :tape-serial (1+ (the tape-serial))))
         (the (set-slot! :transit-target :coast))
         (the (set-slot! :transit-beats nil))
         (the (set-slot! :transit-bodies
@@ -5250,6 +5578,8 @@ function toggleHelm () {
     onRelease('starter-touch', function () {
       var b = document.getElementById('gw-move-btn'); if (b) b.click();
     });
+    // the port screen: a tap zooms the plot out a level (S4)
+    onRelease('plot-touch', function () { if (window.GW_ZOOM_CYCLE) GW_ZOOM_CYCLE(); });
     var wheel = named('wheel-sensor');
     if (wheel) {
       var lastAng = 0;
@@ -5396,8 +5726,15 @@ function toggleHelm () {
       window.GW_VOYAGE_T0 = t0 * 1000;
     }
     // the ground's idle clock seeds its sensors through the SAI
-    // too: leave the handle, then seed (see *idle-clock-js*)
+    // too: leave the handle, then seed (see *idle-clock-js*); and
+    // the plot paints the port flatscreen live through it
     window.GW_XR_NAMED = named;
+    window.GW_XR_SETTEX = function (id, url) {
+      var tx = named(id); if (!tx) return;
+      try { tx.getField('url').setValue(new X3D.MFString(url)); } catch (e) {
+        try { tx.url = new X3D.MFString(url); } catch (e2) {}
+      }
+    };
     if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }
     var note = document.getElementById('plot-frame-label');
     if (note) note.textContent = 'X_ITE: wired';
@@ -5405,6 +5742,8 @@ function toggleHelm () {
     // horizon to +Y, discarding the roll our z-up viewpoints
     // carry.  Turn that off before binding.
     try { browser.setBrowserOption('StraightenHorizon', false); } catch (e) {}
+    // no 'Loading 1 file' toast at every painted frame of the plot
+    try { browser.setBrowserOption('Notifications', false); } catch (e) {}
     // the early bind can be overridden by X_ITE's own initial
     // bind; assert the seat once more now that all stands
     bindSeat(browser);
@@ -5550,6 +5889,9 @@ function toggleHelm () {
      (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
+     ;; the port flatscreen is a painted quad now (the plot), so it
+     ;; rides this document too; the starboard eye feed stays out
+     (the port-feed-x3d)
      "</Group>"
      "</Scene></X3D>"))
 
@@ -5578,6 +5920,13 @@ function toggleHelm () {
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
           (:span "THE PLOT")
+          ;; the zoom keys (S4): a level in, a level out, the level named
+          (:span :style "display:flex;gap:4px;align-items:center;font-size:10px;letter-spacing:0.04em;"
+            (:button :type "button" :class "rbtn" :title "zoom in a level"
+              :onclick "event.stopPropagation(); GW_ZOOM_SET((window.GW_ZOOM||1) - 1)" "−")
+            (:span :id "plot-zoom-label" "the world")
+            (:button :type "button" :class "rbtn" :title "zoom out a level"
+              :onclick "event.stopPropagation(); GW_ZOOM_SET((window.GW_ZOOM||1) + 1)" "+"))
           (:span :id "plot-caret" "▾"))
         (str (the plot-section main-div)))
       (:div :style "position:fixed;bottom:12px;left:14px;z-index:10;color:#c9a227;font-family:sans-serif;font-size:13px;opacity:0.85;"
