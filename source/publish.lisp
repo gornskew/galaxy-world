@@ -25,6 +25,24 @@
 ;; session's cockpit, looked up by instance id.  The page at /xr
 ;; points its x3d-canvas here; a stale or foreign iid answers 404
 ;; and the canvas simply stays dark.
+;; the hails endpoint: the page polls it by ship= (the transporter's
+;; own hint, never iid=), the poll is the session's heartbeat on the
+;; roster, and the answer is the roster and the log for everyone
+(defun hails-responder (req ent)
+  (let* ((iid (net.aserve:request-query-value "ship" req))
+         (entry (and iid (gethash (gwl::make-keyword-sensitive iid)
+                                  gwl::*instance-hash-table*)))
+         (self (first entry))
+         (doc (and self (typep self 'galaxy-world::cockpit-view)
+                   (progn (gdl:the-object self (set-slot! :seen-at (galaxy-world::unix-now)))
+                          (galaxy-world::hails-json self)))))
+    (net.aserve:with-http-response
+        (req ent :content-type "application/json"
+             :response (if doc net.aserve:*response-ok*
+                           net.aserve:*response-not-found*))
+      (net.aserve:with-http-body (req ent)
+        (write-string (or doc "{}") net.html.generator:*html-stream*)))))
+
 (defun xr-scene-responder (req ent)
   ;; the session rides in as "ship", not "iid": an iid-named query
   ;; would wake the transporter's affinity module, which blackholes
@@ -90,6 +108,12 @@
                         :host *galaxy-world-hosts*
                         :server server
                         :function 'xr-scene-responder))
+  ;; the hails: roster + log, polled by every cockpit
+  (dolist (path (list "/hails.json" "/galaxy-world/hails.json"))
+    (net.aserve:publish :path path
+                        :host *galaxy-world-hosts*
+                        :server server
+                        :function 'hails-responder))
   ;; the real faces: NASA imagery (Blue Marble; LROC color mosaic)
   ;; as static routes -- public domain, courtesy NASA.  Path
   ;; resolution rides the system definition, so flat and bucketed

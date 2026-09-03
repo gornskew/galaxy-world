@@ -169,20 +169,21 @@
    ;; wood-panel-x3d
 
    ;; the gauge cluster, chrome bezels proud of the panel face
-   ;; THE DASH SHIFT (ruled 2026-09-03): the three gauges, the radio
-   ;; and the starter all stand 0.13 to starboard of where they were
-   ;; (speedo at y -0.13, compass 0.06, climb -0.32), leaving the port
-   ;; dash to the plot.  The same 0.13 rides every per-cockpit part
-   ;; that sits on them: dial faces, needles, radio keys, starter.
+   ;; THE DASH LAYOUT (ruled 2026-09-03, twice): the big speedo
+   ;; centered behind the wheel (y 0), the two small gauges to its
+   ;; starboard -- compass at -0.16, climb at -0.29 -- the radio under
+   ;; the speedo, the starter under the climb; the port dash is the
+   ;; plot's.  Every per-cockpit part that sits on a gauge (dial
+   ;; faces, needles, keys, starter) carries the same figures.
    (speedo-bezel :type 'c-cylinder
-                 :start (make-point 0.722 -0.13 0.46)
-                 :end (make-point 0.732 -0.13 0.46)
+                 :start (make-point 0.722 0 0.46)
+                 :end (make-point 0.732 0 0.46)
                  :radius 0.085
                  :number-of-sections 24
                  :display-controls (list :color +chrome+))
    (speedo-face :type 'c-cylinder
-                :start (make-point 0.716 -0.13 0.46)
-                :end (make-point 0.723 -0.13 0.46)
+                :start (make-point 0.716 0 0.46)
+                :end (make-point 0.723 0 0.46)
                 :radius 0.075
                 :number-of-sections 24
                 :display-controls (list :color +gauge-face+))
@@ -191,27 +192,27 @@
    ;; shared cab
 
    (port-gauge-bezel :type 'c-cylinder
-                     :start (make-point 0.722 0.06 0.45)
-                     :end (make-point 0.732 0.06 0.45)
+                     :start (make-point 0.722 -0.16 0.45)
+                     :end (make-point 0.732 -0.16 0.45)
                      :radius 0.055
                      :number-of-sections 24
                      :display-controls (list :color +chrome+))
    (port-gauge-face :type 'c-cylinder
-                    :start (make-point 0.717 0.06 0.45)
-                    :end (make-point 0.723 0.06 0.45)
+                    :start (make-point 0.717 -0.16 0.45)
+                    :end (make-point 0.723 -0.16 0.45)
                     :radius 0.047
                     :number-of-sections 24
                     :display-controls (list :color +gauge-face+))
 
    (starboard-gauge-bezel :type 'c-cylinder
-                          :start (make-point 0.722 -0.32 0.45)
-                          :end (make-point 0.732 -0.32 0.45)
+                          :start (make-point 0.722 -0.29 0.45)
+                          :end (make-point 0.732 -0.29 0.45)
                           :radius 0.055
                      :number-of-sections 24
                           :display-controls (list :color +chrome+))
    (starboard-gauge-face :type 'c-cylinder
-                         :start (make-point 0.717 -0.32 0.45)
-                         :end (make-point 0.723 -0.32 0.45)
+                         :start (make-point 0.717 -0.29 0.45)
+                         :end (make-point 0.723 -0.29 0.45)
                          :radius 0.047
                     :number-of-sections 24
                          :display-controls (list :color +gauge-face+))
@@ -1450,8 +1451,8 @@ X_ITE), because a fresh scene document stands with the light off.")
           ;; sill where the disc's lower limb lands.
           (painted-quad-x3d "plot-tex"
                             (list (list 0.7125 0.51 0.275)
-                                  (list 0.7125 0.125 0.275)
-                                  (list 0.7125 0.125 0.545)
+                                  (list 0.7125 0.10 0.275)
+                                  (list 0.7125 0.10 0.545)
                                   (list 0.7125 0.51 0.545))
                             ;; low emissive: the plot's black ground
                             ;; must read black, the gold lines lit
@@ -1505,33 +1506,33 @@ X_ITE), because a fresh scene document stands with the light off.")
                      len icon)))
     (string-append
      ;; the plate
-     ;; the plate, under the shifted speedo (0.13 to starboard)
-     "<Transform translation=\"0.7245 -0.13 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
+     ;; the plate, under the speedo behind the wheel
+     "<Transform translation=\"0.7245 0 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
      ;; the four channel keys, slow to fastest, port to starboard
      (with-output-to-string (out)
        (loop for val in '(:slow :medium :fast :fastest)
              for label in '("slow — a minute a turn" "medium — ten minutes"
                             "fast — an hour" "fastest — a day (goa 145)")
              for i from 0
-             for y in '(-0.04 -0.10 -0.16 -0.22)
+             for y in '(0.09 0.03 -0.03 -0.09)
              do (format out "~a"
                         (key-x3d (format nil "radio-preset-~d" i)
                                  (format nil "radio-preset-mat-~d" i)
                                  y 0.331 0.048 (eql cadence val) label
                                  (chevrons-x3d y 0.331 (1+ i) -1)))))
      ;; the transport: rewind to port, stop amidships, play to starboard
-     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" -0.068 0.292 0.045
+     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.062 0.292 0.045
               (eql transport :rewind) "rewind — time runs backward"
-              (chevrons-x3d -0.068 0.292 2 1))
-     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.13 0.292 0.045
+              (chevrons-x3d 0.062 0.292 2 1))
+     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" 0.0 0.292 0.045
               (eql transport :stop) "stop — time stands still between moves"
-              (stop-block-x3d -0.13 0.292))
-     (key-x3d "radio-tpt-2" "radio-tpt-mat-2" -0.192 0.292 0.045
+              (stop-block-x3d 0.0 0.292))
+     (key-x3d "radio-tpt-2" "radio-tpt-mat-2" -0.062 0.292 0.045
               (eql transport :play) "play — time runs forward"
-              (chevrons-x3d -0.192 0.292 1 -1))
+              (chevrons-x3d -0.062 0.292 1 -1))
      ;; the starter, under the climb gauge: press it and the move
      ;; is made
-     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.32 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.32 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
+     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.29 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.29 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
 
 ;; One hidden leaf, cut through the same lens the cab tree uses, so
 ;; a rig's geometry matches the cab's finish exactly.
@@ -1683,7 +1684,30 @@ window.GW_DRAW = function () {
   var cv = document.getElementById('plot-canvas'); if (!cv) return;
   var ctx = cv.getContext('2d');
   var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
-  function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = H / 2; }
+  // THE FOOTER (S6 audit, 2026-09-03): the plot screen carries the
+  // helm's read-only figures under the drawing -- the clock, where
+  // she is and how high, the ship's line -- so the flat card is not
+  // needed to READ the ship, only to buy a road, throw the nose-in
+  // switch or the floodlight.  The drawing centers in the band above.
+  var FOOT = 58;
+  function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = (H - FOOT) / 2; }
+  function footer () {
+    var y0 = H - FOOT;
+    ctx.fillStyle = '#05070c'; ctx.fillRect(0, y0, W, FOOT);
+    ctx.strokeStyle = 'rgba(232,200,57,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(8, y0 + 0.5); ctx.lineTo(W - 8, y0 + 0.5); ctx.stroke();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    var t = window.GW_CLOCK_NOW ? GW_CLOCK_NOW() : null;
+    var clock = (t !== null && window.GW_CLOCK_FACE) ? GW_CLOCK_FACE(t) : '';
+    var where = O ? ((O.landed ? 'down on ' : 'falling around ') + O.frame) : '';
+    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#e8c839';
+    ctx.fillText((clock ? 'ship\\'s clock ' + clock + '   \\u00b7   ' : '') + where, 10, y0 + 13);
+    var coords = ((document.getElementById('coords-line') || {}).textContent || '').replace(/\\s+/g, ' ');
+    ctx.font = '12px sans-serif'; ctx.fillStyle = '#c9a227';
+    ctx.fillText(coords.slice(0, 80), 10, y0 + 30);
+    var ship = ((document.getElementById('gw-ship') || {}).textContent || '').replace(/\\s+/g, ' ');
+    ctx.fillText(ship.slice(0, 80), 10, y0 + 46);
+  }
   // THE MIRROR: every frame drawn here is painted onto the port
   // flatscreen in the cab (plot-tex), a few times a second -- by
   // DOM attribute under x3dom, by the SAI setter the xr wire
@@ -1694,6 +1718,7 @@ window.GW_DRAW = function () {
     if (now - (GW_DRAW.pushed || 0) < 250) return;
     GW_DRAW.pushed = now;
     try {
+      footer();
       // PNG, as the dial faces are (x3dom took no JPEG data url),
       // and only when the picture changed: a parked orbit is
       // painted once, a coast a few times a second
@@ -1817,7 +1842,7 @@ window.GW_DRAW = function () {
     var S = P.zoom && P.zoom.solar;
     if (!S || !S.rings.length) { drawOrbit(); return; }
     var maxR = 0; S.rings.forEach(function (r) { if (r.r > maxR) maxR = r.r; });
-    var s = (Math.min(W, H)/2 - 12) / (maxR * 1.05);
+    var s = (Math.min(W, H - FOOT)/2 - 12) / (maxR * 1.05);
     ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2*Math.PI);
     ctx.fillStyle = '#ffd76a'; ctx.fill();
     var here = null;
@@ -1855,7 +1880,7 @@ window.GW_DRAW = function () {
     var Z = window.GW_ZOOM || 1;
     if (Z === 2) ext = sysExt();
     // a wide margin: on the glass the ring must not kiss the rim
-    var s = (Math.min(W, H)/2 - Math.max(8, Math.min(W, H) * 0.06)) / ext;
+    var s = (Math.min(W, H - FOOT)/2 - Math.max(8, Math.min(W, H - FOOT) * 0.06)) / ext;
     ctx.beginPath(); ctx.arc(cx, cy, O.ringR*s, 0, 2*Math.PI);
     ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(232,200,57,0.45)';
     ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
@@ -1989,7 +2014,7 @@ window.GW_DRAW = function () {
   var span = Math.max(maxX - minX, maxY - minY, 1) / 2;
   // a level out (S4): the system's frame instead of the road's
   if ((window.GW_ZOOM || 1) === 2) { oxW = 0; oyW = 0; span = sysExt() / 1.12; }
-  var vs = (Math.min(W, H)/2 - Math.max(10, Math.min(W, H) * 0.06)) / (span * 1.12), mkm = span > 2.5e6;
+  var vs = (Math.min(W, H - FOOT)/2 - Math.max(10, Math.min(W, H - FOOT) * 0.06)) / (span * 1.12), mkm = span > 2.5e6;
   function vpx (x) { return cx + (x - oxW) * vs; }
   function vpy (y) { return cy - (y - oyW) * vs; }
   function vDisk (x, y, r, fill, minPx) {
@@ -2316,6 +2341,68 @@ window.GW_DAY_WIRE = function () {
     seed(sp.id, sp.day / Math.abs(C.scale), (e / sp.day) / s);
   });
 };")
+
+;; HAILS on the page: the card polls /hails.json (by ship=, the
+;; transporter's own hint) every eight seconds and paints the roster
+;; and the log; a hail posts through the gdlAjax pipe and the next
+;; poll shows it to everyone.  Text lands as textContent, never as
+;; markup.  The fold survives per tab.
+(defparameter *hails-js* "
+window.toggleHails = function () {
+  var b = document.getElementById('hails-body'); if (!b) return;
+  var folded = b.style.display === 'none';
+  b.style.display = folded ? '' : 'none';
+  var c = document.getElementById('hails-caret'); if (c) c.textContent = folded ? '\\u25be' : '\\u25b8';
+  try { sessionStorage.setItem('gw-hails-collapsed', folded ? '0' : '1'); } catch (e) {}
+};
+window.GW_HAILS = function () {
+  GW_HAILS.gen = (GW_HAILS.gen || 0) + 1;
+  var gen = GW_HAILS.gen;
+  var iid = (location.pathname.match(/sessions\\/([^\\/]+)/) || [])[1];
+  if (!iid) return;
+  try { if (sessionStorage.getItem('gw-hails-collapsed') === '1') { var b0 = document.getElementById('hails-body'); if (b0) b0.style.display = 'none'; var c0 = document.getElementById('hails-caret'); if (c0) c0.textContent = '\\u25b8'; } } catch (e) {}
+  // a name to say: the pilot's token is long and private-ish, so its
+  // tail; an unsigned hand goes by its cockpit's tail
+  function who (r) { return (r.pilot ? ('pilot ' + String(r.pilot).slice(-5)) : ('cockpit ' + String(r.id).slice(-4))); }
+  function paint (D) {
+    var ro = document.getElementById('hails-roster'), lg = document.getElementById('hails-log'), ct = document.getElementById('hails-count');
+    if (!ro || !lg) return;
+    ro.textContent = '';
+    D.roster.forEach(function (r) {
+      var line = document.createElement('div');
+      line.textContent = (r.ship ? '\\u25c6 ' : '\\u25c7 ') + who(r) + (r.you ? ' (you)' : '') + ' \\u2014 ' + r.world + ', ' + r.where + (r.ship ? ' \\u2014 the ship' : ' \\u2014 a shuttle');
+      ro.appendChild(line);
+    });
+    if (ct) ct.textContent = D.roster.length + ' aboard';
+    lg.textContent = '';
+    D.hails.forEach(function (h) {
+      var line = document.createElement('div');
+      var age = h.age < 60 ? h.age + 's' : h.age < 3600 ? Math.round(h.age / 60) + 'm' : Math.round(h.age / 3600) + 'h';
+      var w = document.createElement('span'); w.style.color = '#c9a227'; w.textContent = who(h) + ' \\u00b7 ' + age + ' ago: ';
+      line.appendChild(w); line.appendChild(document.createTextNode(h.text));
+      lg.appendChild(line);
+    });
+  }
+  function poll () {
+    if (gen !== GW_HAILS.gen) return;
+    try {
+      var x = new XMLHttpRequest();
+      x.open('GET', '/hails.json?ship=' + encodeURIComponent(iid) + '&t=' + Date.now(), true);
+      x.onload = function () { try { if (x.status === 200) paint(JSON.parse(x.responseText)); } catch (e) {} };
+      x.send();
+    } catch (e) {}
+    setTimeout(poll, 8000);
+  }
+  poll();
+  var btn = document.getElementById('gw-hail-btn');
+  if (btn && !btn.getAttribute('data-gw-wired')) {
+    btn.setAttribute('data-gw-wired', '1');
+    btn.addEventListener('click', function () { setTimeout(function () { GW_HAILS.gen++; GW_HAILS(); }, 900); });
+    var inp = document.querySelector('#hails-card input[type=text]');
+    if (inp) inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); btn.click(); } });
+  }
+};
+")
 
 ;; The hands on the helm: drags and clicks on the rigs mirror into
 ;; the form controls, which stay the readout and the fallback -- the
@@ -2746,9 +2833,9 @@ window.GW_WIRE = function () {
                                       (list 0.7150 (+ y r) (+ z r))))))
     (string-append
      ;; on the shifted gauges (see the cab's speedo-bezel note)
-     (dial "speedo-face-tex" -0.13 0.46 0.075)
-     (dial "compass-face-tex" 0.06 0.45 0.047)
-     (dial "climb-face-tex" -0.32 0.45 0.047)
+     (dial "speedo-face-tex" 0 0.46 0.075)
+     (dial "compass-face-tex" -0.16 0.45 0.047)
+     (dial "climb-face-tex" -0.29 0.45 0.047)
      ;; the readout's backing plate, dark, a little larger, a hair
      ;; behind the lit face
      "<Shape><Appearance><Material diffuseColor=\"0.05 0.06 0.08\" specularColor=\"0.2 0.2 0.2\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7520 0.4600 0.5480, 0.7520 0.2200 0.5480, 0.7674 0.2200 0.6043, 0.7674 0.4600 0.6043\"></Coordinate></IndexedFaceSet></Shape>"
@@ -2983,6 +3070,66 @@ window.GW_WIRE = function () {
 ;; per backend process as the session's key in the instance table.
 (defvar *mother* nil)
 
+;; HAILS (ruled 2026-09-03): every cockpit on this backend can see
+;; who else is aboard and speak to all of them at once, and only to
+;; all of them -- there is NO private channel, by design: most of what
+;; goes wrong in online play and social rooms is avoided structurally
+;; by never providing one, and none will be added without a strong
+;; business case AND a compelling safety story.  The log is one list
+;; per backend process, newest first, capped; each entry is (unix
+;; seconds session-key pilot-id world-name text).  The roster is
+;; whoever polled the hails endpoint lately (seen-at).
+(defvar *hails* nil)
+(defparameter +hails-kept+ 200)
+(defparameter +hail-length+ 240)
+(defparameter +roster-window+ 90)
+
+(defun cockpit-roster ()
+  "Every cockpit on this backend seen within +roster-window+ seconds:
+(object key) pairs, the ship's pilot first."
+  (let ((now (unix-now)) (rows nil))
+    (maphash (lambda (key entry)
+               (let ((o (first entry)))
+                 (when (and (typep o 'cockpit-view)
+                            (the-object o seen-at)
+                            (< (- now (the-object o seen-at)) +roster-window+))
+                   (push (list o key) rows))))
+             gwl::*instance-hash-table*)
+    (sort rows (lambda (a b)
+                 (cond ((eq (second a) *mother*) t)
+                       ((eq (second b) *mother*) nil)
+                       (t (> (or (the-object (first a) seen-at) 0)
+                             (or (the-object (first b) seen-at) 0))))))))
+
+(defun hails-json (self)
+  "The roster and the log as the page polls them: who is aboard, who
+pilots the ship, and the latest hails from every cockpit."
+  (let ((now (unix-now)))
+    (with-output-to-string (out)
+      (format out "{\"you\":~a,\"mother\":~a,\"now\":~d,\"roster\":[~{~a~^,~}],\"hails\":[~{~a~^,~}]}"
+              (json-string (or (the-object self instance-id) ""))
+              (if *mother* (json-string (string *mother*)) "null")
+              (round now)
+              (mapcar (lambda (row)
+                        (destructuring-bind (o key) row
+                          (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a}"
+                                  (json-string (string key))
+                                  (if (the-object o pilot-id) (json-string (string (the-object o pilot-id))) "null")
+                                  (json-string (the-object o world-name))
+                                  (json-string (if (the-object o landed?) "down" "aloft"))
+                                  (if (eq key *mother*) "true" "false")
+                                  (if (eq o self) "true" "false"))))
+                      (cockpit-roster))
+              (mapcar (lambda (h)
+                        (destructuring-bind (at key pilot world text) h
+                          (format nil "{\"age\":~d,\"id\":~a,\"pilot\":~a,\"world\":~a,\"text\":~a}"
+                                  (round (- now at))
+                                  (json-string (string key))
+                                  (if pilot (json-string (string pilot)) "null")
+                                  (json-string world)
+                                  (json-string text))))
+                      (subseq *hails* 0 (min 30 (length *hails*))))))))
+
 (define-object cockpit-view (session-control-mixin base-html-page)
 
   :input-slots
@@ -3047,6 +3194,8 @@ window.GW_WIRE = function () {
    ;; boarded: this session has taken (or been given) its place --
    ;; the ship or a shuttle (board!, once, at the first GET)
    (boarded? nil :settable)
+   ;; last seen polling the hails (unix seconds): the roster's test
+   (seen-at nil :settable)
    ;; the rate the state calls for right now: PLAY and REWIND run
    ;; the clock at the channel's rate, on the ground and aloft;
    ;; STOP is the turn-based game -- a move spends the cadence and
@@ -3638,9 +3787,9 @@ window.GW_WIRE = function () {
    ;; POWERS OF TWO: X_ITE pads a texture that is not one to the next
    ;; power without scaling it, so a 340 x 250 canvas showed its left
    ;; two thirds on the glass and the rest was padding (2026-09-03)
-   ;; the canvas at the quad's own aspect (0.385 x 0.27)
+   ;; the canvas at the quad's own aspect (0.41 x 0.27)
    (plot-size 512)
-   (plot-height 359)
+   (plot-height 337)
 
    ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
    ;; view's canvas, painted onto the glass by the page a few times
@@ -3686,9 +3835,9 @@ window.GW_WIRE = function () {
               (str (cab-light-x3d))
               (str (cockpit-x3d))
               (str (dice-x3d (the dice-lean)))
-              (str (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055))
-              (str (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042))
-              (str (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042))
+              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d -0.16 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.29 0.45 (the vario-phi) 0.042))
               (str (dash-radio-x3d (the cadence-control value)
                                    (the transport-control value)))
               (str (the port-feed-x3d))
@@ -3967,6 +4116,24 @@ GW_CHECK_IN();"
       ;; shape, the ship a point with her nose drawn on.  A voyage
       ;; page flies the dot along the sampled road in step with the
       ;; scene's own clock.
+      ;; HAILS: who is aboard this backend and what every cockpit
+      ;; said to all the others -- polled, never pushed, never
+      ;; private (see *hails*)
+      (:div :id "hails-card" :style "position:fixed;top:52px;left:14px;z-index:10;width:300px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleHails()"
+          (:span "HAILS")
+          (:span :id "hails-count" :style "font-size:10px;color:#c9a227;" "")
+          (:span :id "hails-caret" "▾"))
+        (:div :id "hails-body" :style "margin-top:6px;"
+          (:div :id "hails-roster" :style "color:#c9a227;letter-spacing:0.04em;line-height:1.5;" "")
+          (:div :id "hails-log" :style "margin-top:6px;max-height:140px;overflow-y:auto;line-height:1.4;" "")
+          (:div :style "margin-top:6px;display:flex;gap:4px;align-items:center;"
+            (str (the hail-control html-string))
+            (:button :type "button" :class "rbtn" :id "gw-hail-btn"
+              :onclick (the (gdl-ajax-call :form-controls (list (the hail-control))
+                                           :function-key :hail!))
+              "hail"))))
       (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
@@ -4060,6 +4227,8 @@ function toggleHelm () {
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
         (str *idle-clock-js*)
+        (str *hails-js*)
+        (str "if (window.GW_HAILS) GW_HAILS();")
         ;; the definitions just landed; give the section's state
         ;; script its first real run
         (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS(); if (window.GW_CLOCK_TICK) GW_CLOCK_TICK(); if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }")
@@ -4181,6 +4350,12 @@ function toggleHelm () {
                     :prompt "nose-in: "
                     :default t)
 
+   ;; the hail line: what this cockpit says to every other (hail!)
+   (hail-control :type 'gwl:text-form-control
+                 :prompt ""
+                 :default ""
+                 :size 34)
+
    ;; the log-book signature line: a hidden field the browser fills
    ;; with its own pilot token at boarding, posted once through the
    ;; same gdlAjax pipe the helm uses (check-in!).  Riding the form
@@ -4296,9 +4471,9 @@ function toggleHelm () {
               (str (cab-light-x3d))
               (str (cockpit-x3d))
               (str (dice-x3d (the dice-lean)))
-              (str (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055))
-              (str (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042))
-              (str (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042))
+              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d -0.16 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.29 0.45 (the vario-phi) 0.042))
               (str (dash-radio-x3d (the cadence-control value)
                                    (the transport-control value))))
 ))))
@@ -4405,6 +4580,21 @@ function toggleHelm () {
     ()
     (let ((iid (the instance-id)))
       (and iid (gwl::make-keyword-sensitive iid))))
+
+   ;; A HAIL: the line on the card goes to every cockpit on this
+   ;; backend, signed with this session, its pilot and its world;
+   ;; trimmed, capped, never private.  The line clears once sent.
+   (hail!
+    ()
+    (let* ((raw (or (the hail-control value) ""))
+           (text (string-trim '(#\Space #\Tab #\Newline #\Return) raw)))
+      (when (plusp (length text))
+        (push (list (unix-now) (the mother-key) (the pilot-id) (the world-name)
+                    (subseq text 0 (min +hail-length+ (length text))))
+              *hails*)
+        (when (> (length *hails*) +hails-kept+)
+          (setf *hails* (subseq *hails* 0 +hails-kept+)))
+        (the hail-control (set-slot! :value "")))))
 
    (mother-object
     ()
@@ -6025,9 +6215,9 @@ function toggleHelm () {
      (cab-light-x3d)
      (cockpit-x3d)
      (dice-x3d (the dice-lean))
-     (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055)
-     (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042)
-     (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042)
+     (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055)
+     (gauge-needle-x3d -0.16 0.45 (the heading-deg) 0.042)
+     (gauge-needle-x3d -0.29 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
      ;; the port flatscreen is a painted quad now (the plot), so it
@@ -6057,6 +6247,24 @@ function toggleHelm () {
 #helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
       (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
         (str (the helm-section main-div)))
+      ;; HAILS: who is aboard this backend and what every cockpit
+      ;; said to all the others -- polled, never pushed, never
+      ;; private (see *hails*)
+      (:div :id "hails-card" :style "position:fixed;top:52px;left:14px;z-index:10;width:300px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleHails()"
+          (:span "HAILS")
+          (:span :id "hails-count" :style "font-size:10px;color:#c9a227;" "")
+          (:span :id "hails-caret" "▾"))
+        (:div :id "hails-body" :style "margin-top:6px;"
+          (:div :id "hails-roster" :style "color:#c9a227;letter-spacing:0.04em;line-height:1.5;" "")
+          (:div :id "hails-log" :style "margin-top:6px;max-height:140px;overflow-y:auto;line-height:1.4;" "")
+          (:div :style "margin-top:6px;display:flex;gap:4px;align-items:center;"
+            (str (the hail-control html-string))
+            (:button :type "button" :class "rbtn" :id "gw-hail-btn"
+              :onclick (the (gdl-ajax-call :form-controls (list (the hail-control))
+                                           :function-key :hail!))
+              "hail"))))
       (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
@@ -6096,6 +6304,8 @@ function toggleHelm () {
         (str *helm-hands-js*)
         (str *voyage-beats-js*)
         (str *idle-clock-js*)
+        (str *hails-js*)
+        (str "if (window.GW_HAILS) GW_HAILS();")
         ;; the definitions just landed; give the section's state
         ;; script its first real run (the xr wiring arms itself on
         ;; window load, and seeds the ground sensors then)
