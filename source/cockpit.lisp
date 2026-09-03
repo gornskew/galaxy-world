@@ -1840,10 +1840,11 @@ window.GW_DRAW = function () {
   // TimeSensor on: GW_VOYAGE_T0 appears at window load on a fresh
   // voyage, and is null when the scene snapped to arrival
   function animate () {
-    // a coast tape (S3) is not a show: the plot stays in its
-    // corner and simply follows her, holding the last frame until
-    // the next stretch of tape arrives
-    if (!V.coast) hudOn();
+    // the plot stays in its corner for every clip -- the HUD
+    // promotion that used to fill the glass mid-road is retired
+    // (ruled 2026-09-03: the pilot wants full planets out the
+    // window) -- and on a coast tape it simply follows her,
+    // holding the last frame until the next stretch arrives
     function step () {
       if (gen !== GW_DRAW.gen) return;
       var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
