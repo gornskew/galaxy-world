@@ -71,7 +71,10 @@
    ;; on the world's south limb, and the only way to drop it under
    ;; the disc without rebuilding the dash was to raise the eye --
    ;; which put the header back on the crown until it rose too.
-   (roof-z 1.16)
+   ;; ...and 1.19 (2026-09-03, pt 74): three more centimetres give
+   ;; the disc a degree of margin at the crown once it is lifted to
+   ;; the window's center (+body-lift+)
+   (roof-z 1.19)
    (header-center (make-point -1.11 -0.36 (the roof-z)))
    (header-radius 2.0)
    (greenhouse-span (deg->rad 48))
@@ -166,15 +169,20 @@
    ;; wood-panel-x3d
 
    ;; the gauge cluster, chrome bezels proud of the panel face
+   ;; THE DASH SHIFT (ruled 2026-09-03): the three gauges, the radio
+   ;; and the starter all stand 0.13 to starboard of where they were
+   ;; (speedo at y -0.13, compass 0.06, climb -0.32), leaving the port
+   ;; dash to the plot.  The same 0.13 rides every per-cockpit part
+   ;; that sits on them: dial faces, needles, radio keys, starter.
    (speedo-bezel :type 'c-cylinder
-                 :start (make-point 0.722 0 0.46)
-                 :end (make-point 0.732 0 0.46)
+                 :start (make-point 0.722 -0.13 0.46)
+                 :end (make-point 0.732 -0.13 0.46)
                  :radius 0.085
                  :number-of-sections 24
                  :display-controls (list :color +chrome+))
    (speedo-face :type 'c-cylinder
-                :start (make-point 0.716 0 0.46)
-                :end (make-point 0.723 0 0.46)
+                :start (make-point 0.716 -0.13 0.46)
+                :end (make-point 0.723 -0.13 0.46)
                 :radius 0.075
                 :number-of-sections 24
                 :display-controls (list :color +gauge-face+))
@@ -183,27 +191,27 @@
    ;; shared cab
 
    (port-gauge-bezel :type 'c-cylinder
-                     :start (make-point 0.722 0.19 0.45)
-                     :end (make-point 0.732 0.19 0.45)
+                     :start (make-point 0.722 0.06 0.45)
+                     :end (make-point 0.732 0.06 0.45)
                      :radius 0.055
                      :number-of-sections 24
                      :display-controls (list :color +chrome+))
    (port-gauge-face :type 'c-cylinder
-                    :start (make-point 0.717 0.19 0.45)
-                    :end (make-point 0.723 0.19 0.45)
+                    :start (make-point 0.717 0.06 0.45)
+                    :end (make-point 0.723 0.06 0.45)
                     :radius 0.047
                     :number-of-sections 24
                     :display-controls (list :color +gauge-face+))
 
    (starboard-gauge-bezel :type 'c-cylinder
-                          :start (make-point 0.722 -0.19 0.45)
-                          :end (make-point 0.732 -0.19 0.45)
+                          :start (make-point 0.722 -0.32 0.45)
+                          :end (make-point 0.732 -0.32 0.45)
                           :radius 0.055
                      :number-of-sections 24
                           :display-controls (list :color +chrome+))
    (starboard-gauge-face :type 'c-cylinder
-                         :start (make-point 0.717 -0.19 0.45)
-                         :end (make-point 0.723 -0.19 0.45)
+                         :start (make-point 0.717 -0.32 0.45)
+                         :end (make-point 0.723 -0.32 0.45)
                          :radius 0.047
                     :number-of-sections 24
                          :display-controls (list :color +gauge-face+))
@@ -733,13 +741,17 @@
 ;; near face scrolls starboard-to-port across the windshield -- and
 ;; the sky wheels clockwise with it.
 
-;; THE LIFT (ruled 2026-09-03): every world stands eight degrees above
-;; the eye line in the glass, the way a windshield sits above the
-;; hood -- nose-in on the ring the disc spans some eighteen degrees
-;; below the line and the dash top cuts the view at eleven, so the
-;; south pole was lost whatever the eye height (pt 69 tried).  One
-;; constant, on the frames' z, both renderers and every clip.
-(defparameter +body-lift+ (* 3000.0 (tan (/ (* 8 pi) 180))))
+;; THE LIFT (ruled 2026-09-03): every world stands a few degrees
+;; above the eye line in the glass, the way a windshield sits above
+;; the hood.  From the driver's eye (-0.02 0 0.81) the cowl sill
+;; (z 0.55 at x ~1.0) cuts the view 14.3 deg below horizontal and the
+;; header rail (z 1.19 at x ~0.86) 23 deg above: a 37 deg window for
+;; a disc that spans 35.8 nosed-in on the ring.  It fits only
+;; CENTERED in that window, 4.3 deg above horizontal: 8 deg (the
+;; first try) lost the north pole to the header as surely as 0 lost
+;; the south to the sill.  One constant, on the frames' z, both
+;; renderers and every clip.
+(defparameter +body-lift+ (* 3000.0 (tan (/ (* 4.3 pi) 180))))
 
 (defun scene-body-frame (bearing-rad distance-km body-radius-km)
   "Scene translation (two values) and uniform scale for a body at
@@ -1429,15 +1441,17 @@ X_ITE), because a fresh scene document stands with the light off.")
   ;; under its own TouchSensor: a tap on the glass zooms the plan
   ;; view out a level (S4, GW_ZOOM_CYCLE), both renderers
   (format nil "<Transform DEF=\"plot-hit\" id=\"plot-hit\"><TouchSensor DEF=\"plot-touch\" id=\"plot-touch\" description=\"the plot — tap to zoom out a level\"></TouchSensor>~a</Transform>"
-          ;; a 0.27 square on the port dash, a hair prouder than the
-          ;; dial faces, its top under the readout strip's cowl; no
-          ;; tile behind it.  Its port edge stops at y 0.51: the cab's
-          ;; side wall stands in front of the dash beyond that and hid
-          ;; a wider quad's left third (2026-09-03)
+          ;; 0.385 x 0.27 on the port dash, a hair prouder than the
+          ;; dial faces, its top under the cowl sill; no tile behind
+          ;; it.  Its port edge stops at y 0.51 (the cab's side wall
+          ;; stands in front of the dash beyond that) and its
+          ;; starboard edge at the shifted compass's bezel (0.125).
+          ;; Its height is the dash's: nothing may rise above the
+          ;; sill where the disc's lower limb lands.
           (painted-quad-x3d "plot-tex"
                             (list (list 0.7125 0.51 0.275)
-                                  (list 0.7125 0.24 0.275)
-                                  (list 0.7125 0.24 0.545)
+                                  (list 0.7125 0.125 0.275)
+                                  (list 0.7125 0.125 0.545)
                                   (list 0.7125 0.51 0.545))
                             ;; low emissive: the plot's black ground
                             ;; must read black, the gold lines lit
@@ -1491,32 +1505,33 @@ X_ITE), because a fresh scene document stands with the light off.")
                      len icon)))
     (string-append
      ;; the plate
-     "<Transform translation=\"0.7245 0 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
+     ;; the plate, under the shifted speedo (0.13 to starboard)
+     "<Transform translation=\"0.7245 -0.13 0.315\"><Shape><Appearance><Material diffuseColor=\"0.06 0.08 0.10\"></Material></Appearance><Box size=\"0.011 0.26 0.085\"></Box></Shape></Transform>"
      ;; the four channel keys, slow to fastest, port to starboard
      (with-output-to-string (out)
        (loop for val in '(:slow :medium :fast :fastest)
              for label in '("slow — a minute a turn" "medium — ten minutes"
                             "fast — an hour" "fastest — a day (goa 145)")
              for i from 0
-             for y in '(0.09 0.03 -0.03 -0.09)
+             for y in '(-0.04 -0.10 -0.16 -0.22)
              do (format out "~a"
                         (key-x3d (format nil "radio-preset-~d" i)
                                  (format nil "radio-preset-mat-~d" i)
                                  y 0.331 0.048 (eql cadence val) label
                                  (chevrons-x3d y 0.331 (1+ i) -1)))))
      ;; the transport: rewind to port, stop amidships, play to starboard
-     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.062 0.292 0.045
+     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" -0.068 0.292 0.045
               (eql transport :rewind) "rewind — time runs backward"
-              (chevrons-x3d 0.062 0.292 2 1))
-     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" 0.0 0.292 0.045
+              (chevrons-x3d -0.068 0.292 2 1))
+     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.13 0.292 0.045
               (eql transport :stop) "stop — time stands still between moves"
-              (stop-block-x3d 0.0 0.292))
-     (key-x3d "radio-tpt-2" "radio-tpt-mat-2" -0.062 0.292 0.045
+              (stop-block-x3d -0.13 0.292))
+     (key-x3d "radio-tpt-2" "radio-tpt-mat-2" -0.192 0.292 0.045
               (eql transport :play) "play — time runs forward"
-              (chevrons-x3d -0.062 0.292 1 -1))
+              (chevrons-x3d -0.192 0.292 1 -1))
      ;; the starter, under the climb gauge: press it and the move
      ;; is made
-     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
+     "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.32 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.32 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
 
 ;; One hidden leaf, cut through the same lens the cab tree uses, so
 ;; a rig's geometry matches the cab's finish exactly.
@@ -2730,9 +2745,10 @@ window.GW_WIRE = function () {
                                       (list 0.7150 (- y r) (+ z r))
                                       (list 0.7150 (+ y r) (+ z r))))))
     (string-append
-     (dial "speedo-face-tex" 0 0.46 0.075)
-     (dial "compass-face-tex" 0.19 0.45 0.047)
-     (dial "climb-face-tex" -0.19 0.45 0.047)
+     ;; on the shifted gauges (see the cab's speedo-bezel note)
+     (dial "speedo-face-tex" -0.13 0.46 0.075)
+     (dial "compass-face-tex" 0.06 0.45 0.047)
+     (dial "climb-face-tex" -0.32 0.45 0.047)
      ;; the readout's backing plate, dark, a little larger, a hair
      ;; behind the lit face
      "<Shape><Appearance><Material diffuseColor=\"0.05 0.06 0.08\" specularColor=\"0.2 0.2 0.2\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7520 0.4600 0.5480, 0.7520 0.2200 0.5480, 0.7674 0.2200 0.6043, 0.7674 0.4600 0.6043\"></Coordinate></IndexedFaceSet></Shape>"
@@ -3622,8 +3638,9 @@ window.GW_WIRE = function () {
    ;; POWERS OF TWO: X_ITE pads a texture that is not one to the next
    ;; power without scaling it, so a 340 x 250 canvas showed its left
    ;; two thirds on the glass and the rest was padding (2026-09-03)
+   ;; the canvas at the quad's own aspect (0.385 x 0.27)
    (plot-size 512)
-   (plot-height 512)
+   (plot-height 359)
 
    ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
    ;; view's canvas, painted onto the glass by the page a few times
@@ -3669,9 +3686,9 @@ window.GW_WIRE = function () {
               (str (cab-light-x3d))
               (str (cockpit-x3d))
               (str (dice-x3d (the dice-lean)))
-              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
-              (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-              (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+              (str (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042))
               (str (dash-radio-x3d (the cadence-control value)
                                    (the transport-control value)))
               (str (the port-feed-x3d))
@@ -4279,9 +4296,9 @@ function toggleHelm () {
               (str (cab-light-x3d))
               (str (cockpit-x3d))
               (str (dice-x3d (the dice-lean)))
-              (str (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055))
-              (str (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042))
-              (str (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042))
+              (str (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055))
+              (str (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042))
+              (str (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042))
               (str (dash-radio-x3d (the cadence-control value)
                                    (the transport-control value))))
 ))))
@@ -6008,9 +6025,9 @@ function toggleHelm () {
      (cab-light-x3d)
      (cockpit-x3d)
      (dice-x3d (the dice-lean))
-     (gauge-needle-x3d 0 0.46 (the speedo-phi) 0.055)
-     (gauge-needle-x3d 0.19 0.45 (the heading-deg) 0.042)
-     (gauge-needle-x3d -0.19 0.45 (the vario-phi) 0.042)
+     (gauge-needle-x3d -0.13 0.46 (the speedo-phi) 0.055)
+     (gauge-needle-x3d 0.06 0.45 (the heading-deg) 0.042)
+     (gauge-needle-x3d -0.32 0.45 (the vario-phi) 0.042)
      (dash-radio-x3d (the cadence-control value)
                      (the transport-control value))
      ;; the port flatscreen is a painted quad now (the plot), so it
