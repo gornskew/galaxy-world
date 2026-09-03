@@ -3147,10 +3147,12 @@ window.GW_WIRE = function () {
       ;; they are GODPARENTS of each other (same-tree?, base
       ;; utilities) -- so every cockpit aboard and the ship adopt
       ;; each other, and a berth's slots follow its session's
+      ;; the ship's list is exactly the roster's sessions (not every
+      ;; session ever aboard: a backend runs for weeks); each
+      ;; session keeps the ship on its own
+      (setf (gdl-acc::%god-parents% ship) (mapcar #'first rows))
       (dolist (row rows)
-        (let ((session (first row)))
-          (gdl:add-godparent ship session)
-          (gdl:add-godparent session ship)))
+        (gdl:add-godparent (first row) ship))
       (unless (equal keys (the roster-keys))
         (the (set-slot! :roster-keys keys)))
       keys))
