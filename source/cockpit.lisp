@@ -821,7 +821,7 @@ scene is static between moves, so this bakes as a shader constant."
 ;; and spin tracks into those fields, so the terminator stands where
 ;; the sun is while the world turns and she rounds him.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
 (defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
                                 &optional (elevation 0.0) (sun-az (/ pi 2)))
@@ -830,7 +830,7 @@ NIGHT-URL are raw paths; HEADING-RAD and PHASE-RAD author the sky's
 heading and the world's spin the shader starts from (a tape routes
 the live ones in); SUN-AZ is the world-frame angle the sun lies at
 (the ephemeris's for the date; +y was the old fixed sun)."
-  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><field name=\"sunAz\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,5f\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
+  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><field name=\"sunAz\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,5f\"></field><field name=\"flood\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"0\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
           prefix prefix day-url night-url (- heading-rad) phase-rad elevation sun-az
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
@@ -1113,6 +1113,11 @@ world frame -- its heliocentric longitude and a half turn."
 ;; wanders 6%, his longitude some 6 degrees, both invisible on a road
 ;; cut to circular rings).  He rides the same ecliptic frame the sun's
 ;; elements do, +x the vernal equinox.
+(defparameter +window-tolerance+ (* 2 86400)
+  "Seconds either side of a sun's road's window within which the road
+is flown at once rather than booked: two days, a degree or so of
+phase at this grain.")
+
 (defparameter +moon-orbit-radius+ 396400.0
   "The moon's distance from home in the game, km (the old +moon-x+).")
 (defparameter +moon-longitude-rate+ (* (/ pi 180) 13.17639648d0)
@@ -1344,6 +1349,10 @@ window.GW_FLOOD_APPLY = function (browser) {
       var same = (typeof cur === 'number') && Math.abs(cur - level) < 0.001;
       if (!same) { try { f.setValue(level); } catch (e) { n.intensity = level; } }
     }
+    // the city-lights world owns its lighting (a ComposedShader ignores
+    // the scene's lights), so the flood reaches it through its own field
+    var sh = br && br.currentScene && br.currentScene.getNamedNode('planet-sh');
+    if (sh) { try { sh.getField('flood').setValue(on ? 1 : 0); } catch (e) {} }
   } catch (e) {}
 };
 window.GW_FLOOD_TOGGLE = function () {
@@ -1770,7 +1779,7 @@ window.togglePlot = function () {
 };
 (function () {
   try {
-    if (sessionStorage.getItem('gw-plot-collapsed') !== '0') {
+    if (sessionStorage.getItem('gw-plot-collapsed') === '1') {
       document.getElementById('plot-body').style.display = 'none';
       document.getElementById('plot-caret').textContent = '\\u25b8';
     }
@@ -1783,30 +1792,14 @@ window.GW_DRAW = function () {
   var cv = document.getElementById('plot-canvas'); if (!cv) return;
   var ctx = cv.getContext('2d');
   var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2;
-  // THE FOOTER (S6 audit, 2026-09-03): the plot screen carries the
-  // helm's read-only figures under the drawing -- the clock, where
-  // she is and how high, the ship's line -- so the flat card is not
-  // needed to READ the ship, only to buy a road, throw the nose-in
-  // switch or the floodlight.  The drawing centers in the band above.
-  var FOOT = 58;
+  // NO FOOTER: the plot screen in the cab carries the drawing only.
+  // A painted band of figures under it (S6 audit, 2026-09-03) read
+  // muddy on the 3D glass and came off the same day; the clock, the
+  // coordinates and the ship's line are HTML on the flat card, which
+  // stays open by default.  FOOT is kept at zero so the layout math
+  // below needs no second reading.
+  var FOOT = 0;
   function dims () { W = cv.width; H = cv.height; cx = W / 2; cy = (H - FOOT) / 2; }
-  function footer () {
-    var y0 = H - FOOT;
-    ctx.fillStyle = '#05070c'; ctx.fillRect(0, y0, W, FOOT);
-    ctx.strokeStyle = 'rgba(232,200,57,0.35)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(8, y0 + 0.5); ctx.lineTo(W - 8, y0 + 0.5); ctx.stroke();
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    var t = window.GW_CLOCK_NOW ? GW_CLOCK_NOW() : null;
-    var clock = (t !== null && window.GW_CLOCK_FACE) ? (GW_CLOCK_FACE(t) + (window.GW_CLOCK_DATE ? '  ' + GW_CLOCK_DATE(t) : '')) : '';
-    var where = O ? ((O.landed ? 'down on ' : 'falling around ') + O.frame) : '';
-    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#e8c839';
-    ctx.fillText((clock ? 'ship\\'s clock ' + clock + '   \\u00b7   ' : '') + where, 10, y0 + 13);
-    var coords = ((document.getElementById('coords-line') || {}).textContent || '').replace(/\\s+/g, ' ');
-    ctx.font = '12px sans-serif'; ctx.fillStyle = '#c9a227';
-    ctx.fillText(coords.slice(0, 80), 10, y0 + 30);
-    var ship = ((document.getElementById('gw-ship') || {}).textContent || '').replace(/\\s+/g, ' ');
-    ctx.fillText(ship.slice(0, 80), 10, y0 + 46);
-  }
   // THE MIRROR: every frame drawn here is painted onto the port
   // flatscreen in the cab (plot-tex), a few times a second -- by
   // DOM attribute under x3dom, by the SAI setter the xr wire
@@ -1814,10 +1807,13 @@ window.GW_DRAW = function () {
   // ground comes out black, which is what a screen wants.
   function mirror () {
     var now = Date.now();
-    if (now - (GW_DRAW.pushed || 0) < 250) return;
+    // X_ITE loads each pushed picture as a file and wears its wait
+    // cursor while it does, so the glass takes one a second there;
+    // x3dom takes the attribute four times a second
+    var isDom = !!(window.GW_LIVE ? GW_LIVE('plot-tex') : document.getElementById('plot-tex'));
+    if (now - (GW_DRAW.pushed || 0) < (isDom ? 250 : 1000)) return;
     GW_DRAW.pushed = now;
     try {
-      footer();
       // PNG, as the dial faces are (x3dom took no JPEG data url),
       // and only when the picture changed: a parked orbit is
       // painted once, a coast a few times a second
@@ -2319,6 +2315,8 @@ window.GW_CLOCK_TICK = function () {
     if (gen !== GW_CLOCK_TICK.gen) return;
     var el = document.getElementById('gw-clock'), t = GW_CLOCK_NOW();
     if (el && t !== null) el.textContent = \"ship's clock: \" + GW_CLOCK_FACE(t) + ' \\u00b7 ' + GW_CLOCK_DATE(t);
+    var pc = document.getElementById('plot-clock');
+    if (pc && t !== null) pc.textContent = GW_CLOCK_FACE(t) + ' \\u00b7 ' + GW_CLOCK_DATE(t);
     var C = window.GW_CLOCK, f = clipFrac(), running = f !== null && f < 1;
     if (C && C.scale) {
       if (C.coast) {
@@ -3518,6 +3516,20 @@ window.GW_WIRE = function () {
                   (the tape-serial) (the tape-tag) (json-string nodes)
                   (mapcar (lambda (r) (mapcar #'json-string r)) routes)))
         "null"))
+   ;; A BOOKED ROAD (departure epochs, third piece): a sun's road
+   ;; bought outside its window waits for it -- (to-world
+   ;; departure-game-seconds departure-date) -- and departs on the
+   ;; first settle past the departure time (settle-clock!); the
+   ;; pilot skips ahead on the radio meanwhile
+   (booked-road nil :settable)
+   (booking-html
+    (let ((b (the booked-road)))
+      (if b
+          (format nil "the road to ~a is booked: the window opens ~a (~,1f days on the clock) &mdash; she holds her orbit till then; the radio skips ahead"
+                  (world-figure (first b) :name)
+                  (utc-date-string (third b))
+                  (/ (max 0 (- (second b) (the game-seconds))) 86400.0))
+          "")))
    ;; the sky's riders on the ground: the one other world hanging
    ;; at the horizon -- (prefix phase-rad day-seconds), the face he
    ;; shows and how fast it turns
@@ -4119,7 +4131,7 @@ window.GW_WIRE = function () {
               (str (starboard-eye-feed-x3d)))))
 
    (section-state-js
-    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_CLOCK = ~a;~%window.GW_CLOCK.wall = Date.now();~%window.GW_TAPE = ~a;~%if (!window.GW_LOADED || window.GW_GEN !== '~a') window.GW_SCENE_T = window.GW_CLOCK.t;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') !== '0') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();~%if (window.GW_LOADED && window.GW_GEN === '~a' && window.GW_TAPE_APPLY) { try { GW_TAPE_APPLY(); } catch (e) {} }~%if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
+    (format nil "setTimeout(function () {~%window.GW_PLAN = ~a;~%window.GW_NOSE = ~a;~%window.GW_CLOCK = ~a;~%window.GW_CLOCK.wall = Date.now();~%window.GW_TAPE = ~a;~%if (!window.GW_LOADED || window.GW_GEN !== '~a') window.GW_SCENE_T = window.GW_CLOCK.t;~%window.GW_VOYAGE_T0 = ~a;~%window.GW_SPEEDO_FULL = ~,2f;~%if (window.GW_PAINT_DIALS) { try { GW_PAINT_DIALS(window.GW_SPEEDO_FULL); } catch (e) {} }~%try { if (sessionStorage.getItem('gw-helm-collapsed') === '1') { document.getElementById('helm-body').style.display = 'none'; document.getElementById('helm-caret').textContent = '\\u25b8'; } } catch (e) {}~%try { if (sessionStorage.getItem('gw-plot-collapsed') === '1') { document.getElementById('plot-body').style.display = 'none'; document.getElementById('plot-caret').textContent = '\\u25b8'; } } catch (e) {}~%if (window.GW_WIRE) GW_WIRE();~%if (window.GW_DRAW) GW_DRAW();~%if (window.GW_BEATS) GW_BEATS();~%if (window.GW_CLOCK_TICK) GW_CLOCK_TICK();~%if (window.GW_LOADED && window.GW_GEN === '~a' && window.GW_TAPE_APPLY) { try { GW_TAPE_APPLY(); } catch (e) {} }~%if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }~%if (window.GW_FLOOD_APPLY) GW_FLOOD_APPLY();~%if (window.GW_LOADED && window.GW_GEN !== '~a') { ~a }~%window.GW_GEN = '~a';~%window.GW_LOADED = true;~%}, 60);"
             (the plan-json)
             (the nose-in-json)
             ;; the clock the page ticks; GW_SCENE_T remembers the
@@ -4692,6 +4704,8 @@ function toggleHelm () {
                           "the road is unbound — the deep dark has you")))))
           ;; the ship's line (S5): yours, or where she stands
           (:div :id "gw-ship" :style "font-size:11px;color:#c9a227;" (str (the (ship-line))))
+          ;; a booked sun's road, waiting on its window
+          (:div :id "gw-booking" :style "font-size:11px;color:#e8c839;" (str (the booking-html)))
           (:div :id "gw-clock" (fmt "ship's clock: ~a" (the clock-string)))
           (:div (fmt "moves made: ~d" (the moves-count)))
           (:div :id "move-note"
@@ -4711,6 +4725,15 @@ function toggleHelm () {
             :style "display:block;")
           (:div :id "plot-coords"
             :style "font-size:12px;color:#e8c839;margin-top:4px;font-variant-numeric:tabular-nums;")
+          ;; the readable lines live HERE, on the flat card (ruled
+          ;; 2026-09-03: text on the 3D screen reads muddy); the
+          ;; ticker paints the clock, the ship's line comes with the
+          ;; section
+          (:div :id "plot-clock"
+            :style "font-size:12px;color:#e8c839;margin-top:2px;font-variant-numeric:tabular-nums;")
+          (:div :id "plot-ship"
+            :style "font-size:11px;color:#c9a227;margin-top:2px;"
+            (str (the (ship-line))))
           (:div :id "plot-frame-label"
             :style "font-size:10px;color:#c9a227;margin-top:2px;"))))
 
@@ -4907,32 +4930,56 @@ function toggleHelm () {
       (and key (first (gethash key gwl::*instance-hash-table*)))))
 
    ;; where she stands THIS instant, without settling: the fall from
-   ;; the anchor at the rate in force (nothing mutated)
-   (position-now
+   ;; the anchor at the rate in force (nothing mutated).  state-now
+   ;; gives (values vx vy px py date) -- the date her clock reads now
+   (state-now
     ()
     (let* ((rate (the clock-scale))
            (dt (if (and (the clock-anchor) (/= rate 0) (not (the landed?)))
                    (* (- (unix-now) (the clock-anchor)) rate)
-                   0)))
+                   0))
+           (date (+ (the game-date-seconds) dt)))
       (if (zerop dt)
-          (values (the pos-x) (the pos-y))
+          (values (the vel-x) (the vel-y) (the pos-x) (the pos-y) date)
           (destructuring-bind (vx vy px py)
               (the (fall (the vel-x) (the vel-y) (the pos-x) (the pos-y) dt))
-            (declare (ignore vx vy))
-            (values px py)))))
+            (values vx vy px py date)))))
+
+   (position-now
+    ()
+    (multiple-value-bind (vx vy px py) (the state-now)
+      (declare (ignore vx vy))
+      (values px py)))
 
    ;; the ship's line on the helm: the pilot is told he has her; a
-   ;; shuttle is told where she stands, live at each render
+   ;; shuttle is told where she stands.  Cockpits keep their own
+   ;; time, so when this one's date is not the pilot's the ship is
+   ;; CARRIED to this date by gravity alone from her last known
+   ;; state -- no burn assumed -- and the line says so (ruled
+   ;; 2026-09-03: the most realistic answer, kept comprehensible by
+   ;; saying it).  A landed ship stands where she is.
    (ship-line
     ()
     (let ((mother (the mother-object)))
       (cond ((or (null mother) (eq mother self))
              "the ship: yours &mdash; this cockpit pilots the basilisk")
-            (t (multiple-value-bind (x y) (the-object mother (position-now))
-                 (format nil "the ship: x ~:d km &middot; y ~:d km &mdash; ~a frame, ~a &mdash; you fly a shuttle"
-                         (round x) (round y)
-                         (the-object mother world-name)
-                         (if (the-object mother landed?) "down" "aloft")))))))
+            (t (multiple-value-bind (vx vy px py her-date) (the-object mother (state-now))
+                 (let* ((delta (- (the game-date-seconds) her-date))
+                        (carried? (and (> (abs delta) 60) (not (the-object mother landed?)))))
+                   (when carried?
+                     (destructuring-bind (cvx cvy cpx cpy)
+                         (the-object mother (fall vx vy px py delta))
+                       (declare (ignore cvx cvy))
+                       (setq px cpx py cpy)))
+                   (format nil "the ship: x ~:d km &middot; y ~:d km &mdash; ~a frame, ~a &mdash; you fly a shuttle~a"
+                           (round px) (round py)
+                           (the-object mother world-name)
+                           (if (the-object mother landed?) "down" "aloft")
+                           (if carried?
+                               (format nil " (her clock reads ~a; carried ~a to your date by gravity alone)"
+                                       (utc-date-string her-date)
+                                       (if (plusp delta) "forward" "back"))
+                               ""))))))))
 
    (after-set!
     ()
@@ -4965,7 +5012,8 @@ function toggleHelm () {
                   (world-figure choice :sun-radius)
                   (world-figure (the world) :sun-radius)
                   (not (eql choice (the world))))
-             (the (fly-sun-road! choice)))
+             ;; bought: flown now if the window stands, else booked
+             (the (buy-sun-road! choice)))
             (t (the make-helm-move!))))
     ;; and the tape stands afresh from wherever the move left her
     (let ((*current-pilot* (the pilot-id)))
@@ -5518,6 +5566,81 @@ function toggleHelm () {
    ;; world keeps riding its own road, the new one rises ahead and
    ;; grows -- and the arrival mirrors the departure, nose-in with
    ;; him close aboard, the moon canon over the new world.
+   ;; THE WINDOW of a sun's road (departure epochs, third piece): a
+   ;; Hohmann from the ring of FROM-WORLD to TO-WORLD's needs the new
+   ;; world a set phase ahead at departure (pi less what he covers in
+   ;; the flight), and the two worlds' true longitudes for the date
+   ;; say how long until they stand so: (values wait-seconds rho),
+   ;; RHO the departure world's longitude at departure, the turn the
+   ;; road's scenery frame takes to the sky.  Just past the window
+   ;; (within the tolerance) counts as open.
+   (sun-road-window
+    (to-world date0)
+    (let* ((from-world (the world))
+           (re (world-figure from-world :sun-radius))
+           (rm (world-figure to-world :sun-radius))
+           (a (* 0.5 (+ re rm)))
+           (n-tr (sqrt (/ +mu-sun+ (* a a a))))
+           (tof (/ pi n-tr))
+           (n-e (sqrt (/ +mu-sun+ (* re re re))))
+           (n-m (sqrt (/ +mu-sun+ (* rm rm rm))))
+           ;; the closing rate of the phase: outward it falls with
+           ;; time, inward it climbs, so the sign says which way
+           ;; "ahead" runs
+           (rate (- n-e n-m)))
+      ;; the window's signed error at a date, (-pi, pi], turned so
+      ;; positive means it is still AHEAD: the road ends opposite
+      ;; its start, so the new world's TRUE longitude at arrival
+      ;; must stand pi from the old world's at departure.  The true
+      ;; longitudes run unevenly (Mars's by a tenth), so a single
+      ;; linear step lands degrees off and the answer is iterated
+      ;; to the sky, the way the moon road's window is
+      (labels ((ahead-at (date)
+                 (let* ((phi (- (heliocentric-longitude-rad to-world (+ date tof))
+                                (heliocentric-longitude-rad from-world date)
+                                pi))
+                        (err (- (mod (+ phi pi) (* 2 pi)) pi)))
+                   (if (plusp rate) err (- err)))))
+        ;; no road from a world to itself: the phase never closes
+        (if (zerop rate)
+            (values 0.0 (heliocentric-longitude-rad from-world date0))
+        (let ((wait 0.0))
+          (dotimes (k 8)
+            (let* ((ahead (ahead-at (+ date0 wait)))
+                   (step (/ ahead (abs rate))))
+              (cond
+                ;; just behind (or dead on): the window counts as open
+                ((and (zerop wait) (minusp step) (<= (- step) +window-tolerance+))
+                 (return))
+                ;; behind by more: the next lap of the phase
+                ((and (zerop wait) (minusp step))
+                 (setq wait (/ (+ (* 2 pi) ahead) (abs rate))))
+                ((< (abs step) 60) (return))
+                (t (setq wait (max 0.0 (+ wait step)))))))
+          (values wait (heliocentric-longitude-rad from-world (+ date0 wait))))))))
+
+   ;; BUYING a sun's road: flown at once when the window stands (or
+   ;; is just behind, within tolerance), else BOOKED -- the bridge
+   ;; says when it opens, the ship holds her orbit, and the first
+   ;; settle past the time departs
+   (buy-sun-road!
+    (to-world)
+    (multiple-value-bind (wait rho) (the (sun-road-window to-world (the game-date-seconds)))
+      (declare (ignore rho))
+      (if (<= wait +window-tolerance+)
+          (the (fly-sun-road! to-world))
+          (let ((depart (+ (the game-seconds) wait)))
+            (the (set-slot! :booked-road (list to-world depart (+ (the game-date-seconds) wait))))
+            (the (set-slot! :last-move-note
+                            (format nil "the road to ~a is booked: the window opens in ~,1f days (~a).  She holds her orbit till then -- skip ahead on the radio, and the bridge will call the departure"
+                                    (world-figure to-world :name) (/ wait 86400.0)
+                                    (utc-date-string (+ (the game-date-seconds) wait)))))
+            (bridge-says (format nil "~a has booked the road to ~a: the window opens ~a, ~,1f days out"
+                                 (the (hail-name)) (world-figure to-world :name)
+                                 (utc-date-string (+ (the game-date-seconds) wait)) (/ wait 86400.0))
+                         (the world-name))
+            (the voyage-control (set-slot! :value :hand))))))
+
    (fly-sun-road!
     (to-world)
     (let* ((from-world (the world))
@@ -5532,11 +5655,11 @@ function toggleHelm () {
            (n-tr (sqrt (/ +mu-sun+ (* a a a))))
            (tof (/ pi n-tr))
            (tof-months (/ tof (* 86400 30.44)))
-           (n-e (sqrt (/ +mu-sun+ (* re re re))))
            (n-m (sqrt (/ +mu-sun+ (* rm rm rm))))
-           ;; the window: where the new world must stand at
-           ;; departure so ship and world arrive at the same node
-           ;; together
+           ;; the window as the beats phrase it: where the new world
+           ;; must stand at departure so ship and world arrive at the
+           ;; same node together (the solver, sun-road-window, holds
+           ;; the true-sky version)
            (mars0 (- pi (* n-m tof)))
            (window-deg (* mars0 (/ 180 pi)))
            ;; phrased for the sky as she sees it: on an inward leg
@@ -5575,12 +5698,11 @@ function toggleHelm () {
            ;; sun's frame -- her world rides at (re, 0) at departure
            (samples (list (list 0.0 (deg->rad (the heading-deg))
                                 (+ re ox) oy)))
-           (asterns (list (list re 0)))
            (date0 (the game-date-seconds))
-           ;; home's moon rides his own track through the leg
-           (moons (multiple-value-bind (mx my) (moon-position date0)
-                    (list (list (+ re mx) my))))
-           (dests (list (list (* rm+ (cos mars0)) (* rm+ (sin mars0)))))
+           ;; the worlds' tracks (astern, dests) and home's moon are
+           ;; laid from the ephemeris once the samples' times are
+           ;; known, below
+           (asterns nil) (moons nil) (dests nil)
            (prev-h nil)
            (t0 (the game-seconds))
            (time-map (list (cons 0.0 0.0))))
@@ -5592,8 +5714,6 @@ function toggleHelm () {
                (h (atan (* vcoeff (+ e (cos theta)))
                         (* vcoeff (- (sin theta)))))
                (tim (/ (- ecc-anom (* e (sin ecc-anom))) n-tr))
-               (th-e (* n-e tim))
-               (th-m (+ mars0 (* n-m tim)))
                (fade (expt (- 1 (/ i n)) 3)))
           ;; unwrap the heading so the nose track never jumps a lap
           (when prev-h
@@ -5604,26 +5724,46 @@ function toggleHelm () {
                       (+ (* r (cos theta)) (* ox fade))
                       (+ (* r (sin theta)) (* oy fade)))
                 samples)
-          (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
-          (multiple-value-bind (mx my) (moon-position (+ date0 tim))
-            (push (list (+ (* re (cos th-e)) mx) (+ (* re (sin th-e)) my))
-                  moons))
-          (push (list (* rm+ (cos th-m)) (* rm+ (sin th-m))) dests)
           (push (cons (+ 0.07 (* 0.86 (/ i n))) tim) time-map)))
       ;; the closing beat: nose-in on the new world, the old one
       ;; dead astern of the sun
       (push (list 1.0 pi (- rm) 0) samples)
-      (let ((th-e (* n-e tof)))
-        (push (list (* re (cos th-e)) (* re (sin th-e))) asterns)
-        (multiple-value-bind (mx my) (moon-position (+ date0 tof))
-          (push (list (+ (* re (cos th-e)) mx) (+ (* re (sin th-e)) my)) moons)))
-      (push (list (- rm+) 0) dests)
       (push (cons 1.0 tof) time-map)
       (setq samples (nreverse samples)
-            time-map (nreverse time-map)
-            asterns (nreverse asterns)
-            moons (nreverse moons)
-            dests (nreverse dests))
+            time-map (nreverse time-map))
+      ;; THE SKY'S FRAME (departure epochs, third piece): the road
+      ;; was cut with her world at +x and its end at -x.  The worlds
+      ;; themselves ride their TRUE longitudes at each sample's date
+      ;; (the ephemeris, circular radii -- scenery at this grain),
+      ;; and the ship's road is turned to meet them: by the old
+      ;; world's longitude at departure, blending to the new world's
+      ;; less pi at arrival -- the same angle within the window's
+      ;; tolerance, so the blend is a degree at most and the arrival
+      ;; lands close aboard as cut.  Home's moon rides beside home in
+      ;; the same frame, his offset being ecliptic already.
+      (let* ((rho0 (heliocentric-longitude-rad from-world date0))
+             (rho1 (- (heliocentric-longitude-rad to-world (+ date0 tof)) pi))
+             (drho (- (mod (+ (- rho1 rho0) pi) (* 2 pi)) pi)))
+        (setq samples (mapcar (lambda (s tm)
+                                (destructuring-bind (k h x y) s
+                                  (let ((rho (+ rho0 (* drho (/ (cdr tm) tof)))))
+                                    (multiple-value-bind (rx ry) (rotate-xy x y rho)
+                                      (list k (+ h rho) rx ry)))))
+                              samples time-map)
+              asterns (mapcar (lambda (tm)
+                                (let ((l (heliocentric-longitude-rad from-world (+ date0 (cdr tm)))))
+                                  (list (* re (cos l)) (* re (sin l)))))
+                              time-map)
+              dests (mapcar (lambda (tm)
+                              (let ((l (heliocentric-longitude-rad to-world (+ date0 (cdr tm)))))
+                                (list (* rm+ (cos l)) (* rm+ (sin l)))))
+                            time-map)
+              moons (mapcar (lambda (a tm)
+                              (multiple-value-bind (mx my) (moon-position (+ date0 (cdr tm)))
+                                (list (+ (first a) mx) (+ (second a) my))))
+                            asterns time-map)))
+      ;; the booking, if this departure was one, is spent
+      (the (set-slot! :booked-road nil))
       (the (set-slot! :world to-world))
       (the (set-slot! :landed? nil))
       (the (set-slot! :heading-deg 180))
@@ -5779,7 +5919,18 @@ function toggleHelm () {
             (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))))
       (the (set-slot! :clock-anchor now))
       (unless (= rate was)
-        (the (set-slot! :clock-scale rate)))))
+        (the (set-slot! :clock-scale rate)))
+      ;; a booked sun's road departs on the first settle past its
+      ;; time: the window stands (or is just behind, within
+      ;; tolerance), so the road flies -- a scene of its own
+      (let ((b (the booked-road)))
+        (when (and b (not (the landed?)) (>= (the game-seconds) (second b))
+                   (world-figure (the world) :sun-radius))
+          (bridge-says (format nil "the window to ~a is open: ~a departs"
+                               (world-figure (first b) :name) (the (hail-name)))
+                       (the world-name))
+          (the (fly-sun-road! (first b)))
+          (the (set-slot! :clock-cuts (1+ (the clock-cuts))))))))
 
    (retire-clip!
     ()
