@@ -992,9 +992,16 @@ near ring arc lost the draw and hid behind the globe."
 ;; clock itself -- a scene DOCUMENT (the X_ITE road) flies the
 ;; voyage with no page script; the x3dom page keeps starting the
 ;; clock from JS instead.
+;; sub-second: the idle clock folds wall time at up to 10000x, and a
+;; whole second of slop would be hours of game-time at a tape seam
+(defvar *unix-epoch-anchor*
+  (- (get-universal-time) 2208988800
+     (/ (get-internal-real-time) (float internal-time-units-per-second 1d0))))
+
 (defun unix-now ()
   "Unix epoch seconds -- the time scale X3D SFTime clocks keep."
-  (- (get-universal-time) 2208988800))
+  (+ *unix-epoch-anchor*
+     (/ (get-internal-real-time) (float internal-time-units-per-second 1d0))))
 
 (defun transit-anim-x3d (samples bodies &key (duration 90) start-time time-map)
   (let ((keys (make-string-output-stream))
@@ -1372,6 +1379,13 @@ X_ITE), because a fresh scene document stands with the light off.")
                   yb (- z half) yt z yb (+ z half))))
       (format out "\"></Coordinate></IndexedFaceSet></Shape>"))))
 
+;; the stop key's mark: a small square on the key face, the
+;; chevrons' own finish
+(defun stop-block-x3d (y z)
+  (let ((h 0.0045))
+    (format nil "<Shape><Appearance><Material diffuseColor=\"0 0 0\" emissiveColor=\"0.78 0.86 0.92\"></Material></Appearance><IndexedFaceSet solid=\"false\" coordIndex=\"0 1 2 3 -1\"><Coordinate point=\"0.7133 ~,4f ~,4f, 0.7133 ~,4f ~,4f, 0.7133 ~,4f ~,4f, 0.7133 ~,4f ~,4f\"></Coordinate></IndexedFaceSet></Shape>"
+            (- y h) (- z h) (+ y h) (- z h) (+ y h) (+ z h) (- y h) (+ z h))))
+
 (defun dash-radio-x3d (cadence transport)
   (labels ((key-x3d (id mat-id y z len lit? description icon)
              ;; every key carries its own TouchSensor: sensor
@@ -1397,13 +1411,16 @@ X_ITE), because a fresh scene document stands with the light off.")
                                  (format nil "radio-preset-mat-~d" i)
                                  y 0.331 0.048 (eql cadence val) label
                                  (chevrons-x3d y 0.331 (1+ i) -1)))))
-     ;; the transport: rewind to port, play to starboard
-     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.035 0.292 0.05
-              (eql transport :rewind) "rewind — the turn falls into the past"
-              (chevrons-x3d 0.035 0.292 2 1))
-     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" -0.035 0.292 0.05
-              (eql transport :play) "play — the turn runs forward"
-              (chevrons-x3d -0.035 0.292 1 -1))
+     ;; the transport: rewind to port, stop amidships, play to starboard
+     (key-x3d "radio-tpt-0" "radio-tpt-mat-0" 0.062 0.292 0.045
+              (eql transport :rewind) "rewind — time runs backward"
+              (chevrons-x3d 0.062 0.292 2 1))
+     (key-x3d "radio-tpt-1" "radio-tpt-mat-1" 0.0 0.292 0.045
+              (eql transport :stop) "stop — time stands still between moves"
+              (stop-block-x3d 0.0 0.292))
+     (key-x3d "radio-tpt-2" "radio-tpt-mat-2" -0.062 0.292 0.045
+              (eql transport :play) "play — time runs forward"
+              (chevrons-x3d -0.062 0.292 1 -1))
      ;; the starter, under the climb gauge: press it and the move
      ;; is made
      "<Transform id=\"starter-hit\" DEF=\"starter-hit\"><TouchSensor id=\"starter-touch\" DEF=\"starter-touch\" description=\"the starter — make the move\"></TouchSensor><Transform translation=\"0.722 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material diffuseColor=\"0.85 0.87 0.88\"></Material></Appearance><Cylinder radius=\"0.030\" height=\"0.012\"></Cylinder></Shape></Transform><Transform translation=\"0.7165 -0.19 0.315\" rotation=\"0 0 1 1.5708\"><Shape><Appearance><Material DEF=\"starter-mat\" id=\"starter-mat\" diffuseColor=\"0.85 0.29 0.16\" emissiveColor=\"0.30 0.08 0.05\"></Material></Appearance><Cylinder radius=\"0.022\" height=\"0.012\"></Cylinder></Shape></Transform></Transform>")))
@@ -1823,12 +1840,16 @@ window.GW_DRAW = function () {
   // TimeSensor on: GW_VOYAGE_T0 appears at window load on a fresh
   // voyage, and is null when the scene snapped to arrival
   function animate () {
-    hudOn();
+    // a coast tape (S3) is not a show: the plot stays in its
+    // corner and simply follows her, holding the last frame until
+    // the next stretch of tape arrives
+    if (!V.coast) hudOn();
     function step () {
       if (gen !== GW_DRAW.gen) return;
       var f = (Date.now() - window.GW_VOYAGE_T0) / (V.cycle * 1000);
       if (f >= 1) {
         drawVoyage(1);
+        if (V.coast) { setTimeout(step, 250); return; }
         setTimeout(function () {
           if (gen === GW_DRAW.gen) { hudOff(); drawOrbit(); }
         }, 1200);
@@ -1927,26 +1948,33 @@ window.GW_CLOCK_NOW = function () {
 };
 window.GW_CLOCK_TICK = function () {
   GW_CLOCK_TICK.gen = (GW_CLOCK_TICK.gen || 0) + 1;
-  var gen = GW_CLOCK_TICK.gen, inClip = false;
-  function clipRunning () {
+  var gen = GW_CLOCK_TICK.gen, inClip = false, ticked = null;
+  function clipFrac () {
     var C = window.GW_CLOCK, T0 = window.GW_VOYAGE_T0;
-    return !!(C && C.tmap && C.cycle && typeof T0 === 'number' && (Date.now() - T0) / (C.cycle * 1000) < 1);
+    if (!(C && C.tmap && C.cycle && typeof T0 === 'number')) return null;
+    return (Date.now() - T0) / (C.cycle * 1000);
+  }
+  // the tick: a settle pressed through the lit channel key, the
+  // same path a hand takes (debounced there)
+  function tick () {
+    try { var b = document.querySelector('.cadence-btn.lit'); if (b) b.click(); } catch (e) {}
   }
   function step () {
     if (gen !== GW_CLOCK_TICK.gen) return;
     var el = document.getElementById('gw-clock'), t = GW_CLOCK_NOW();
     if (el && t !== null) el.textContent = \"ship's clock: \" + GW_CLOCK_FACE(t);
-    // a clip that ends on the ground (the landing) leaves the
-    // arrival scene standing with no day clock in it: one settle
-    // re-cuts the ground scene with its sensors -- pressed through
-    // the lit channel key, the same path a hand takes
-    var running = clipRunning();
-    if (inClip && !running) {
-      try {
-        if (window.GW_CLOCK && window.GW_CLOCK.scale) {
-          var b = document.querySelector('.cadence-btn.lit'); if (b) b.click();
-        }
-      } catch (e) {}
+    var C = window.GW_CLOCK, f = clipFrac(), running = f !== null && f < 1;
+    if (C && C.scale) {
+      if (C.coast) {
+        // the tape (S3): at tickAt the next stretch is cut while
+        // this one still plays, once per stretch
+        if (f !== null && f >= (C.tickAt || 1) && ticked !== window.GW_GEN) { ticked = window.GW_GEN; tick(); }
+      } else if (inClip && !running) {
+        // a road at its end: on the ground the arrival scene has
+        // no day clock in it, aloft the tape begins where the road
+        // ends -- one settle re-cuts the scene either way
+        tick();
+      }
     }
     inClip = running;
     setTimeout(step, 250);
@@ -1954,25 +1982,39 @@ window.GW_CLOCK_TICK = function () {
   step();
 };
 window.GW_DAY_WIRE = function () {
-  var C = window.GW_CLOCK; if (!C || !C.scale || !C.day) return;
-  var t = GW_CLOCK_NOW(); if (t === null) return;
+  var C = window.GW_CLOCK; if (!C || !C.scale) return;
   var now = Date.now() / 1000;
+  function node (id) {
+    var el = document.getElementById(id); if (el) return { dom: el };
+    var n = window.GW_XR_NAMED ? window.GW_XR_NAMED(id) : null;
+    return n ? { sai: n } : null;
+  }
+  function set (id, field, value) {
+    var n = node(id); if (!n) return false;
+    if (n.dom) { n.dom.setAttribute(field, '' + value); return true; }
+    try { n.sai.getField(field).setValue(value); return true; } catch (e) { return false; }
+  }
+  // THE TAPE (S3): a coast clip seeds its one-shot clock to the
+  // game-time elapsed since the tape was cut, so the scene shows
+  // where she IS rather than replaying from the seam
+  if (C.coast && C.tmap && C.cycle) {
+    var eg = (C.scale || 0) * (Date.now() - C.wall) / 1000;
+    var horizon = C.tmap[C.tmap.length - 1][1];
+    var f = horizon ? eg / horizon : 0;
+    if (f < 0) f = 0; if (f > 1) f = 1;
+    var start = now - f * C.cycle;
+    set('voyage-clock', 'startTime', start);
+    window.GW_VOYAGE_T0 = start * 1000;
+  }
+  if (!C.ground || !C.day) return;
+  var t = GW_CLOCK_NOW(); if (t === null) return;
   // game-seconds since the standing scene was cut
   var e = t - (typeof window.GW_SCENE_T === 'number' ? window.GW_SCENE_T : C.t);
   var s = C.scale < 0 ? -1 : 1;
   function seed (id, cycle, frac) {
     frac = frac - Math.floor(frac);
-    var start = now - frac * cycle;
-    var el = document.getElementById(id);
-    if (el) {
-      el.setAttribute('cycleInterval', '' + cycle);
-      el.setAttribute('startTime', '' + start);
-      return;
-    }
-    var n = window.GW_XR_NAMED ? window.GW_XR_NAMED(id) : null;
-    if (!n) return;
-    try { n.getField('cycleInterval').setValue(cycle); } catch (e1) {}
-    try { n.getField('startTime').setValue(start); } catch (e2) {}
+    set(id, 'cycleInterval', cycle);
+    set(id, 'startTime', now - frac * cycle);
   }
   // the sky: its angle is -2 pi e / day, and the track is cut to
   // turn -s * 2 pi per cycle (day-clock-x3d)
@@ -2020,12 +2062,12 @@ window.GW_WIRE = function () {
     var neutral = gearSel && gearSel.value === ':NEUTRAL';
     var landed = false;
     try { landed = !!(window.GW_PLAN && GW_PLAN.orbit && GW_PLAN.orbit.landed); } catch (e) {}
-    // the radio stays live on the ground whatever road is bought:
-    // down there it sets the rate the world turns at (the idle clock)
+    // the radio is never locked: it is the clock's own rate and
+    // direction, whatever road is bought (the idle clock, the tape)
     return { wheel: road || landed,
              gear:  road || rw,
              pedal: road || rw || neutral,
-             radio: road && !landed };
+             radio: false };
   }
   function sensorEnable (id, on) {
     var s = document.getElementById(id);
@@ -2169,9 +2211,10 @@ window.GW_WIRE = function () {
     var tb = document.querySelectorAll('.transport-btn.lit');
     for (var i = 0; i < tb.length; i++)
       if (tb[i].getAttribute('data-val') === ':REWIND') rw = true;
+    var tv = (function () { var b = document.querySelector('.transport-btn.lit'); return b ? b.getAttribute('data-val') : null; })();
     el.textContent = (gearSel ? (gmap[gearSel.value] || '·') : '·')
       + ' · ' + (wheelSel ? (wheelSel.value === ':EXACT' ? turnPhrase(exactDeg()) : (wmap[wheelSel.value] || '')) : '')
-      + (rw ? ' ◀◀' : '');
+      + (tv === ':REWIND' ? ' ◀◀' : tv === ':STOP' ? ' ■' : '');
     // the same line on the dash strip (GW_TEX carries it to X_ITE)
     if (window.GW_PAINT_READOUT) { try { GW_PAINT_READOUT(el.textContent); } catch (e) {} }
     pedalPose();
@@ -2222,6 +2265,10 @@ window.GW_WIRE = function () {
     });
   });
   if (pedalSel) pedalSel.addEventListener('change', readout);
+  // the nose-in switch posts at once too: the tape is re-cut under
+  // the new law
+  var noseIn = document.querySelector('#gw-nose-in input');
+  if (noseIn) noseIn.addEventListener('change', function (ev) { if (window.GW_SETTLE) GW_SETTLE(ev); });
   // the dash radio: preset buttons drive the hidden radio inputs,
   // and the station readout names the channel playing
   var stations = { ':SLOW': 'drone 33', ':MEDIUM': 'dub 72',
@@ -2243,8 +2290,8 @@ window.GW_WIRE = function () {
         Array.prototype.forEach.call(btns, function (o) { o.classList.remove('lit'); });
         b.classList.add('lit');
         if (after) after(b);
-        // on the ground the radio is live: the change posts at once
-        if (window.GW_SETTLE_GROUND) GW_SETTLE_GROUND(ev);
+        // the radio is live: the change posts at once, no move made
+        if (window.GW_SETTLE) GW_SETTLE(ev);
       });
     });
   }
@@ -2252,7 +2299,7 @@ window.GW_WIRE = function () {
   // on a 3D key clicks the matching faceplate button, and both
   // relight together
   var cadVals = [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'];
-  var tptVals = [':REWIND', ':PLAY'];
+  var tptVals = [':REWIND', ':STOP', ':PLAY'];
   function relight3d (prefix, vals, active) {
     vals.forEach(function (v, i) {
       var m = document.getElementById(prefix + '-mat-' + i);
@@ -2342,7 +2389,7 @@ window.GW_WIRE = function () {
   });
   ['radio-preset-0-touch', 'radio-preset-1-touch', 'radio-preset-2-touch',
    'radio-preset-3-touch', 'radio-tpt-0-touch', 'radio-tpt-1-touch',
-   'starter-touch'].forEach(function (id) {
+   'radio-tpt-2-touch', 'starter-touch'].forEach(function (id) {
     overCursor(id, 'pointer');
   });
 };")
@@ -2678,10 +2725,11 @@ window.GW_WIRE = function () {
    ;; THE IDLE CLOCK (S2, 2026-09-03): on the ground, time flows on
    ;; its own.  clock-anchor is the wall time (unix seconds) at
    ;; which game-seconds was last true and clock-scale the rate in
-   ;; force since -- game-seconds per wall-second: the radio channel
-   ;; while landed, the tape direction its sign, 0 aloft, where
-   ;; time stays frozen between moves until the coasting ship rides
-   ;; rails of her own.  Every post settles the clock first
+   ;; force since -- game-seconds per wall-second: the radio channel,
+   ;; the tape direction its sign, 0 on STOP (the turn-based game of
+   ;; pt 67, kept as a mode).  Aloft (S3) the coast is a TAPE cut
+   ;; from the state (coast-tape!) and the settle carries her along
+   ;; it (coast!).  Every post settles the clock first
    ;; (settle-clock!): the idle time folds into game-seconds at the
    ;; rate that WAS in force, then the new rate takes over -- so the
    ;; server and the page's own ticking read the same instant, and
@@ -2691,8 +2739,12 @@ window.GW_WIRE = function () {
    ;; clock.
    (clock-anchor nil :settable)
    (clock-scale 0 :settable)
-   ;; the rate the state calls for right now
-   (idle-scale (if (the landed?)
+   ;; the rate the state calls for right now: PLAY and REWIND run
+   ;; the clock at the channel's rate, on the ground and aloft;
+   ;; STOP is the turn-based game -- a move spends the cadence and
+   ;; nothing moves between
+   (playing? (not (eql (the transport-control value) :stop)))
+   (idle-scale (if (the playing?)
                    (* (if (eql (the transport-control value) :rewind) -1 1)
                       (ecase (the cadence-control value)
                         (:slow 10) (:medium 100) (:fast 1000) (:fastest 10000)))
@@ -2705,6 +2757,11 @@ window.GW_WIRE = function () {
    (world-spin-rad (world-phase-rad (the world) (the game-seconds)))
    ;; the clock as the helm reads it
    (clock-string (clock-face (the game-seconds)))
+   ;; the nose-in switch (S3): on, the tape holds her heading on the
+   ;; world's center as she coasts -- the old watch reborn as a law
+   (nose-in? (the nose-in-control value))
+   ;; the game-seconds a standing coast tape spans (coast-tape!)
+   (coast-span nil :settable)
    ;; the sky's riders on the ground: the one other world hanging
    ;; at the horizon -- (prefix phase-rad day-seconds), the face he
    ;; shows and how fast it turns
@@ -2722,10 +2779,18 @@ window.GW_WIRE = function () {
    ;; so the card runs through the clip at the road's Kepler pace
    (clock-json
     (let* ((tm (the transit-time-map))
-           (total (when tm (cdr (car (last tm))))))
-      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
+           (coast? (eql (the transit-target) :coast))
+           ;; a road's clock already carries its whole time; a
+           ;; coast tape starts at the settled reading
+           (total (cond ((null tm) nil) (coast? 0) (t (cdr (car (last tm)))))))
+      (format nil "{\"t\":~d,\"scale\":~d,\"day\":~d,\"ground\":~a,\"coast\":~a,\"tickAt\":~a,\"total\":~a,\"tmap\":~a,\"cycle\":~a,\"spins\":[~{~a~^,~}]}"
               (round (the game-seconds)) (the clock-scale)
               (the world-day-seconds)
+              (if (the landed?) "true" "false")
+              (if coast? "true" "false")
+              ;; a tape ticks at three quarters, so the next stretch
+              ;; is cut while this one still plays; a road at its end
+              (if coast? "0.75" "1")
               (if total (format nil "~,1f" total) "null")
               (if tm
                   (format nil "[~{[~,4f,~,1f]~^,~}]"
@@ -2756,7 +2821,8 @@ window.GW_WIRE = function () {
    ;; "set" writes it onto the exact wheel.  Port positive, the
    ;; presets' own sign.  Nil on the ground.
    (nose-in-turns
-    (unless (the landed?)
+    ;; a turn-based figure: STOP only (playing, the switch holds her)
+    (unless (or (the landed?) (the playing?))
       (loop for (cad secs) in '((:slow 60) (:medium 600)
                                 (:fast 3600) (:fastest 86400))
             collect (list cad
@@ -2872,10 +2938,10 @@ window.GW_WIRE = function () {
                 +moon-x+ +moon-radius+))
       (format out "}")
       (when (the transit-samples)
-        (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~d,\"samples\":["
+        (format out ",\"voyage\":{\"frame\":~s,\"cycle\":~a,\"samples\":["
                 (case (the transit-target)
                   ((:moon :homeward) "home")
-                  ((:down :up) (the world-name))
+                  ((:down :up :coast) (the world-name))
                   (t "the sun's"))
                 (the transit-duration))
         (loop for s in (the transit-samples)
@@ -2912,6 +2978,14 @@ window.GW_WIRE = function () {
                     (a (* 0.5 (+ r1 (the world-sky)))))
                (format out ",\"live\":{\"mu\":~,4f,\"a\":~,1f,\"ground\":~,1f}"
                        (the world-mu) a (the world-sky)))))
+          ;; the coast tape (S3): altitude off the surface and
+          ;; vis-viva off the standing conic, live the whole way;
+          ;; and the plot knows it is a tape, not a show
+          (:coast
+           (format out ",\"live\":{\"mu\":~,4f,\"a\":~a,\"ground\":~,1f},\"coast\":true"
+                   (the world-mu)
+                   (if (the semi-major) (format nil "~,1f" (the semi-major)) "null")
+                   (the world-radius)))
           ;; the climb is powered, so vis-viva has nothing to say
           ;; -- altitude alone rides the live line
           (:up (format out ",\"live\":{\"ground\":~,1f}" (the world-sky))))
@@ -2941,6 +3015,11 @@ window.GW_WIRE = function () {
                        ((:moon :homeward) 90)
                        ((:down) 45)
                        ((:up) 30)
+                       ;; a coast tape plays at the clock's own rate
+                       ;; (single-float: it rides into JSON as is)
+                       (:coast (float (/ (or (the coast-span) 1)
+                                         (max 1 (abs (the clock-scale))))
+                                      1.0))
                        (t 120)))
 
    ;; the bodies riding the voyage page: specs for body-x3d and
@@ -3125,7 +3204,7 @@ window.GW_WIRE = function () {
         ;; would read as already-played and snap to arrival
         (format nil "
 (function () {
-  var key = 'gw-voyage-~a-~d', played = false;
+  var key = 'gw-voyage-~a-~a', played = false;
   try { played = !!sessionStorage.getItem(key); } catch (e) {}
   if (played) {
     window.GW_VOYAGE_T0 = null;
@@ -3142,13 +3221,17 @@ window.GW_WIRE = function () {
   } else {
     try { sessionStorage.setItem(key, '1'); } catch (e) {}
     window.addEventListener('load', function () {
+      // a coast tape seeds to the elapsed game-time instead (GW_DAY_WIRE)
+      if (window.GW_CLOCK && GW_CLOCK.coast && window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} return; }
       var ts = document.getElementById('voyage-clock');
       if (ts) ts.setAttribute('startTime', '' + (Date.now() / 1000 + 1));
       window.GW_VOYAGE_T0 = Date.now() + 1000;
     });
   }
 })();"
-                (or (the instance-id) "local") (the moves-count)
+                ;; keyed on the scene generation: every stretch of
+                ;; coast tape is its own clip
+                (or (the instance-id) "local") (the scene-gen)
                 (the voyage-fin-js)
                 ;; where the ground stands when the clip is snapped
                 ;; past: home for a landing, struck for a lift-off
@@ -3284,7 +3367,8 @@ window.GW_WIRE = function () {
               (:easy-starboard "easy stbd") (:hard-starboard "hard stbd")
               (:exact (turn-phrase (or (the wheel-angle-control value) 0)))
               (otherwise "amidships"))
-            (if (eql (the transport-control value) :rewind) " ◀◀" "")))
+            (case (the transport-control value)
+              (:rewind " ◀◀") (:stop " ■") (t ""))))
 
    (helm-form-html
     (with-form-string ()
@@ -3296,6 +3380,10 @@ window.GW_WIRE = function () {
           (:span :style "font-size:10px;color:#8a7a2f;" "degrees, port positive"))
         (:div :id "gw-nose-hint" :style "font-size:10px;color:#c9a227;letter-spacing:0.04em;min-height:14px;"
           (str (the nose-in-hint-html)))
+        ;; the nose-in switch: playing, the tape holds her nosed-in
+        (:div :id "gw-nose-in" :style "display:flex;gap:6px;align-items:center;font-size:12px;"
+          (str (the nose-in-control html-string))
+          (:span :style "font-size:10px;color:#8a7a2f;" "hold her nosed-in on the world as she coasts"))
         (:div (str (the shifter-control html-string)))
         (:div (str (the pedal-control html-string)))
         ;; the dash radio: cadence presets and the tape transport.
@@ -3317,9 +3405,11 @@ window.GW_WIRE = function () {
               :title "fastest — a day a turn (145 bpm goa)" "fstst")
             (:span :style "flex:1;")
             (:button :type "button" :class "rbtn transport-btn" :data-val ":REWIND"
-              :title "rewind — the turn falls into the past; the engines don't light" "◀◀")
+              :title "rewind — time runs backward at the channel's rate; the engines don't light" "◀◀")
+            (:button :type "button" :class "rbtn transport-btn" :data-val ":STOP"
+              :title "stop — time stands still between moves; a move spends the cadence" "■")
             (:button :type "button" :class "rbtn transport-btn" :data-val ":PLAY"
-              :title "play — the turn runs forward" "▶"))
+              :title "play — time runs forward at the channel's rate" "▶"))
           (:div :style "display:none;"
             (str (the cadence-control html-string))
             (str (the transport-control html-string))
@@ -3350,18 +3440,20 @@ window.GW_WIRE = function () {
                       :function-key :after-set!))
        :style "margin-top:8px;background:#1a1a1a;color:#e8c839;border:1px solid #e8c839;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer;"
        "make the move")
-      ;; on the ground the radio is live: a change of channel or of
-      ;; tape direction posts at once through the same pipe, no
-      ;; move made, and the ship's clock folds the idle time at the
-      ;; rate that was playing before taking the new one
+      ;; the radio is live: a change of channel, of tape direction
+      ;; or of the nose-in switch posts at once through the same
+      ;; pipe, no move made -- the ship's clock folds the idle time
+      ;; at the rate that was playing, takes the new one, and the
+      ;; tape is cut afresh (settle-post!)
       (:script
        ;; debounced: the hands script is wired once by its inclusion
        ;; and again by the state script, so a click reaches this twice
-       (str (format nil "window.GW_SETTLE_GROUND = function (event) { try { if (!(window.GW_PLAN && GW_PLAN.orbit && GW_PLAN.orbit.landed)) return; } catch (e) { return; } var now = Date.now(); if (window.GW_SETTLE_AT && now - window.GW_SETTLE_AT < 800) return; window.GW_SETTLE_AT = now; ~a };"
+       (str (format nil "window.GW_SETTLE = function (event) { var now = Date.now(); if (window.GW_SETTLE_AT && now - window.GW_SETTLE_AT < 800) return; window.GW_SETTLE_AT = now; ~a };"
                     (the (gdl-ajax-call
                           :form-controls (list (the cadence-control)
-                                               (the transport-control))
-                          :function-key :settle-clock!)))))
+                                               (the transport-control)
+                                               (the nose-in-control))
+                          :function-key :settle-post!)))))
       ;; the boarding signature: the browser keeps a pilot token of
       ;; its own minting (localStorage; a private window simply
       ;; boards unsigned), writes it on the hidden line, and posts
@@ -3684,13 +3776,24 @@ function toggleHelm () {
                                         :fast "fast"
                                         :fastest "fastest"))
 
-   ;; the tape transport: play runs the turn forward, rewind runs
-   ;; it BACKWARD -- gravity is symmetric, so the deck can carry
-   ;; the fall either way.  The engines don't light in rewind.
+   ;; the tape transport: play runs time forward at the channel's
+   ;; rate, rewind runs it BACKWARD -- gravity is symmetric, so the
+   ;; deck can carry the fall either way -- and STOP freezes it:
+   ;; the turn-based game, where a move spends the cadence and
+   ;; nothing moves between (pt 67, kept as a mode).  The engines
+   ;; don't light in rewind.
    (transport-control :type 'gwl:radio-form-control
                       :default :play
                       :choice-plist (list :play "play"
+                                          :stop "stop"
                                           :rewind "rewind"))
+
+   ;; the nose-in switch (S3): playing, the tape holds her heading
+   ;; on the world's center; off, the heading stands where the
+   ;; wheel left it
+   (nose-in-control :type 'gwl:checkbox-form-control
+                    :prompt "nose-in: "
+                    :default t)
 
    ;; the log-book signature line: a hidden field the browser fills
    ;; with its own pilot token at boarding, posted once through the
@@ -3828,15 +3931,19 @@ function toggleHelm () {
 
    (fall-forward
     (vx vy px py dt)
-    (let ((h 60.0d0)
-          (mu (the world-mu))
-          (sky (the world-sky)))
+    ;; substeps of at most a minute, sized to divide DT exactly:
+    ;; the idle clock's settles carry odd stretches (S3), and a
+    ;; short one must not round to a whole minute's fall
+    (let* ((n (max 1 (ceiling (abs dt) 60.0d0)))
+           (h (/ dt n))
+           (mu (the world-mu))
+           (sky (the world-sky)))
       (flet ((accel (x y)
                (let* ((r2 (+ (* x x) (* y y)))
                       (r (sqrt r2))
                       (a (- (/ mu r2))))
                  (values (* a (/ x r)) (* a (/ y r))))))
-        (dotimes (step (max 1 (round dt h)))
+        (dotimes (step n)
           (multiple-value-bind (ax0 ay0) (accel px py)
             (setq px (+ px (* vx h) (* 0.5 ax0 h h))
                   py (+ py (* vy h) (* 0.5 ay0 h h)))
@@ -3876,12 +3983,15 @@ function toggleHelm () {
    ;; the reload shows is the world that turned while nobody looked
    (before-present!
     ()
-    (the settle-clock!))
+    (let ((*current-pilot* (the pilot-id)))
+      (the settle-clock!)
+      (the retape!)))
 
    (after-set!
     ()
     ;; the move lands on the ship's clock as it reads NOW
-    (the settle-clock!)
+    (let ((*current-pilot* (the pilot-id)))
+      (the settle-clock!))
     (let* ((*current-pilot* (the pilot-id))
            (choice (the voyage-control value))
            (road? (not (member choice '(:hand :down)))))
@@ -3909,7 +4019,10 @@ function toggleHelm () {
                   (world-figure (the world) :sun-radius)
                   (not (eql choice (the world))))
              (the (fly-sun-road! choice)))
-            (t (the make-helm-move!)))))
+            (t (the make-helm-move!))))
+    ;; and the tape stands afresh from wherever the move left her
+    (let ((*current-pilot* (the pilot-id)))
+      (the retape!)))
 
    ;; The lift-off, FLOWN: straight up off the pad at her parked
    ;; seat -- the plain falling away, the globe emerging below --
@@ -4637,22 +4750,217 @@ function toggleHelm () {
           (was (the clock-scale))
           (rate (the idle-scale)))
       (when (and (the clock-anchor) (/= was 0))
-        (the (set-slot! :game-seconds
-                        (+ (the game-seconds)
-                           (* (- now (the clock-anchor)) was))))
-        ;; a clip that brought her down is over by now: retire it,
-        ;; or the re-cut scene is the landing again, replayed from
-        ;; a fresh clock -- and its end settles once more, forever
-        (when (the transit-samples)
-          (the (set-slot! :transit-samples nil))
-          (the (set-slot! :transit-target nil))
-          (the (set-slot! :transit-bodies nil))
-          (the (set-slot! :transit-beats nil))
-          (the (set-slot! :transit-time-map nil)))
+        (let ((dt (* (- now (the clock-anchor)) was)))
+          (if (the landed?)
+              (the (set-slot! :game-seconds (+ (the game-seconds) dt)))
+              ;; aloft she rode the road meanwhile: carry her along
+              ;; it -- the fall, the sky, the grips (coast!)
+              (the (coast! dt))))
+        ;; whatever clip stood is over by now -- the landing that
+        ;; brought her down, a road just flown, the last stretch of
+        ;; tape: retire it, or the re-cut scene replays it from a
+        ;; fresh clock (and a landing's end would settle forever)
+        (the retire-clip!)
         (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
       (the (set-slot! :clock-anchor now))
       (unless (= rate was)
         (the (set-slot! :clock-scale rate)))))
+
+   (retire-clip!
+    ()
+    (when (the transit-samples)
+      (the (set-slot! :transit-samples nil))
+      (the (set-slot! :transit-target nil))
+      (the (set-slot! :transit-bodies nil))
+      (the (set-slot! :transit-beats nil))
+      (the (set-slot! :transit-time-map nil))))
+
+   ;; THE SETTLE POST from the radio and the nose-in switch: settle,
+   ;; then make sure a tape stands (the rate may just have changed,
+   ;; play just pressed, the law just turned)
+   (settle-post!
+    ()
+    (let ((*current-pilot* (the pilot-id)))
+      (the settle-clock!)
+      (the retape!)))
+
+   ;; THE TAPE, kept standing (S3): playing and aloft with no road
+   ;; clip showing, the coast ahead is cut fresh from the state.
+   ;; Every hand move ends here, every settle post, every page GET.
+   (retape!
+    ()
+    (cond ((and (the playing?) (not (the landed?))
+                (or (null (the transit-samples))
+                    (eql (the transit-target) :coast)))
+           (the coast-tape!)
+           (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))
+          ;; STOP retires a standing tape: the scene stands still
+          ;; where she is, the turn-based game's own view
+          ((and (not (the playing?)) (eql (the transit-target) :coast))
+           (the retire-clip!)
+           (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))))
+
+   ;; THE COAST: she rode DT game-seconds of road with no hand on
+   ;; the helm -- the fall; the sky if she meets it (down under the
+   ;; cap, set back on the ring over it); the hand-off if a grip
+   ;; changes; and nose-in, if the switch holds her, brought back
+   ;; onto the world at the end.  make-helm-move!'s own rules, with
+   ;; no burn.
+   (coast!
+    (dt)
+    (unless (zerop dt)
+      (let* ((state (the (fall (the vel-x) (the vel-y)
+                               (the pos-x) (the pos-y) dt)))
+             (r (sqrt (+ (* (third state) (third state))
+                         (* (fourth state) (fourth state)))))
+             (contact? (< r (the world-sky)))
+             (contact-speed
+              (let ((v2 (+ (* (first state) (first state))
+                           (* (second state) (second state)))))
+                (if contact?
+                    (sqrt (max 0.0 (- v2 (* 2 (the world-mu)
+                                            (- (/ 1 (max r 1.0))
+                                               (/ 1 (the world-sky)))))))
+                    (sqrt v2))))
+             (down? (and contact? (< contact-speed +landing-speed-cap+)))
+             (crashed? (and contact? (not down?))))
+        (the (set-slot! :game-seconds (+ (the game-seconds) dt)))
+        (cond (down?
+               (let ((scale (/ (the world-sky) (max r 1.0))))
+                 (the (set-slot! :pos-x (* (third state) scale)))
+                 (the (set-slot! :pos-y (* (fourth state) scale))))
+               (the (set-slot! :vel-x 0))
+               (the (set-slot! :vel-y 0))
+               (the (set-slot! :landed? t))
+               (the (set-slot! :last-burn :none))
+               (the (set-slot! :last-move-note
+                     (format nil "DOWN on ~a -- ~,2f km/s at the touch, under the ~,1f the surface forgives.  The world turns under him; forward and the full pedal to climb back to the ring"
+                             (the world-name) contact-speed +landing-speed-cap+)))
+               (tally! :landings)
+               (tally! (intern (concatenate 'string (symbol-name (the world))
+                                            "-LANDINGS")
+                               :keyword)))
+              (crashed?
+               (the (set-slot! :heading-deg 180))
+               (the (set-slot! :vel-x 0))
+               (the (set-slot! :vel-y (the world-ring-speed)))
+               (the (set-slot! :pos-x (the world-ring)))
+               (the (set-slot! :pos-y 0))
+               (the (set-slot! :last-burn :none))
+               (the (set-slot! :last-move-note
+                     (format nil "the world came up to meet you at ~,1f km/s -- back on the ring, falling clean.  Under ~,1f km/s at the touch would have been a landing"
+                             contact-speed +landing-speed-cap+)))
+               (tally! :crashes))
+              (t
+               (the (set-slot! :vel-x (first state)))
+               (the (set-slot! :vel-y (second state)))
+               (the (set-slot! :pos-x (third state)))
+               (the (set-slot! :pos-y (fourth state)))
+               (when (the nose-in?)
+                 (the (set-slot! :heading-deg
+                                 (mod (round (* (/ 180 pi)
+                                                (atan (- (the pos-y))
+                                                      (- (the pos-x)))))
+                                      360))))
+               (the maybe-hand-off!))))))
+
+   ;; whether another world's grip would take her at (PX PY) in the
+   ;; current world's frame -- maybe-hand-off!'s own test, asked of
+   ;; a point on the tape ahead
+   (hand-off-due?
+    (px py)
+    (case (the world)
+      (:home (let ((mx (- px +moon-x+)) (my py))
+               (> (/ +mu-moon+ (+ (* mx mx) (* my my)))
+                  (* 1.15 (/ +mu+ (+ (* px px) (* py py)))))))
+      (:moon (let ((hx (+ px +moon-x+)) (hy py))
+               (> (/ +mu+ (+ (* hx hx) (* hy hy)))
+                  (* 1.15 (/ +mu-moon+ (+ (* px px) (* py py)))))))
+      (t nil)))
+
+   ;; THE TAPE: the coast ahead, cut from the state at the rate in
+   ;; force -- samples (key heading x y) and a time-map (key .
+   ;; game-seconds, signed) along the road the fall integrator
+   ;; itself walks, so the page and the next settle agree to the
+   ;; step.  The horizon: an orbit, or thirty wall-seconds of tape,
+   ;; whichever is longer, never past two days -- and it ENDS where
+   ;; an event would: the sky, or another world's grip; the settle
+   ;; at the tick then applies the event through coast!.  Nose-in
+   ;; holds the heading on the world along the whole tape.
+   (coast-tape!
+    ()
+    (let* ((rate (the clock-scale))
+           (sign (if (minusp rate) -1 1))
+           (mag (abs rate))
+           (period (when (the semi-major)
+                     (* 2 pi (sqrt (/ (expt (the semi-major) 3)
+                                      (the world-mu))))))
+           (span (min (* 2 86400) (max (or period 86400) (* 30 mag))))
+           (step 60.0d0)
+           (n (max 2 (ceiling span step)))
+           (every (max 1 (round n 120)))
+           (nose-in? (the nose-in?))
+           (h0 (deg->rad (the heading-deg)))
+           (vx (the vel-x)) (vy (the vel-y))
+           (px (the pos-x)) (py (the pos-y))
+           (prev-h h0)
+           (sky (the world-sky))
+           (samples (list (list 0.0 h0 px py)))
+           (elapsed 0.0))
+      (loop for i from 1 to n
+            do (destructuring-bind (nvx nvy npx npy)
+                   (the (fall vx vy px py (* sign step)))
+                 (setq vx nvx vy nvy px npx py npy elapsed (* i step)))
+               (let* ((r (sqrt (+ (* px px) (* py py))))
+                      (event? (or (< r sky) (the (hand-off-due? px py)))))
+                 (when (or event? (zerop (mod i every)) (= i n))
+                   (let ((h (if nose-in?
+                                (unwrap-heading (atan (- py) (- px)) prev-h)
+                                h0)))
+                     (setq prev-h h)
+                     (push (list elapsed h px py) samples)))
+                 (when event? (return))))
+      (setq samples (nreverse samples))
+      ;; keys are the fraction of the span actually cut
+      (let* ((total (first (car (last samples))))
+             (denom (max total 1.0))
+             (t0 (the game-seconds))
+             (count (length samples)))
+        (the (set-slot! :transit-samples
+              (mapcar (lambda (s) (list (/ (first s) denom) (second s) (third s) (fourth s)))
+                      samples)))
+        (the (set-slot! :transit-time-map
+              (mapcar (lambda (s) (cons (/ (first s) denom) (* sign (first s))))
+                      samples)))
+        (the (set-slot! :coast-span total))
+        (the (set-slot! :transit-target :coast))
+        (the (set-slot! :transit-beats nil))
+        (the (set-slot! :transit-bodies
+              (append
+               (list (list :prefix "planet"
+                           :texture (world-figure (the world) :texture)
+                           :radius (the world-radius)
+                           :targets (make-list count :initial-element (list 0 0))
+                           :spin-phase (world-phase-rad (the world) t0)
+                           :spin-rate (world-spin-rate (the world))
+                           :diffuse (world-figure (the world) :diffuse)
+                           :emissive (world-figure (the world) :emissive)
+                           :tilt (world-figure (the world) :tilt)
+                           :adornment (world-figure (the world) :adornment)))
+               (case (the world)
+                 (:home (list (list :prefix "moon" :texture "moon-tex"
+                                    :radius +moon-radius+
+                                    :targets (make-list count :initial-element (list +moon-x+ 0))
+                                    :spin-phase (world-phase-rad :moon t0)
+                                    :spin-rate (world-spin-rate :moon)
+                                    :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03")))
+                 (:moon (list (list :prefix "home-far" :texture "earth-tex"
+                                    :radius +planet-radius+
+                                    :targets (make-list count :initial-element (list (- +moon-x+) 0))
+                                    :spin-phase (world-phase-rad :home t0)
+                                    :spin-rate (world-spin-rate :home)
+                                    :diffuse "0.10 0.18 0.85" :emissive "0.02 0.03 0.05")))
+                 (t nil))))))))
 
    (make-helm-move!
     ()
@@ -4680,11 +4988,14 @@ function toggleHelm () {
                (dv (if (or rewind? (eql shifter :neutral))
                        0
                        (case pedal (:burn 0.5) (:feather 0.1) (t 0))))
-               ;; the scope of a move: a minute of close work up to
-               ;; a full day on the fastest channel -- Space
-               ;; Travel's clock, worn as the dash radio, and the
-               ;; tape transport signs it
-               (dt (* (if rewind? -1 1) (the cadence-seconds)))
+               ;; the scope of a move on STOP: a minute of close work
+               ;; up to a full day on the fastest channel -- Space
+               ;; Travel's clock, worn as the dash radio.  PLAYING, a
+               ;; move is the impulse alone: the clock carries the
+               ;; fall on the tape (coast-tape!, coast!)
+               (dt (if (the playing?)
+                       0
+                       (* (if rewind? -1 1) (the cadence-seconds))))
                (state (the (fall (+ (the vel-x) (* dv flip (cos rad)))
                                  (+ (the vel-y) (* dv flip (sin rad)))
                                  (the pos-x) (the pos-y) dt)))
@@ -4932,7 +5243,7 @@ function toggleHelm () {
     [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'].forEach(function (v, i) {
       onRelease('radio-preset-' + i + '-touch', function () { faceClick('.cadence-btn', v); });
     });
-    [':REWIND', ':PLAY'].forEach(function (v, i) {
+    [':REWIND', ':STOP', ':PLAY'].forEach(function (v, i) {
       onRelease('radio-tpt-' + i + '-touch', function () { faceClick('.transport-btn', v); });
     });
     onRelease('starter-touch', function () {
@@ -5004,7 +5315,7 @@ function toggleHelm () {
         });
       }
       litSet('radio-preset', [':SLOW', ':MEDIUM', ':FAST', ':FASTEST'], '.cadence-btn');
-      litSet('radio-tpt', [':REWIND', ':PLAY'], '.transport-btn');
+      litSet('radio-tpt', [':REWIND', ':STOP', ':PLAY'], '.transport-btn');
       // the greys reach the scene's own sensors: a locked control
       // refuses the grab at the sensor, both renderers agreeing
       var L = locks();
