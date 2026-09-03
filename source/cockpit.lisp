@@ -751,8 +751,11 @@ scene is static between moves, so this bakes as a shader constant."
 ;; lighting means the scene DirectionalLight does not touch this
 ;; Shape -- no double-lighting.  Newlines survive as %0A through the
 ;; data: URI; no // comments (they would swallow the rest of a line).
+;; vUv flips T: a ComposedShader samples with the opposite vertical
+;; convention from X_ITE's fixed-function ImageTexture, so without
+;; the flip the globe rendered upside-down (2026-09-02).
 (defparameter *earth-lights-vertex-glsl*
-  "precision highp float; uniform mat4 x3d_ProjectionMatrix; uniform mat4 x3d_ModelViewMatrix; attribute vec4 x3d_Vertex; attribute vec3 x3d_Normal; attribute vec4 x3d_TexCoord0; varying vec3 vN; varying vec2 vUv; void main(){ vN = x3d_Normal; vUv = x3d_TexCoord0.st; gl_Position = x3d_ProjectionMatrix * x3d_ModelViewMatrix * x3d_Vertex; }")
+  "precision highp float; uniform mat4 x3d_ProjectionMatrix; uniform mat4 x3d_ModelViewMatrix; attribute vec4 x3d_Vertex; attribute vec3 x3d_Normal; attribute vec4 x3d_TexCoord0; varying vec3 vN; varying vec2 vUv; void main(){ vN = x3d_Normal; vUv = vec2(x3d_TexCoord0.s, 1.0 - x3d_TexCoord0.t); gl_Position = x3d_ProjectionMatrix * x3d_ModelViewMatrix * x3d_Vertex; }")
 
 (defparameter *earth-lights-fragment-glsl*
   "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec3 sunLocal; varying vec3 vN; varying vec2 vUv; void main(){ float l = dot(normalize(vN), normalize(sunLocal)); float t = smoothstep(-0.12, 0.12, l); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(l, 0.0)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
