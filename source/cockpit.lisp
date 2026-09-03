@@ -1429,14 +1429,16 @@ X_ITE), because a fresh scene document stands with the light off.")
   ;; under its own TouchSensor: a tap on the glass zooms the plan
   ;; view out a level (S4, GW_ZOOM_CYCLE), both renderers
   (format nil "<Transform DEF=\"plot-hit\" id=\"plot-hit\"><TouchSensor DEF=\"plot-touch\" id=\"plot-touch\" description=\"the plot — tap to zoom out a level\"></TouchSensor>~a</Transform>"
-          ;; 0.36 x 0.27 (the canvas's own 4:3) on the port dash, a
-          ;; hair prouder than the dial faces, its top under the
-          ;; readout strip's cowl; no tile behind it any more
+          ;; a 0.27 square on the port dash, a hair prouder than the
+          ;; dial faces, its top under the readout strip's cowl; no
+          ;; tile behind it.  Its port edge stops at y 0.51: the cab's
+          ;; side wall stands in front of the dash beyond that and hid
+          ;; a wider quad's left third (2026-09-03)
           (painted-quad-x3d "plot-tex"
-                            (list (list 0.7125 0.60 0.275)
+                            (list (list 0.7125 0.51 0.275)
                                   (list 0.7125 0.24 0.275)
                                   (list 0.7125 0.24 0.545)
-                                  (list 0.7125 0.60 0.545))
+                                  (list 0.7125 0.51 0.545))
                             ;; low emissive: the plot's black ground
                             ;; must read black, the gold lines lit
                             :emissive "0.2 0.2 0.2")))
@@ -1837,7 +1839,8 @@ window.GW_DRAW = function () {
     if (rr * 1.15 > ext) ext = rr * 1.15;
     var Z = window.GW_ZOOM || 1;
     if (Z === 2) ext = sysExt();
-    var s = (Math.min(W, H)/2 - 8) / ext;
+    // a wide margin: on the glass the ring must not kiss the rim
+    var s = (Math.min(W, H)/2 - Math.max(8, Math.min(W, H) * 0.06)) / ext;
     ctx.beginPath(); ctx.arc(cx, cy, O.ringR*s, 0, 2*Math.PI);
     ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(232,200,57,0.45)';
     ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
@@ -1971,7 +1974,7 @@ window.GW_DRAW = function () {
   var span = Math.max(maxX - minX, maxY - minY, 1) / 2;
   // a level out (S4): the system's frame instead of the road's
   if ((window.GW_ZOOM || 1) === 2) { oxW = 0; oyW = 0; span = sysExt() / 1.12; }
-  var vs = (Math.min(W, H)/2 - 10) / (span * 1.12), mkm = span > 2.5e6;
+  var vs = (Math.min(W, H)/2 - Math.max(10, Math.min(W, H) * 0.06)) / (span * 1.12), mkm = span > 2.5e6;
   function vpx (x) { return cx + (x - oxW) * vs; }
   function vpy (y) { return cy - (y - oyW) * vs; }
   function vDisk (x, y, r, fill, minPx) {
@@ -3620,7 +3623,7 @@ window.GW_WIRE = function () {
    ;; power without scaling it, so a 340 x 250 canvas showed its left
    ;; two thirds on the glass and the rest was padding (2026-09-03)
    (plot-size 512)
-   (plot-height 384)
+   (plot-height 512)
 
    ;; the port flatscreen is THE PLOT (ruled 2026-09-03): the plan
    ;; view's canvas, painted onto the glass by the page a few times
