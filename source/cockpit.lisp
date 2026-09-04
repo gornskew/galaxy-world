@@ -817,17 +817,24 @@ scene is static between moves, so this bakes as a shader constant."
 ;; and spin tracks into those fields, so the terminator stands where
 ;; the sun is while the world turns and she rounds him.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; uniform float nightGain; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5 * nightGain; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
 (defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
-                                &optional (elevation 0.0) (sun-az (/ pi 2)))
+                                &optional (elevation 0.0) (sun-az (/ pi 2)) (night-gain 1.0))
   "A ComposedShader Appearance for the city-lights earth: DAY-URL and
 NIGHT-URL are raw paths; HEADING-RAD and PHASE-RAD author the sky's
 heading and the world's spin the shader starts from (a tape routes
 the live ones in); SUN-AZ is the world-frame angle the sun lies at
-(the ephemeris's for the date; +y was the old fixed sun)."
-  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><field name=\"sunAz\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,5f\"></field><field name=\"flood\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"0\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
-          prefix prefix day-url night-url (- heading-rad) phase-rad elevation sun-az
+(the ephemeris's for the date; +y was the old fixed sun).  NIGHT-GAIN
+scales the night image: 1 for home's city lights, 0 for every other
+world -- which wears this same shader under X_ITE (2026-09-03 late)
+so that no plain-textured sphere is ever drawn after a custom
+program: the moon seen from his own ring showed earth's image
+fighting his own on a real GPU, the look of a texture unit left
+bound; every sphere owning its program and its textures closes
+that, and gives every world a true terminator besides."
+  (format nil "<Appearance sortType=\"opaque\"><ComposedShader DEF=\"~a-sh\" id=\"~a-sh\" language=\"GLSL\"><field name=\"dayTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"nightTex\" type=\"SFNode\" accessType=\"inputOutput\"><ImageTexture url=\"&quot;~a&quot;\"></ImageTexture></field><field name=\"skyRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 0 1 ~,5f\"></field><field name=\"spinRot\" type=\"SFRotation\" accessType=\"inputOutput\" value=\"0 -1 0 ~,5f\"></field><field name=\"sunEl\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,4f\"></field><field name=\"sunAz\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,5f\"></field><field name=\"flood\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"0\"></field><field name=\"nightGain\" type=\"SFFloat\" accessType=\"inputOutput\" value=\"~,2f\"></field><ShaderPart type=\"VERTEX\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart><ShaderPart type=\"FRAGMENT\" url=\"&quot;data:text/plain,~a&quot;\"></ShaderPart></ComposedShader></Appearance>"
+          prefix prefix day-url night-url (- heading-rad) phase-rad elevation sun-az night-gain
           (net.aserve:uriencode-string *earth-lights-vertex-glsl*)
           (net.aserve:uriencode-string *earth-lights-fragment-glsl*)))
 
@@ -989,7 +996,9 @@ near ring arc lost the draw and hid behind the globe."
             ;; city-lights shader stands in for the plain Material
             (if (and night-url sun day-url)
                 (earth-lights-appearance prefix day-url night-url (first sun) (second sun)
-                                         0.0 (or (third sun) (/ pi 2)))
+                                         0.0 (or (third sun) (/ pi 2))
+                                         ;; city lights are home's alone
+                                         (if (equal texture-id "earth-tex") 1.0 0.0))
                 (format nil "<Appearance sortType=\"opaque\"><ImageTexture DEF=\"~a\" id=\"~a\" url=\"~a\"></ImageTexture><Material DEF=\"~a-mat\" ambientIntensity=\"0\" diffuseColor=\"~a\" emissiveColor=\"~a\"></Material></Appearance>"
                         texture-id texture-id
                         (if day-url (format nil "&quot;~a&quot;" day-url) "")
@@ -1481,8 +1490,11 @@ window.GW_FLOOD_APPLY = function (browser) {
     }
     // the city-lights world owns its lighting (a ComposedShader ignores
     // the scene's lights), so the flood reaches it through its own field
-    var sh = br && br.currentScene && br.currentScene.getNamedNode('planet-sh');
-    if (sh) { try { sh.getField('flood').setValue(on ? 1 : 0); } catch (e) {} }
+    // every world wears the shader under X_ITE now; each takes the flood
+    ['planet', 'moon', 'home-far', 'astern'].forEach(function (p) {
+      var sh = null; try { sh = br && br.currentScene && br.currentScene.getNamedNode(p + '-sh'); } catch (e) {}
+      if (sh) { try { sh.getField('flood').setValue(on ? 1 : 0); } catch (e) {} }
+    });
   } catch (e) {}
 };
 window.GW_FLOOD_TOGGLE = function () {
@@ -3761,11 +3773,13 @@ window.GW_WIRE = function () {
    ;; of the whole scene being re-cut.  The serial suffixes the
    ;; clock's and interpolators' DEFs; the frames keep their names.
    (tape-serial 0 :settable)
-   ;; which riding bodies wear the city-lights shader on this page:
-   ;; home, under X_ITE (its tracks are routed into the shader)
+   ;; which riding bodies wear the day-night shader on this page:
+   ;; EVERY body, under X_ITE (its tracks are routed into the
+   ;; shader; city lights gained in for home alone -- see
+   ;; earth-lights-appearance for why no sphere stays plain)
    (shaded-prefixes (when (the xr-scene?)
                       (loop for b in (the transit-bodies)
-                            when (equal (getf b :texture) "earth-tex")
+                            when (texture-url-for (getf b :texture))
                               collect (getf b :prefix))))
    (tape-tag (if (eql (the transit-target) :coast)
                  (format nil "-~d" (the tape-serial))
@@ -4142,8 +4156,14 @@ window.GW_WIRE = function () {
                                     ;; city lights on a flown home too
                                     ;; (X_ITE): the tape routes the
                                     ;; live sky and spin into the shader
+                                    ;; the night image: home's city
+                                    ;; lights; any other world's own day
+                                    ;; face, gained to nothing in the
+                                    ;; shader
                                     :night-url (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
-                                                 "/gw-tex/earth-night.jpg")
+                                                 (if (equal (getf body :texture) "earth-tex")
+                                                     "/gw-tex/earth-night.jpg"
+                                                     (texture-url-for (getf body :texture))))
                                     :sun (when (member (getf body :prefix) (the shaded-prefixes) :test #'equal)
                                            (list h0 (or (getf body :spin-phase) 0)
                                                  (the sun-heading-rad)))))))))
