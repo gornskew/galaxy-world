@@ -6289,7 +6289,8 @@ function toggleHelm () {
       (when (and (the clock-anchor) (/= was 0))
         (let ((dt (* (- now (the clock-anchor)) was))
               (world0 (the world))
-              (landed0 (the landed?)))
+              (landed0 (the landed?))
+              (target0 (the transit-target)))
           (if landed0
               (the (set-slot! :game-seconds (+ (the game-seconds) dt)))
               ;; aloft she rode the road meanwhile: carry her along
@@ -6301,10 +6302,19 @@ function toggleHelm () {
           ;; fresh clock (and a landing's end would settle forever)
           (the retire-clip!)
           ;; the scene is re-cut on the ground (its sensors are cut
-          ;; into it) and at an EVENT aloft -- a landing, another
-          ;; world's grip; a plain stretch of coast is relieved at
-          ;; the seam instead (retape! :seam)
-          (when (or landed0 (the landed?) (not (eql world0 (the world))))
+          ;; into it), at an EVENT aloft -- a landing, another
+          ;; world's grip -- and after any clip that was NOT a coast
+          ;; (a road, a climb, a landing): its bodies are not the
+          ;; coast's, so the tape that follows must be a cut, never
+          ;; a seam.  (Missed until 2026-09-04: the world was
+          ;; already the new one at both ends of the post-road
+          ;; settle, so the coast tape rode the ROAD's scene as a
+          ;; seam under X_ITE, and its tracks drove home's sphere
+          ;; onto the moon's -- the two faces fighting until a
+          ;; reload loaded the right scene.)  A plain stretch of
+          ;; coast is relieved at the seam instead (retape! :seam).
+          (when (or landed0 (the landed?) (not (eql world0 (the world)))
+                    (and target0 (not (eql target0 :coast))))
             (the (set-slot! :clock-cuts (1+ (the clock-cuts)))))))
       (the (set-slot! :clock-anchor now))
       (unless (= rate was)
