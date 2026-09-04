@@ -1127,6 +1127,122 @@ that threw the plot's voyage pass and left the road unwired,
           (above (cdr above))
           (t 0.0))))
 
+;;; COCKPIT HANDLES (Dave, 2026-09-03 late): every session wears a
+;;; made-up name in the space-opera mood, minted from its key so it
+;;; holds for the session's life and after a snapshot restore -- two
+;;; word lists of our own, never a franchise's own name (the one
+;;; collision is banned), the key's last two characters as a numeral
+;;; against a twin aboard.
+(defparameter *handle-heads*
+  '("Sky" "Dune" "Star" "Void" "Nova" "Rim" "Dust" "Ion" "Ash" "Ember" "Frost" "Storm"
+    "Flare" "Drift" "Halo" "Orbit" "Comet" "Nebula" "Sand" "Moon" "Sun" "Rift" "Cinder" "Quasar"))
+(defparameter *handle-tails*
+  '("walker" "runner" "rider" "strider" "dancer" "drifter" "seeker" "breaker" "chaser" "weaver"
+    "bender" "singer" "warden" "hopper" "ranger" "keeper" "caller" "finder" "reaver" "spinner"))
+(defparameter *handle-banned* '("Skywalker"))
+
+(defun cockpit-handle (key)
+  "The handle for a session KEY (a keyword or string): head + tail off
+a stable hash of the key's characters, with the key's last two
+characters as the numeral."
+  (let* ((s (string key))
+         (h (reduce (lambda (acc c) (mod (+ (* acc 31) (char-code c)) 1000003)) s :initial-value 7))
+         (head (nth (mod h (length *handle-heads*)) *handle-heads*))
+         (tail (nth (mod (floor h 97) (length *handle-tails*)) *handle-tails*))
+         (name (concatenate 'string head tail)))
+    (when (member name *handle-banned* :test #'string=)
+      (setq name (concatenate 'string head "wanderer")))
+    (format nil "~a-~a" name (subseq s (max 0 (- (length s) 2))))))
+
+;;; THE ROOMS (Dave, 2026-09-03 late): an IRC-style chat for the
+;;; bridge, separate from the roster tile.  Rooms are labeled logs
+;;; everyone sees -- anyone may open one by name, nobody is ever
+;;; outside one -- and there are NO private messages (the standing
+;;; ruling).  Every line carries when and where it was said: the wall
+;;; time, the sender's ship's-clock date, her handle and cockpit, her
+;;; world frame and x y.  The logs are the point: one append-only
+;;; file per room on the durable shelf (/projects/.state, the stack's
+;;; convention -- survives a recreate), never trimmed, a PLIST per
+;;; line in s-expression form (the single-source convention here,
+;;; basilisk.sexp and the .state shelf alike -- Dave, 2026-09-03);
+;;; JSON is made at the edge for the wire, which the page parses
+;;; natively.  Read back with evaluation off.
+(defparameter +chat-dir+ #P"/projects/.state/galaxy-world-chat/")
+(defparameter +captain-secret-path+ "/projects/.secrets/galaxy-world-captain-secret")
+
+(defun chat-room-name (s)
+  "A room name cleaned to [a-z0-9-], 24 long; empty means the bridge."
+  (let ((clean (string-downcase (remove-if-not (lambda (c) (or (alphanumericp c) (char= c #\-)))
+                                               (or s "")))))
+    (if (plusp (length clean)) (subseq clean 0 (min 24 (length clean))) "bridge")))
+
+(defun chat-dir ()
+  (ensure-directories-exist +chat-dir+)
+  ;; the shelf's UID gotcha (see /projects/CLAUDE.md): whoever makes
+  ;; the directory first leaves it 755 to every other container
+  (when (find-package :uiop)
+    (ignore-errors
+      (funcall (read-from-string "uiop:run-program")
+               (list "chmod" "1777" (namestring +chat-dir+)) :ignore-error-status t)))
+  +chat-dir+)
+
+(defun chat-path (room)
+  (merge-pathnames (format nil "~a.sexp" (chat-room-name room)) (chat-dir)))
+
+(defun chat-append! (room plist)
+  "Append one message PLIST to the room's log, one line, printed
+readably in this package (keywords, strings, numbers, NIL and T)."
+  (with-open-file (out (chat-path room) :direction :output :if-exists :append
+                                        :if-does-not-exist :create :external-format :utf-8)
+    (let ((*print-pretty* nil) (*print-readably* nil) (*print-base* 10)
+          (*package* (find-package :galaxy-world)))
+      (prin1 plist out)
+      (terpri out))))
+
+(defun chat-lines (room &optional (n 200))
+  "The last N messages of a room's log, oldest first, each a plist;
+read with evaluation off, a line that will not read is skipped."
+  (let ((path (chat-path room)))
+    (when (probe-file path)
+      (with-open-file (in path :external-format :utf-8)
+        (let ((lines nil)
+              (*read-eval* nil)
+              (*package* (find-package :galaxy-world)))
+          (loop for l = (read-line in nil) while l
+                do (when (plusp (length l))
+                     (let ((form (ignore-errors (read-from-string l))))
+                       (when (and (consp form) (keywordp (first form)))
+                         (push form lines)))))
+          (setq lines (nreverse lines))
+          (last lines n))))))
+
+(defun chat-line-json (m)
+  "A message plist as the wire's JSON object."
+  (format nil "{\"at\":~d,\"date\":~a,\"clock\":~a,\"handle\":~a,\"cockpit\":~a,\"world\":~a,\"x\":~,1f,\"y\":~,1f,\"landed\":~a,\"captain\":~a,\"text\":~a}"
+          (round (or (getf m :at) 0))
+          (json-string (or (getf m :date) ""))
+          (json-string (or (getf m :clock) ""))
+          (json-string (or (getf m :handle) "?"))
+          (json-string (or (getf m :cockpit) "?"))
+          (json-string (or (getf m :world) "?"))
+          (or (getf m :x) 0) (or (getf m :y) 0)
+          (if (getf m :landed) "true" "false")
+          (if (getf m :captain) "true" "false")
+          (json-string (or (getf m :text) ""))))
+
+(defun chat-rooms ()
+  "Every room with a log, the bridge always first."
+  (let ((names (mapcar #'pathname-name (directory (merge-pathnames "*.sexp" (chat-dir))))))
+    (cons "bridge" (sort (remove "bridge" (remove-duplicates names :test #'string=) :test #'string=)
+                         #'string<))))
+
+(defun captain-key? (key)
+  "True when KEY is the captain's secret (first line of the secrets file)."
+  (let ((secret (ignore-errors (read-first-line +captain-secret-path+))))
+    (and secret key (plusp (length secret))
+         (string= (string-trim '(#\Space #\Newline #\Return #\Tab) secret)
+                  (string-trim '(#\Space #\Newline #\Return #\Tab) key)))))
+
 (defparameter +window-tolerance+ (* 2 86400)
   "Seconds either side of a sun's road's window within which the road
 is flown at once rather than booked: two days, a degree or so of
@@ -2462,7 +2578,7 @@ window.GW_HAILS = function () {
   try { if (sessionStorage.getItem('gw-hails-collapsed') === '1') { var b0 = document.getElementById('hails-body'); if (b0) b0.style.display = 'none'; var c0 = document.getElementById('hails-caret'); if (c0) c0.textContent = '\\u25b8'; } } catch (e) {}
   // a name to say: the pilot's token is long and private-ish, so its
   // tail; an unsigned hand goes by its cockpit's tail
-  function who (r) { if (r.bridge) return 'the bridge'; return (r.pilot ? ('pilot ' + String(r.pilot).slice(-5)) : ('cockpit ' + String(r.id).slice(-4))); }
+  function who (r) { if (r.bridge) return 'the bridge'; if (r.handle) return r.handle + (r.captain ? ' \\u2605' : ''); return (r.pilot ? ('pilot ' + String(r.pilot).slice(-5)) : ('cockpit ' + String(r.id).slice(-4))); }
   var inp0 = document.querySelector('#hails-card input[type=text]');
   if (inp0) inp0.setAttribute('placeholder', 'hail the bridge');
   function paint (D) {
@@ -2517,6 +2633,86 @@ window.GW_HAILS = function () {
     btn.addEventListener('click', function () { setTimeout(function () { GW_HAILS.gen++; GW_HAILS(); }, 900); });
     var inp = document.querySelector('#hails-card input[type=text]');
     if (inp) inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); btn.click(); } });
+  }
+};
+")
+
+(defparameter *rooms-js* "
+window.toggleRooms = function () {
+  var b = document.getElementById('rooms-body'); if (!b) return;
+  var folded = b.style.display === 'none';
+  b.style.display = folded ? '' : 'none';
+  var c = document.getElementById('rooms-caret'); if (c) c.textContent = folded ? '\\u25be' : '\\u25b8';
+  try { sessionStorage.setItem('gw-rooms-open', folded ? '1' : '0'); } catch (e) {}
+  if (folded) { var lg = document.getElementById('rooms-log'); if (lg) lg.scrollTop = lg.scrollHeight; }
+};
+window.GW_ROOMS = function () {
+  GW_ROOMS.gen = (GW_ROOMS.gen || 0) + 1;
+  var gen = GW_ROOMS.gen;
+  var iid = (location.pathname.match(/sessions\\/([^\\/]+)/) || [])[1];
+  if (!iid) return;
+  try { if (sessionStorage.getItem('gw-rooms-open') === '1') { var b0 = document.getElementById('rooms-body'); if (b0) b0.style.display = ''; var c0 = document.getElementById('rooms-caret'); if (c0) c0.textContent = '\\u25be'; } } catch (e) {}
+  function room () { try { return sessionStorage.getItem('gw-room') || 'bridge'; } catch (e) { return 'bridge'; } }
+  function setRoom (r) { try { sessionStorage.setItem('gw-room', r); } catch (e) {} }
+  function key () { try { return localStorage.getItem('gw-captain') || ''; } catch (e) { return ''; } }
+  var lastLen = -1, lastRoom = null;
+  function paint (D) {
+    var tabs = document.getElementById('rooms-tabs'), lg = document.getElementById('rooms-log'),
+        why = document.getElementById('rooms-why'), st = document.getElementById('rooms-status'),
+        say = document.getElementById('rooms-say'), send = document.getElementById('rooms-send');
+    if (!tabs || !lg) return;
+    tabs.textContent = '';
+    D.rooms.forEach(function (r) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'rbtn' + (r === D.room ? ' lit' : '');
+      b.textContent = '#' + r;
+      b.addEventListener('click', function () { setRoom(r); lastLen = -1; fetch(null); });
+      tabs.appendChild(b);
+    });
+    if (st) st.textContent = '#' + D.room + (D.captain ? ' \\u00b7 captain' : '') + (D.open ? '' : ' \\u00b7 shut');
+    if (why) why.textContent = D.why + (D.notice ? ' \\u2014 ' + D.notice : '');
+    if (say) say.disabled = !D.open; if (send) send.disabled = !D.open;
+    // repaint only when the room or its length changed: the log
+    // keeps its scroll while the reader is reading
+    if (D.room === lastRoom && D.lines.length === lastLen && !D.notice) return;
+    var atEnd = lg.scrollHeight - lg.scrollTop - lg.clientHeight < 30 || D.room !== lastRoom;
+    lastRoom = D.room; lastLen = D.lines.length;
+    lg.textContent = '';
+    D.lines.forEach(function (m) {
+      var line = document.createElement('div');
+      line.title = 'said ' + m.date + ' (wall) \\u00b7 ' + m.world + ' frame x ' + Math.round(m.x).toLocaleString('en-US') + ' y ' + Math.round(m.y).toLocaleString('en-US') + ' km' + (m.landed ? ', down' : ', aloft');
+      var w = document.createElement('span'); w.style.color = '#c9a227';
+      w.textContent = m.clock.slice(5, 16) + ' \\u00b7 ' + m.handle + (m.captain ? ' \\u2605' : '') + ' @ ' + m.world + ': ';
+      line.appendChild(w); line.appendChild(document.createTextNode(m.text));
+      lg.appendChild(line);
+    });
+    if (atEnd) lg.scrollTop = lg.scrollHeight;
+  }
+  function fetch (sayText) {
+    try {
+      var x = new XMLHttpRequest();
+      var url = '/chat.json?ship=' + encodeURIComponent(iid) + '&room=' + encodeURIComponent(room()) + '&key=' + encodeURIComponent(key()) + '&t=' + Date.now();
+      if (sayText) url += '&say=' + encodeURIComponent(sayText);
+      x.open('GET', url, true);
+      x.onload = function () { try { if (x.status === 200) paint(JSON.parse(x.responseText)); } catch (e) {} };
+      x.send();
+    } catch (e) {}
+  }
+  function poll () {
+    if (gen !== GW_ROOMS.gen) return;
+    fetch(null);
+    setTimeout(poll, 5000);
+  }
+  poll();
+  var say = document.getElementById('rooms-say'), send = document.getElementById('rooms-send');
+  function speak () { if (!say || !say.value.trim()) return; var t = say.value.trim(); say.value = ''; lastLen = -1; fetch(t); }
+  if (send && !send.getAttribute('data-gw-wired')) {
+    send.setAttribute('data-gw-wired', '1');
+    send.addEventListener('click', speak);
+    if (say) say.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); speak(); } });
+    var nw = document.getElementById('rooms-new');
+    if (nw) nw.addEventListener('click', function (ev) { ev.preventDefault(); var r = prompt('a room to open (letters, digits, dashes):'); if (r) { setRoom(r.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 24) || 'bridge'); lastLen = -1; fetch(null); } });
+    var cp = document.getElementById('rooms-captain');
+    if (cp) cp.addEventListener('click', function (ev) { ev.preventDefault(); var k = prompt(\"the captain's key (kept in this browser):\", key()); if (k !== null) { try { localStorage.setItem('gw-captain', k.trim()); } catch (e) {} lastLen = -1; fetch(null); } });
   }
 };
 ")
@@ -3301,6 +3497,22 @@ window.GW_WIRE = function () {
         (the (set-slot! :roster-keys keys)))
       keys))
 
+   ;; THE TWO-ABOARD RULE (Dave, 2026-09-03 late): two strangers alone
+   ;; in a room IS a private message, so with exactly two cockpits
+   ;; online and no captain among them the rooms take no posts
+   ;; (reading stays open); three or more, open; one alone writes to
+   ;; the public log, which no one can mistake for a DM.  (values
+   ;; open? why)
+   (chat-open?
+    ()
+    (let* ((rows (the roster))
+           (n (length rows))
+           (captain (some (lambda (r) (the-object (first r) captain?)) rows)))
+      (cond ((>= n 3) (values t "open"))
+            (captain (values t "open -- the captain is aboard"))
+            ((<= n 1) (values t "open -- you are alone; what you say is logged for all who come"))
+            (t (values nil "two aboard and no captain: the room opens when three are aboard, or when the captain is")))))
+
    (cap!
     ()
     (when (> (length (the hails)) +hails-kept+)
@@ -3367,8 +3579,10 @@ window.GW_WIRE = function () {
                             (let* ((f (the-object b (fix)))
                                    ;; one fall per berth per poll
                                    (carried (and f your-date (multiple-value-list (the-object b (fix-at your-date f))))))
-                              (format nil "{\"id\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a,\"x\":~a,\"y\":~a,\"h\":~a,\"date\":~a,\"cx\":~a,\"cy\":~a,\"dt\":~a}"
+                              (format nil "{\"id\":~a,\"handle\":~a,\"captain\":~a,\"pilot\":~a,\"world\":~a,\"where\":~a,\"ship\":~a,\"you\":~a,\"x\":~a,\"y\":~a,\"h\":~a,\"date\":~a,\"cx\":~a,\"cy\":~a,\"dt\":~a}"
                                       (json-string (string (the-object b key)))
+                                      (json-string (the-object b who))
+                                      (if (and (the-object b session) (the-object (the-object b session) captain?)) "true" "false")
                                       (if (the-object b pilot-id) (json-string (string (the-object b pilot-id))) "null")
                                       (json-string (the-object b world-name))
                                       (json-string (the-object b where))
@@ -3575,6 +3789,12 @@ window.GW_WIRE = function () {
    ;; first settle past the departure time (settle-clock!); the
    ;; pilot skips ahead on the radio meanwhile
    (booked-road nil :settable)
+   ;; her HANDLE: the made-up name this session wears on the roster,
+   ;; in the hails and in the rooms (cockpit-handle)
+   (handle (let ((key (the (mother-key)))) (if key (cockpit-handle key) "a cockpit")))
+   ;; THE CAPTAIN: set when a poll or a post carries the captain's key
+   ;; (captain-key?); the rooms' two-aboard rule reads it
+   (captain? nil :settable)
    (booking-html
     (let ((b (the booked-road)))
       (if b
@@ -4472,6 +4692,27 @@ GW_CHECK_IN();"
               :onclick (the (gdl-ajax-call :form-controls (list (the hail-control))
                                            :function-key :hail!))
               "hail"))))
+      ;; THE ROOMS: the bridge's chat, IRC-style, its own tile --
+      ;; rooms are labeled logs everyone sees, no private messages,
+      ;; two aboard alone need the captain (chat-open?), and every
+      ;; line carries when and where it was said.  Folded by default.
+      (:div :id "rooms-card" :style "position:fixed;top:52px;left:330px;z-index:10;width:340px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleRooms()"
+          (:span "THE ROOMS")
+          (:span :id "rooms-status" :style "font-size:10px;color:#c9a227;" "")
+          (:span :id "rooms-caret" "▸"))
+        (:div :id "rooms-body" :style "margin-top:6px;display:none;"
+          (:div :id "rooms-tabs" :style "display:flex;gap:4px;flex-wrap:wrap;align-items:center;" "")
+          (:div :id "rooms-log" :style "margin-top:6px;max-height:220px;overflow-y:auto;line-height:1.4;" "")
+          (:div :id "rooms-why" :style "margin-top:4px;font-size:10px;color:#c9a227;" "")
+          (:div :style "margin-top:6px;display:flex;gap:4px;align-items:center;"
+            (:input :type "text" :id "rooms-say" :placeholder "say to the room" :maxlength "400"
+              :style "flex:1;background:rgba(16,16,16,0.6);color:#e8c839;border:1px solid #7a6a1f;border-radius:6px;padding:2px 4px;font-size:11px;font-family:inherit;")
+            (:button :type "button" :class "rbtn" :id "rooms-send" "say"))
+          (:div :style "margin-top:4px;font-size:10px;color:#c9a227;display:flex;justify-content:space-between;"
+            (:a :href "#" :id "rooms-new" :style "color:#c9a227;" "+ open a room")
+            (:a :href "#" :id "rooms-captain" :style "color:#c9a227;" "the captain's key"))))
       (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
@@ -4567,6 +4808,8 @@ function toggleHelm () {
         (str *idle-clock-js*)
         (str *hails-js*)
         (str "if (window.GW_HAILS) GW_HAILS();")
+        (str *rooms-js*)
+        (str "if (window.GW_ROOMS) GW_ROOMS();")
         ;; the definitions just landed; give the section's state
         ;; script its first real run
         (str "if (window.GW_WIRE) GW_WIRE(); if (window.GW_DRAW) GW_DRAW(); if (window.GW_BEATS) GW_BEATS(); if (window.GW_CLOCK_TICK) GW_CLOCK_TICK(); if (window.GW_DAY_WIRE) { try { GW_DAY_WIRE(); } catch (e) {} }")
@@ -4975,12 +5218,54 @@ function toggleHelm () {
 
    ;; a name the bridge can say: the pilot's token tail, or the
    ;; cockpit's own
+   ;; the name she goes by: her handle (2026-09-03 late; before that
+   ;; a pilot's token tail or the cockpit's)
    (hail-name
     ()
-    (let ((pid (the pilot-id)) (key (the mother-key)))
-      (cond (pid (let ((s (string pid))) (format nil "pilot ~a" (subseq s (max 0 (- (length s) 5))))))
-            (key (let ((s (string key))) (format nil "cockpit ~a" (subseq s (max 0 (- (length s) 4))))))
-            (t "a cockpit"))))
+    (the handle))
+
+   ;; SAY to a room: refused with the reason when the room is shut
+   ;; (chat-open?), else appended to the room's log with when and
+   ;; where it was said; returns nil when said, else the notice
+   (chat-post!
+    (room text)
+    (let ((text (string-trim '(#\Space #\Tab #\Newline #\Return) (or text ""))))
+      (multiple-value-bind (open? why) (the-object (the-bridge) (chat-open?))
+        (cond ((zerop (length text)) nil)
+              ((not open?) why)
+              (t (multiple-value-bind (vx vy px py date) (the (state-now))
+                   (declare (ignore vx vy))
+                   ;; when and where: the wall time, her ship's-clock
+                   ;; date, her handle and cockpit, her frame and fix
+                   (chat-append! room
+                                 (list :at (round (unix-now))
+                                       :date (utc-date-string (unix-now))
+                                       :clock (utc-date-string date)
+                                       :game-seconds (round (the game-seconds))
+                                       :handle (the handle)
+                                       :cockpit (string (or (the (mother-key)) "?"))
+                                       :world (the world-name)
+                                       :x (float px 1.0) :y (float py 1.0)
+                                       :landed (and (the landed?) t)
+                                       :captain (and (the captain?) t)
+                                       :text (subseq text 0 (min 400 (length text)))))
+                   nil))))))
+
+   ;; the room as this cockpit polls it: the rooms, whether this one
+   ;; is open and why, her own handle, and the last lines (JSON
+   ;; objects as written), plus a notice when a post was refused
+   (chat-json
+    (room &optional notice)
+    (multiple-value-bind (open? why) (the-object (the-bridge) (chat-open?))
+      (format nil "{\"room\":~a,\"rooms\":[~{~a~^,~}],\"open\":~a,\"why\":~a,\"captain\":~a,\"you\":~a,\"notice\":~a,\"lines\":[~{~a~^,~}]}"
+              (json-string (chat-room-name room))
+              (mapcar #'json-string (chat-rooms))
+              (if open? "true" "false")
+              (json-string why)
+              (if (the captain?) "true" "false")
+              (json-string (the handle))
+              (if notice (json-string notice) "null")
+              (mapcar #'chat-line-json (chat-lines room 200)))))
 
    (mother-object
     ()
@@ -6885,6 +7170,27 @@ function toggleHelm () {
               :onclick (the (gdl-ajax-call :form-controls (list (the hail-control))
                                            :function-key :hail!))
               "hail"))))
+      ;; THE ROOMS: the bridge's chat, IRC-style, its own tile --
+      ;; rooms are labeled logs everyone sees, no private messages,
+      ;; two aboard alone need the captain (chat-open?), and every
+      ;; line carries when and where it was said.  Folded by default.
+      (:div :id "rooms-card" :style "position:fixed;top:52px;left:330px;z-index:10;width:340px;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;font-size:11px;"
+        (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
+              :onclick "toggleRooms()"
+          (:span "THE ROOMS")
+          (:span :id "rooms-status" :style "font-size:10px;color:#c9a227;" "")
+          (:span :id "rooms-caret" "▸"))
+        (:div :id "rooms-body" :style "margin-top:6px;display:none;"
+          (:div :id "rooms-tabs" :style "display:flex;gap:4px;flex-wrap:wrap;align-items:center;" "")
+          (:div :id "rooms-log" :style "margin-top:6px;max-height:220px;overflow-y:auto;line-height:1.4;" "")
+          (:div :id "rooms-why" :style "margin-top:4px;font-size:10px;color:#c9a227;" "")
+          (:div :style "margin-top:6px;display:flex;gap:4px;align-items:center;"
+            (:input :type "text" :id "rooms-say" :placeholder "say to the room" :maxlength "400"
+              :style "flex:1;background:rgba(16,16,16,0.6);color:#e8c839;border:1px solid #7a6a1f;border-radius:6px;padding:2px 4px;font-size:11px;font-family:inherit;")
+            (:button :type "button" :class "rbtn" :id "rooms-send" "say"))
+          (:div :style "margin-top:4px;font-size:10px;color:#c9a227;display:flex;justify-content:space-between;"
+            (:a :href "#" :id "rooms-new" :style "color:#c9a227;" "+ open a room")
+            (:a :href "#" :id "rooms-captain" :style "color:#c9a227;" "the captain's key"))))
       (:div :id "plot-card" :style "position:fixed;bottom:40px;left:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:8px 10px;font-family:sans-serif;color:#e8c839;"
         (:div :style "font-size:12px;letter-spacing:0.06em;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;"
               :onclick "togglePlot()"
@@ -6926,6 +7232,8 @@ function toggleHelm () {
         (str *idle-clock-js*)
         (str *hails-js*)
         (str "if (window.GW_HAILS) GW_HAILS();")
+        (str *rooms-js*)
+        (str "if (window.GW_ROOMS) GW_ROOMS();")
         ;; the definitions just landed; give the section's state
         ;; script its first real run (the xr wiring arms itself on
         ;; window load, and seeds the ground sensors then)

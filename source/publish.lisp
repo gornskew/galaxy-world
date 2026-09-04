@@ -43,6 +43,37 @@
       (net.aserve:with-http-body (req ent)
         (write-string (or doc "{}") net.html.generator:*html-stream*)))))
 
+;; THE ROOMS: the bridge's chat, polled and posted by ship= like the
+;; hails; room= names the room (bridge by default), say= posts a
+;; line (refused with a notice when the two-aboard rule shuts the
+;; room), key= marks the captain when it is the captain's secret.
+;; The poll is a heartbeat on the roster too.  The logs live as
+;; s-expressions on the durable shelf; JSON is made here for the wire.
+(defun chat-responder (req ent)
+  (let* ((iid (net.aserve:request-query-value "ship" req))
+         (room (net.aserve:request-query-value "room" req))
+         (say (net.aserve:request-query-value "say" req))
+         (key (net.aserve:request-query-value "key" req))
+         (entry (and iid (gethash (gwl::make-keyword-sensitive iid)
+                                  gwl::*instance-hash-table*)))
+         (self (first entry))
+         (doc (and self (typep self 'galaxy-world::cockpit-view)
+                   (progn
+                     (gdl:the-object self (set-slot! :seen-at (galaxy-world::unix-now)))
+                     (when (and key (plusp (length key)))
+                       (let ((captain? (galaxy-world::captain-key? key)))
+                         (unless (eq captain? (gdl:the-object self captain?))
+                           (gdl:the-object self (set-slot! :captain? captain?)))))
+                     (let ((notice (and say (plusp (length say))
+                                        (gdl:the-object self (chat-post! room say)))))
+                       (gdl:the-object self (chat-json room notice)))))))
+    (net.aserve:with-http-response
+        (req ent :content-type "application/json"
+             :response (if doc net.aserve:*response-ok*
+                           net.aserve:*response-not-found*))
+      (net.aserve:with-http-body (req ent)
+        (write-string (or doc "{}") net.html.generator:*html-stream*)))))
+
 (defun xr-scene-responder (req ent)
   ;; the session rides in as "ship", not "iid": an iid-named query
   ;; would wake the transporter's affinity module, which blackholes
@@ -114,6 +145,12 @@
                         :host *galaxy-world-hosts*
                         :server server
                         :function 'hails-responder))
+  ;; the rooms: the bridge's chat, polled and posted by every cockpit
+  (dolist (path (list "/chat.json" "/galaxy-world/chat.json"))
+    (net.aserve:publish :path path
+                        :host *galaxy-world-hosts*
+                        :server server
+                        :function 'chat-responder))
   ;; the real faces: NASA imagery (Blue Marble; LROC color mosaic)
   ;; as static routes -- public domain, courtesy NASA.  Path
   ;; resolution rides the system definition, so flat and bucketed
