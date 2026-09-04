@@ -817,7 +817,7 @@ scene is static between moves, so this bakes as a shader constant."
 ;; and spin tracks into those fields, so the terminator stands where
 ;; the sun is while the world turns and she rounds him.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; uniform float nightGain; varying vec3 vN; varying vec2 vUv; void main(){ float H = -skyRot.w * sign(skyRot.z); float p = -spinRot.w * sign(spinRot.y); float d = H - p + sunAz - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5 * nightGain; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; uniform float nightGain; varying vec3 vN; varying vec2 vUv; void main(){ float p = -spinRot.w * sign(spinRot.y); float d = sunAz - p - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5 * nightGain; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
 (defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
                                 &optional (elevation 0.0) (sun-az (/ pi 2)) (night-gain 1.0))
@@ -967,7 +967,7 @@ into a frame where the ridden world is not at the origin."
 
 (defun body-x3d (prefix texture-id bearing-rad distance-km body-radius-km
                  &key phase diffuse emissive scale-override tilt adornment
-                      night-url sun)
+                      night-url sun heading)
   "One body: a unit sphere under a DEF'd frame transform carrying
 translation and scale, so a voyage can fly both.  PHASE is the pole
 angle (radians) the body stands at: the scene is time-frozen
@@ -1003,9 +1003,22 @@ near ring arc lost the draw and hid behind the globe."
                         texture-id texture-id
                         (if day-url (format nil "&quot;~a&quot;" day-url) "")
                         prefix diffuse emissive))))
+    ;; THE YAW (2026-09-04, Dave's Quest report: the moon showed him
+    ;; the same face all the way around his watch): the universe
+    ;; turns around the ship, so a body's ORIENTATION in the cab's
+    ;; frame is inertial -- turned by -HEADING about the pole, the
+    ;; very rotation sky-heading gives the stars and the sun.  The
+    ;; frame carried the body's position in the cab's frame but its
+    ;; face stood unturned, so the face he saw followed the nose
+    ;; instead of the world; the shader hid it for the LIGHT (its H
+    ;; term put the sun where it belonged) and home's own three-turns-
+    ;; a-day spin hid it for the continents.  <prefix>-yaw wears the
+    ;; sky's rotation, static here and routed from the nose track on
+    ;; a tape (transit-anim-x3d); the shader's H term is retired.
     (string-append
-     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f ~,1f\" scale=\"~,2f ~,2f ~,2f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\" id=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform>"
+     (format nil "<Transform DEF=\"~a-frame\" id=\"~a-frame\" translation=\"~,1f ~,1f ~,1f\" scale=\"~,2f ~,2f ~,2f\"><Transform DEF=\"~a-yaw\" id=\"~a-yaw\" rotation=\"0 0 1 ~,5f\">~a<Transform rotation=\"1 0 0 1.5708\"><Transform DEF=\"~a-spin\" id=\"~a-spin\"~a><Shape>~a<Sphere radius=\"1\"></Sphere></Shape></Transform></Transform>~a~a</Transform></Transform>"
              prefix prefix tx ty +body-lift+ s s s
+             prefix prefix (- (or heading 0.0))
              (if tilt (format nil "<Transform rotation=\"0 1 0 ~,4f\">" tilt) "")
              prefix prefix
              ;; the pole turns about 0 -1 0 in this inner frame; the
@@ -1380,6 +1393,10 @@ phase at this grain.")
                   inose k (get-output-stream-string nose))
           (route clock "fraction_changed" inose "set_fraction")
           (route inose "value_changed" "sky-heading" "set_rotation")
+          ;; ...and every body's yaw turns with the sky (body-x3d):
+          ;; the worlds keep their inertial faces as the nose swings
+          (dolist (body bodies)
+            (route inose "value_changed" (format nil "~a-yaw" (getf body :prefix)) "set_rotation"))
           ;; ...and the city-lights shader follows the sky's heading
           (dolist (p shaded)
             (route inose "value_changed" (format nil "~a-sh" p) "skyRot"))))
@@ -4175,6 +4192,7 @@ window.GW_WIRE = function () {
                                     (bearing-to px0 py0 h0 tx0 ty0)
                                     (dist-to px0 py0 tx0 ty0)
                                     (getf body :radius)
+                                    :heading (the sky-authored-heading-rad)
                                     :phase (getf body :spin-phase)
                                     :diffuse (getf body :diffuse)
                                     :emissive (getf body :emissive)
@@ -4235,6 +4253,7 @@ window.GW_WIRE = function () {
                (ground-x3d (the world))
                (body-x3d "planet" (world-figure (the world) :texture)
                          (the planet-bearing) (the radius) (the world-radius)
+                         :heading (the sky-authored-heading-rad)
                          :phase (the world-spin-rad)
                          ;; city lights: earth's night side, X_ITE only.
                          ;; the sun is baked into the shader in the
@@ -4257,6 +4276,7 @@ window.GW_WIRE = function () {
                   (cond ((eql (the world) :home)
                          (body-x3d "moon" "moon-tex"
                                    (the moon-bearing) (the moon-distance) +moon-radius+
+                                   :heading (the sky-authored-heading-rad)
                                    :phase (the (phase-of :moon (the game-seconds)))
                                    :diffuse "0.75 0.74 0.70" :emissive "0.04 0.04 0.03"))
                         ;; falling around the moon, home hangs in his sky:
@@ -4268,6 +4288,7 @@ window.GW_WIRE = function () {
                                                (- (the moon-x)) (- (the moon-y)))
                                    (dist-to (the pos-x) (the pos-y) (- (the moon-x)) (- (the moon-y)))
                                    +planet-radius+
+                                   :heading (the sky-authored-heading-rad)
                                    :phase (the (phase-of :home (the game-seconds)))
                                    :diffuse "0.10 0.18 0.85"
                                    :emissive "0.02 0.03 0.05"))
@@ -4344,7 +4365,14 @@ window.GW_WIRE = function () {
     var gl = document.getElementById('ground-lift');
     if (gl) gl.setAttribute('translation', '~a');
     var sky = document.getElementById('sky-heading');
-    if (sky) sky.setAttribute('rotation', '0 0 1 ~,5f');
+    if (sky) {
+      sky.setAttribute('rotation', '0 0 1 ~,5f');
+      // every body's yaw wears the sky's rotation (body-x3d)
+      fin.forEach(function (f) {
+        var yw = document.getElementById(f[0].replace('-frame', '-yaw'));
+        if (yw) yw.setAttribute('rotation', sky.getAttribute('rotation'));
+      });
+    }
   } else {
     try { sessionStorage.setItem(key, '1'); } catch (e) {}
     window.addEventListener('load', function () {
@@ -6906,6 +6934,19 @@ function toggleHelm () {
       if (nav) nav.getField('type').setValue(new X3D.MFString(type));
     } catch (e) {}
   }
+  // THE FRAME CAP (Dave's Quest report: a jumpy cab when the head
+  // turns).  X_ITE skips any frame that arrives within
+  // 1/MaximumFrameRate of the last one it drew, and the default is
+  // 80: a 90 Hz headset hands it a frame every 11 ms, every other
+  // one is skipped, and the cab is drawn at 45.  Uncapped while a
+  // session stands -- the headset's own animation frame paces it --
+  // and back to the default when it ends.
+  function frameCap (fps) {
+    try {
+      var canvas = document.querySelector('x3d-canvas');
+      if (canvas && canvas.browser) canvas.browser.setBrowserOption('MaximumFrameRate', fps);
+    } catch (e) {}
+  }
   if (navigator.xr && !navigator.xr.gwWrapped) {
     var origRequest = navigator.xr.requestSession.bind(navigator.xr);
     navigator.xr.gwWrapped = true;
@@ -6918,7 +6959,8 @@ function toggleHelm () {
         try { armHands(session); } catch (e) {}
         window.GW_XR_ACTIVE = true;
         navType('NONE');
-        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); });
+        frameCap(1000);
+        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); frameCap(80); });
         return session;
       });
     };
@@ -7140,7 +7182,7 @@ function toggleHelm () {
     try { browser.setBrowserOption('Notifications', false); } catch (e) {}
     // a headset session stands: this fresh document must not hand
     // the thumbstick an examine viewer (see the shim above)
-    if (window.GW_XR_ACTIVE) navType('NONE');
+    if (window.GW_XR_ACTIVE) { navType('NONE'); frameCap(1000); }
     // the early bind can be overridden by X_ITE's own initial
     // bind; assert the seat once more now that all stands
     bindSeat(browser);
