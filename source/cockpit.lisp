@@ -807,17 +807,26 @@ scene is static between moves, so this bakes as a shader constant."
   "precision highp float; uniform mat4 x3d_ProjectionMatrix; uniform mat4 x3d_ModelViewMatrix; attribute vec4 x3d_Vertex; attribute vec3 x3d_Normal; attribute vec4 x3d_TexCoord0; varying vec3 vN; varying vec2 vUv; void main(){ vN = x3d_Normal; vUv = vec2(x3d_TexCoord0.s, 1.0 - x3d_TexCoord0.t); gl_Position = x3d_ProjectionMatrix * x3d_ModelViewMatrix * x3d_Vertex; }")
 
 ;; LIVE since 2026-09-03: the sun direction is no longer baked -- the
-;; shader carries the sky's heading (skyRot, what sky-heading wears)
-;; and the world's spin (spinRot, what <prefix>-spin wears) as
-;; routable fields and derives sunLocal itself, exactly as
-;; earth-sun-local did in Lisp: H = -angle*sign(z) of the sky
-;; rotation, p = -angle*sign(y) of the spin (either sign convention a
-;; renderer normalizes to gives the same H and p), then
-;; (cos el sin(H-p), sin el, -cos el cos(H-p)).  A tape routes its nose
-;; and spin tracks into those fields, so the terminator stands where
-;; the sun is while the world turns and she rounds him.
+;; shader carries the world's spin (spinRot, what <prefix>-spin
+;; wears) as a routable field and derives sunLocal itself: p =
+;; -angle*sign(y) of the spin (either sign convention a renderer
+;; normalizes to gives the same p), d = pi/2 - sunAz - p, then
+;; (cos el sin d, sin el, -cos el cos d).  A tape routes the spin
+;; track into that field, so the terminator stands where the sun is
+;; while the world turns.  Derivation (2026-09-04): the sphere's
+;; model chain is yaw(-H about z) . tilt(+pi/2 about x) . spin(p
+;; about -y); the sun in the cab frame is the light's authored
+;; direction turned by the same yaw, so H cancels (the yaw is why
+;; the skyRot field no longer enters -- it stays routed, unused),
+;; tilt^-1 takes (cos a, sin a, 0) to (cos a, 0, -sin a) and spin^-1
+;; to (cos(a+p), 0, -sin(a+p)), which the shader's (sin d, 0, -cos d)
+;; matches at d = pi/2 - a - p.  The 2026-09-03 form carried +sunAz,
+;; right only for the old fixed sun at +y (a = pi/2): with the real
+;; azimuth the terminator stood MIRRORED about +y on every shader-lit
+;; world while the plain-lit ones followed the DirectionalLight --
+;; Dave's Quest report of home and the moon lit from different sides.
 (defparameter *earth-lights-fragment-glsl*
-  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; uniform float nightGain; varying vec3 vN; varying vec2 vUv; void main(){ float p = -spinRot.w * sign(spinRot.y); float d = sunAz - p - 1.5707963; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5 * nightGain; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
+  "precision highp float; uniform sampler2D dayTex; uniform sampler2D nightTex; uniform vec4 skyRot; uniform vec4 spinRot; uniform float sunEl; uniform float sunAz; uniform float flood; uniform float nightGain; varying vec3 vN; varying vec2 vUv; void main(){ float p = -spinRot.w * sign(spinRot.y); float d = 1.5707963 - sunAz - p; vec3 sunLocal = vec3(cos(sunEl) * sin(d), sin(sunEl), -cos(sunEl) * cos(d)); float l = dot(normalize(vN), normalize(sunLocal)); float t = max(smoothstep(-0.12, 0.12, l), flood); vec3 dayC = texture2D(dayTex, vUv).rgb * (0.06 + 0.94 * max(max(l, 0.0), flood)); vec3 nightC = texture2D(nightTex, vUv).rgb * 1.5 * nightGain; gl_FragColor = vec4(mix(nightC, dayC, t), 1.0); }")
 
 (defun earth-lights-appearance (prefix day-url night-url heading-rad phase-rad
                                 &optional (elevation 0.0) (sun-az (/ pi 2)) (night-gain 1.0))
@@ -1473,10 +1482,18 @@ world-frame angle the sun lies at (the ephemeris's, for a date)."
   (let* ((c (cos elevation)) (z (- (sin elevation)))
          (sx (* c (cos heading)))
          (sy (* c (sin heading))))
-    ;; direction is the way the light TRAVELS: from the sun in
-    (format nil "<DirectionalLight DEF=\"sun-light\" id=\"sun-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"1\" ambientIntensity=\"0.06\" color=\"1 0.98 0.94\"></DirectionalLight><DirectionalLight DEF=\"flood-light\" id=\"flood-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"0\" ambientIntensity=\"0\" color=\"0.85 0.9 1\"></DirectionalLight>"
+    ;; direction is the way the light TRAVELS: from the sun in.
+    ;; THE SUN HIMSELF (Dave, 2026-09-04, from the headset: turn the
+    ;; head and see him): an emissive disc standing 4000 units out
+    ;; the way the light comes from, in this same frame, so he and
+    ;; his light can never disagree -- and every lit face in the sky
+    ;; can be checked against him by eye.  True angular size (a
+    ;; half degree: radius 19 at 4000) with a soft halo around it;
+    ;; diffuse black, so no light touches him and he never dims.
+    (format nil "<DirectionalLight DEF=\"sun-light\" id=\"sun-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"1\" ambientIntensity=\"0.06\" color=\"1 0.98 0.94\"></DirectionalLight><DirectionalLight DEF=\"flood-light\" id=\"flood-light\" global=\"true\" direction=\"~,4f ~,4f ~,4f\" intensity=\"0\" ambientIntensity=\"0\" color=\"0.85 0.9 1\"></DirectionalLight><Transform DEF=\"sun-disc\" id=\"sun-disc\" translation=\"~,1f ~,1f ~,1f\"><Shape><Appearance><Material diffuseColor=\"0 0 0\" emissiveColor=\"1 0.98 0.9\"></Material></Appearance><Sphere radius=\"19\"></Sphere></Shape><Shape><Appearance><Material diffuseColor=\"0 0 0\" emissiveColor=\"1 0.85 0.55\" transparency=\"0.82\"></Material></Appearance><Sphere radius=\"48\"></Sphere></Shape></Transform>"
             (- sx) (- sy) z
-            sx sy z)))
+            sx sy z
+            (* 4000 sx) (* 4000 sy) (* 4000 (- z)))))
 
 (defun cab-light-x3d ()
   "The cab's own lamp: a PointLight over the driver's shoulder whose
@@ -6947,6 +6964,24 @@ function toggleHelm () {
       if (canvas && canvas.browser) canvas.browser.setBrowserOption('MaximumFrameRate', fps);
     } catch (e) {}
   }
+  // THE LEAN PROFILE (the second jitter knob, 2026-09-04: the cap
+  // helped, some judder stayed).  X_ITE draws each eye into its own
+  // multisampled framebuffer (Multisampling 4) and resolves it into
+  // an XR layer it created with antialias false -- double work on a
+  // mobile GPU -- and start() asks for HIGH tessellation and texture
+  // quality, which the Quest pays for twice per frame.  While a
+  // session stands: no multisampling, MEDIUM quality; the desktop
+  // settings come back when it ends.  wire() re-asserts it on every
+  // fresh document, since start() sets HIGH ahead of each one.
+  function xrProfile (on) {
+    try {
+      var canvas = document.querySelector('x3d-canvas');
+      var b = canvas && canvas.browser; if (!b) return;
+      b.setBrowserOption('Multisampling', on ? 0 : 4);
+      b.setBrowserOption('PrimitiveQuality', on ? 'MEDIUM' : 'HIGH');
+      b.setBrowserOption('TextureQuality', on ? 'MEDIUM' : 'HIGH');
+    } catch (e) {}
+  }
   if (navigator.xr && !navigator.xr.gwWrapped) {
     var origRequest = navigator.xr.requestSession.bind(navigator.xr);
     navigator.xr.gwWrapped = true;
@@ -6960,7 +6995,8 @@ function toggleHelm () {
         window.GW_XR_ACTIVE = true;
         navType('NONE');
         frameCap(1000);
-        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); frameCap(80); });
+        xrProfile(true);
+        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); frameCap(80); xrProfile(false); });
         return session;
       });
     };
@@ -7182,7 +7218,7 @@ function toggleHelm () {
     try { browser.setBrowserOption('Notifications', false); } catch (e) {}
     // a headset session stands: this fresh document must not hand
     // the thumbstick an examine viewer (see the shim above)
-    if (window.GW_XR_ACTIVE) { navType('NONE'); frameCap(1000); }
+    if (window.GW_XR_ACTIVE) { navType('NONE'); frameCap(1000); xrProfile(true); }
     // the early bind can be overridden by X_ITE's own initial
     // bind; assert the seat once more now that all stands
     bindSeat(browser);
