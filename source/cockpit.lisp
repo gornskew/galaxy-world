@@ -1407,6 +1407,15 @@ phase at this grain.")
                (t (write-char c out))))
     (write-char #\" out)))
 
+;; the tail of a pilot's token, the only part of it that ever rides
+;; the wire (audit, 2026-09-04: the roster and the hails carried the
+;; whole token, which is the browser-minted identity the pilot book
+;; is signed with -- log-book.lisp says it never leaves the book;
+;; the page only ever showed the last five characters anyway)
+(defun pilot-tail (id)
+  (let ((s (string id)))
+    (subseq s (max 0 (- (length s) 5)))))
+
 ;; THE SUN.  Until 2026-09-02 the scene carried no light at all, so
 ;; the renderer's default HEADLIGHT lit every face from the camera
 ;; and every world glowed on its own emissive term: no day side, no
@@ -2642,8 +2651,14 @@ window.GW_HAILS = function () {
   var btn = document.getElementById('gw-hail-btn');
   if (btn && !btn.getAttribute('data-gw-wired')) {
     btn.setAttribute('data-gw-wired', '1');
-    btn.addEventListener('click', function () { setTimeout(function () { GW_HAILS.gen++; GW_HAILS(); }, 900); });
     var inp = document.querySelector('#hails-card input[type=text]');
+    // the line clears on the page (audit, 2026-09-04): the control
+    // stands outside every section, so the server's own clearing
+    // never reached the DOM and a second press re-sent the same
+    // hail.  The inline gdlAjax call has read the value by the time
+    // this listener runs (it sends synchronously), so clearing now
+    // is safe.
+    btn.addEventListener('click', function () { if (inp) setTimeout(function () { inp.value = ''; }, 0); setTimeout(function () { GW_HAILS.gen++; GW_HAILS(); }, 900); });
     if (inp) inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); btn.click(); } });
   }
 };
@@ -2871,8 +2886,21 @@ window.GW_WIRE = function () {
   var lastAng = wheelSel ? poseOf(wheelSel) : 0;
   if (wheelSel) setWheelPose(lastAng);
   if (gearSel) setShifterPose(gearPose[gearSel.value] || 0);
+  // remove-before-add (audit, 2026-09-04): under x3dom the scene's
+  // sensors outlive every GW_WIRE run -- the inclusion site, the
+  // state script, the check-in's section swap -- and each run
+  // stacked another listener on the same element: the starter
+  // posted the move two or three times, the shifter skipped through
+  // the gate.  A fresh run must also RELIEVE the old listener, whose
+  // closure holds the selects the swap already detached.
+  function listen (el, fn) {
+    if (!el) return;
+    if (el.gwHandler) el.removeEventListener('outputchange', el.gwHandler);
+    el.gwHandler = fn;
+    el.addEventListener('outputchange', fn);
+  }
   var sensor = document.getElementById('wheel-sensor');
-  if (sensor) sensor.addEventListener('outputchange', function (e) {
+  if (sensor) listen(sensor, function (e) {
     var d = e.detail; if (!d) return;
     if (d.fieldName === 'rotation_changed') { lastAng = rotAngle(d.value); }
     else if (d.fieldName === 'isActive' &&
@@ -2895,7 +2923,7 @@ window.GW_WIRE = function () {
   function touch (sensorId, fn) {
     var s = document.getElementById(sensorId);
     if (!s) return;
-    s.addEventListener('outputchange', function (e) {
+    listen(s, function (e) {
       var d = e.detail; if (!d) return;
       if (d.fieldName === 'isActive' &&
           (d.value === false || d.value === 'false')) fn();
@@ -3595,7 +3623,7 @@ window.GW_WIRE = function () {
                                       (json-string (string (the-object b key)))
                                       (json-string (the-object b who))
                                       (if (and (the-object b session) (the-object (the-object b session) captain?)) "true" "false")
-                                      (if (the-object b pilot-id) (json-string (string (the-object b pilot-id))) "null")
+                                      (if (the-object b pilot-id) (json-string (pilot-tail (the-object b pilot-id))) "null")
                                       (json-string (the-object b world-name))
                                       (json-string (the-object b where))
                                       (if (the-object b pilot?) "true" "false")
@@ -3615,7 +3643,7 @@ window.GW_WIRE = function () {
                                     (round (- now at))
                                     (if (eq from :bridge) "true" "false")
                                     (json-string (string from))
-                                    (if pilot (json-string (string pilot)) "null")
+                                    (if pilot (json-string (pilot-tail pilot)) "null")
                                     (json-string world)
                                     (json-string text))))
                         (subseq said 0 (min 30 (length said))))))))))
@@ -6056,7 +6084,11 @@ function toggleHelm () {
    ;; before the jump is folded first, at the rate in force.
    (skip-to-window!
     ()
-    (let ((b (the booked-road)))
+    ;; the pilot rides along (audit, 2026-09-04): every other entry
+    ;; point binds *current-pilot*, and without it the road the skip
+    ;; flies tallied to the totals but never to the pilot's page
+    (let ((b (the booked-road))
+          (*current-pilot* (the pilot-id)))
       (when b
         (the (settle-clock!))
         (when (< (the game-seconds) (second b))

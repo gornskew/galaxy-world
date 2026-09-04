@@ -60,10 +60,14 @@
          (doc (and self (typep self 'galaxy-world::cockpit-view)
                    (progn
                      (gdl:the-object self (set-slot! :seen-at (galaxy-world::unix-now)))
-                     (when (and key (plusp (length key)))
-                       (let ((captain? (galaxy-world::captain-key? key)))
-                         (unless (eq captain? (gdl:the-object self captain?))
-                           (gdl:the-object self (set-slot! :captain? captain?)))))
+                     ;; every poll carries key= (empty when the page
+                     ;; holds none), so an empty key REVOKES: before
+                     ;; 2026-09-04 only a non-empty key was judged,
+                     ;; and a captain who cleared his key stayed one
+                     (let ((captain? (and key (plusp (length key))
+                                          (galaxy-world::captain-key? key))))
+                       (unless (eq captain? (gdl:the-object self captain?))
+                         (gdl:the-object self (set-slot! :captain? captain?))))
                      (let ((notice (and say (plusp (length say))
                                         (gdl:the-object self (chat-post! room say)))))
                        (gdl:the-object self (chat-json room notice)))))))
