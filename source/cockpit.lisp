@@ -4592,62 +4592,96 @@ GW_CHECK_IN();"
                           :form-controls (list (the pilot-control))
                           :function-key :check-in!)))))))
 
+   ;; THE EYES: one row per seat -- key, id, description, the eye
+   ;; point, the gaze, the field of view -- in CAB coordinates
+   ;; (z up).  Both renderers cut their Viewpoints from this one
+   ;; table: the x3dom page as authored (z up, with the roll that
+   ;; keeps the floor down), the XR document turned y-up
+   ;; (xr-viewpoints-x3d).
+   (eye-specs
+    (list
+     ;; the landing view: same seat, head turned to port,
+     ;; the world in the side glass with the A-pillar and
+     ;; cowl framing it
+     (list :port-lookout "port-lookout" "Port lookout"
+           (make-point -0.02 0 0.81)
+           (unitize-vector (make-vector 0.26 0.97 0))
+           "1.15")
+     (list :drivers-seat "drivers-seat" "Driver's seat"
+           ;; the eye at 0.81 (was 0.78, then
+           ;; a first try at 0.84 that never
+           ;; took: point-string rounded to 1
+           ;; decimal, and 0.78/0.84 both read
+           ;; "0.8" -- a no-op until the
+           ;; format string itself was fixed
+           ;; to 4 places).  Once real, 0.84
+           ;; dropped the dash enough to also
+           ;; push the rear-view mirror low
+           ;; enough to overlap THE HELM
+           ;; card's title; 0.81 splits the
+           ;; difference -- the dash still
+           ;; drops, the mirror stays clear.
+           ;; The roofline rose with it
+           ;; (roof-z) to keep the crown.
+           (make-point -0.02 0 0.81)
+           ;; lifted from -0.24, then -0.15:
+           ;; the wheel is smaller and lower,
+           ;; the roofline higher and the
+           ;; pedals tucked, so the glass
+           ;; gets the vertical.  The frame's
+           ;; foot still takes in the pedals.
+           (make-vector 0.99 0 -0.13)
+           "1.25")
+     (list :jump-seat "jump-seat" "Jump seat"
+           (make-point 0.05 -0.72 0.75)
+           (unitize-vector (make-vector 0.37 0.72 -0.04))
+           "1.2")
+     (list :back-seat "back-seat" "Back seat"
+           (make-point -1.05 -0.36 0.78)
+           (unitize-vector (make-vector 1.0 0.18 -0.14))
+           "1.15")
+     (list :walkaround "walkaround" "Walkaround"
+           (make-point -3.3 2.3 2.1)
+           (unitize-vector (make-vector 3.0 -2.66 -1.55))
+           "1.0")))
+
+   ;; the bound eye first: x3dom binds the first Viewpoint in
+   ;; document order
+   (ordered-eye-specs
+    (let ((chosen (or (find (the bound-eye) (the eye-specs) :key #'first)
+                      (first (the eye-specs)))))
+      (cons chosen (remove chosen (the eye-specs)))))
+
    (viewpoints-x3d
-    (let* ((up (make-vector 0 0 1))
-           (eyes
-            (list
-             ;; the landing view: same seat, head turned to port,
-             ;; the world in the side glass with the A-pillar and
-             ;; cowl framing it
-             (cons :port-lookout
-                   (viewpoint-x3d "port-lookout" "Port lookout"
-                                  (make-point -0.02 0 0.81)
-                                  (unitize-vector (make-vector 0.26 0.97 0))
-                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
-             (cons :drivers-seat
-                   (viewpoint-x3d "drivers-seat" "Driver's seat"
-                                  ;; the eye at 0.81 (was 0.78, then
-                                  ;; a first try at 0.84 that never
-                                  ;; took: point-string rounded to 1
-                                  ;; decimal, and 0.78/0.84 both read
-                                  ;; "0.8" -- a no-op until the
-                                  ;; format string itself was fixed
-                                  ;; to 4 places).  Once real, 0.84
-                                  ;; dropped the dash enough to also
-                                  ;; push the rear-view mirror low
-                                  ;; enough to overlap THE HELM
-                                  ;; card's title; 0.81 splits the
-                                  ;; difference -- the dash still
-                                  ;; drops, the mirror stays clear.
-                                  ;; The roofline rose with it
-                                  ;; (roof-z) to keep the crown.
-                                  (make-point -0.02 0 0.81)
-                                  ;; lifted from -0.24, then -0.15:
-                                  ;; the wheel is smaller and lower,
-                                  ;; the roofline higher and the
-                                  ;; pedals tucked, so the glass
-                                  ;; gets the vertical.  The frame's
-                                  ;; foot still takes in the pedals.
-                                  (make-vector 0.99 0 -0.13)
-                                  "1.25" :z-near "0.05" :z-far "8000" :up up))
-             (cons :jump-seat
-                   (viewpoint-x3d "jump-seat" "Jump seat"
-                                  (make-point 0.05 -0.72 0.75)
-                                  (unitize-vector (make-vector 0.37 0.72 -0.04))
-                                  "1.2" :z-near "0.05" :z-far "8000" :up up))
-             (cons :back-seat
-                   (viewpoint-x3d "back-seat" "Back seat"
-                                  (make-point -1.05 -0.36 0.78)
-                                  (unitize-vector (make-vector 1.0 0.18 -0.14))
-                                  "1.15" :z-near "0.05" :z-far "8000" :up up))
-             (cons :walkaround
-                   (viewpoint-x3d "walkaround" "Walkaround"
-                                  (make-point -3.3 2.3 2.1)
-                                  (unitize-vector (make-vector 3.0 -2.66 -1.55))
-                                  "1.0" :z-near "0.05" :z-far "8000" :up up))))
-           (chosen (or (assoc (the bound-eye) eyes) (first eyes))))
+    (let ((up (make-vector 0 0 1)))
       (apply #'string-append
-             (mapcar #'cdr (cons chosen (remove chosen eyes))))))
+             (mapcar (lambda (eye)
+                       (destructuring-bind (key id description position direction fov) eye
+                         (declare (ignore key))
+                         (viewpoint-x3d id description position direction fov
+                                        :z-near "0.05" :z-far "8000" :up up)))
+                     (the ordered-eye-specs)))))
+
+   ;; THE XR DOCUMENT'S EYES, authored Y-UP (the VR pass,
+   ;; 2026-09-04).  WebXR is y-up by decree, and X_ITE STRAIGHTENS
+   ;; the horizon to +Y at every viewpoint bind while a headset
+   ;; pose stands (X3DViewer.getStraightenHorizon returns true on
+   ;; any pose, the StraightenHorizon option notwithstanding) -- so
+   ;; a z-up eye, bound after a road re-cut the scene mid-session,
+   ;; lost its roll and the cab twisted a quarter turn.  Here the
+   ;; eyes are turned into y-up (z-up->y-up) and stand OUTSIDE the
+   ;; document's y-up wrapper; +Y is already up for them, and the
+   ;; straighten is a no-op.
+   (xr-viewpoints-x3d
+    (let ((up (make-vector 0 1 0)))
+      (apply #'string-append
+             (mapcar (lambda (eye)
+                       (destructuring-bind (key id description position direction fov) eye
+                         (declare (ignore key))
+                         (viewpoint-x3d id description
+                                        (z-up->y-up position) (z-up->y-up direction)
+                                        fov :up up)))
+                     (the ordered-eye-specs)))))
 
    (body
     (with-lhtml-string ()
@@ -6795,6 +6829,68 @@ function toggleHelm () {
     return ':AMIDSHIPS';
   }
   var gearCycle = [':FORWARD', ':NEUTRAL', ':REVERSE'];
+  // THE HEADSET (the VR pass, 2026-09-04).  X_ITE 16.2 asks WebXR
+  // for a bare session -- navigator.xr.requestSession(mode), no
+  // optional features -- so a Quest never offers its HANDS (the
+  // hand-tracking feature must be asked for), and its press test
+  // reads gamepad.buttons[0] alone, which a hand need not carry.
+  // The request is wrapped here, before the headset button can be
+  // pressed: ask for hand-tracking, and give any hand that arrives
+  // without a gamepad a stand-in one driven by the session's own
+  // selectstart/selectend (the pinch), so X_ITE's ray, hit and
+  // press logic run unchanged.  While the session stands,
+  // navigation goes NONE: the EXAMINE viewer would tumble the cab
+  // on a thumbstick, count any stick drift as a live drag (the
+  // sensors go deaf while the viewer is active -- the wheel that
+  // only sometimes answered the controller), and straighten every
+  // bound eye's horizon to +Y.  A road re-cuts the document
+  // mid-session, so wire() re-asserts NONE on the new one.
+  window.GW_XR_ACTIVE = false;
+  function armHands (session) {
+    var fake = new Map();
+    function fakeFor (src) {
+      if (src.gamepad) return null;
+      var g = { buttons: [{ pressed: false, touched: false, value: 0 }], axes: [], hapticActuators: [] };
+      try { Object.defineProperty(src, 'gamepad', { value: g, configurable: true }); } catch (e) { return null; }
+      return g;
+    }
+    session.addEventListener('inputsourceschange', function (ev) {
+      Array.prototype.forEach.call(ev.added || [], function (src) { var g = fakeFor(src); if (g) fake.set(src, g); });
+      Array.prototype.forEach.call(ev.removed || [], function (src) { fake.delete(src); });
+    });
+    function press (on) {
+      return function (ev) {
+        var g = fake.get(ev.inputSource);
+        if (g) { g.buttons[0].pressed = on; g.buttons[0].touched = on; g.buttons[0].value = on ? 1 : 0; }
+      };
+    }
+    session.addEventListener('selectstart', press(true));
+    session.addEventListener('selectend', press(false));
+  }
+  function navType (type) {
+    try {
+      var canvas = document.querySelector('x3d-canvas');
+      var nav = canvas && canvas.browser && canvas.browser.currentScene.getNamedNode('gw-nav');
+      if (nav) nav.getField('type').setValue(new X3D.MFString(type));
+    } catch (e) {}
+  }
+  if (navigator.xr && !navigator.xr.gwWrapped) {
+    var origRequest = navigator.xr.requestSession.bind(navigator.xr);
+    navigator.xr.gwWrapped = true;
+    navigator.xr.requestSession = function (mode, opts) {
+      var o = Object.assign({}, opts || {});
+      var feats = (o.optionalFeatures || []).slice();
+      if (feats.indexOf('hand-tracking') < 0) feats.push('hand-tracking');
+      o.optionalFeatures = feats;
+      return origRequest(mode, o).then(function (session) {
+        try { armHands(session); } catch (e) {}
+        window.GW_XR_ACTIVE = true;
+        navType('NONE');
+        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); });
+        return session;
+      });
+    };
+  }
   function wire (browser) {
     var scene = browser.currentScene;
     // the floodlight stands as remembered: a fresh scene document
@@ -7010,6 +7106,9 @@ function toggleHelm () {
     try { browser.setBrowserOption('StraightenHorizon', false); } catch (e) {}
     // no 'Loading 1 file' toast at every painted frame of the plot
     try { browser.setBrowserOption('Notifications', false); } catch (e) {}
+    // a headset session stands: this fresh document must not hand
+    // the thumbstick an examine viewer (see the shim above)
+    if (window.GW_XR_ACTIVE) navType('NONE');
     // the early bind can be overridden by X_ITE's own initial
     // bind; assert the seat once more now that all stands
     bindSeat(browser);
@@ -7099,6 +7198,13 @@ function toggleHelm () {
                                          (subseq markup (1+ close))))))
     markup))
 
+;; The cab's z-up coordinates into X3D's y-up: a quarter turn about
+;; +x (rotation 1 0 0 -pi/2), the same turn the XR document's
+;; wrapper Transform gives the world -- (x y z) -> (x z -y).  Points
+;; and directions alike.
+(defun z-up->y-up (v)
+  (make-vector (get-x v) (get-z v) (- (get-y v))))
+
 (define-object cockpit-xr-view (cockpit-view)
 
   :computed-slots
@@ -7134,12 +7240,22 @@ function toggleHelm () {
      ;; transitionType TELEPORT -- under X_ITE that mode reported
      ;; the bind and never moved the camera (benchmark datum #3).
      ;; headlight OFF: the sun lights the worlds (sun-light-x3d)
-     "<NavigationInfo headlight=\"false\" transitionTime=\"0\"></NavigationInfo>"
-     ;; NO y-up wrapper: X_ITE binds a Transform-wrapped Viewpoint
-     ;; without applying the parent transform (benchmark datum #2),
-     ;; so the world stays z-up here and the y-up question waits
-     ;; for authored-in-y-up viewpoints on the WebXR slice
-     (strip-attr (strip-attr (the viewpoints-x3d) "zNear") "zFar")
+     ;; DEF'd so the SAI can switch navigation off while a headset
+     ;; session stands (see the WebXR shim in *xr-sai-js*)
+     "<NavigationInfo DEF=\"gw-nav\" headlight=\"false\" transitionTime=\"0\"></NavigationInfo>"
+     ;; THE EYES, y-up, OUTSIDE the wrapper below (xr-viewpoints-x3d
+     ;; says why); zNear/zFar are x3dom-only fields
+     (strip-attr (strip-attr (the xr-viewpoints-x3d) "zNear") "zFar")
+     ;; THE Y-UP WRAPPER: the whole world -- sky, riders, cab -- is
+     ;; authored z-up and stands here turned a quarter about +x
+     ;; into X3D's (and WebXR's) y-up, the same turn z-up->y-up
+     ;; applies to the eyes.  (The wrapper was tried and dropped on
+     ;; 2026-08-31 with the eyes INSIDE it -- X_ITE bound them
+     ;; without the parent transform, benchmark datum #2; with the
+     ;; eyes outside, nothing depends on that.)  The tape seams
+     ;; splice only clocks and interpolators at the root (routes
+     ;; into named nodes), so nothing of theirs stands outside.
+     "<Transform DEF=\"gw-world\" rotation=\"1 0 0 -1.5707963\">"
      (format nil "<Transform DEF=\"sky-heading\" rotation=\"0 0 1 ~,5f\"><Transform DEF=\"day-turn\">~a<Transform DEF=\"sky-drift\">~a</Transform></Transform></Transform>"
              (- (the sky-authored-heading-rad))
              (sun-light-x3d :elevation (the sun-elevation) :heading (the sun-heading-rad))
@@ -7159,6 +7275,7 @@ function toggleHelm () {
      ;; rides this document too; the starboard eye feed stays out
      (the port-feed-x3d)
      "</Group>"
+     "</Transform>"
      "</Scene></X3D>"))
 
    (body
