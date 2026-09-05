@@ -15,6 +15,11 @@
 ;; ride surf's (x3d curve) lens instead.  Discovered when the Galaxy
 ;; World charts vanished on the free berths (first light must sail on
 ;; base articles: no guild engineer aboard a base basilisk).
+;;
+;; PROMOTED to gendl core 2026-09-05 (geom-base/lenses/source/x3d.lisp,
+;; the same lens verbatim), along with z-up->y-up and a look-at
+;; rotation helper the cockpit's XR document pioneered.  This copy
+;; stays until the fleet's gendl images carry it; then delete it.
 (define-lens (x3d bezier-curve)()
   :output-functions
   (;; Sampled chords of the cubic, same emission shape as
