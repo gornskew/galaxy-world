@@ -6993,14 +6993,47 @@ function toggleHelm () {
       return origRequest(mode, o).then(function (session) {
         try { armHands(session); } catch (e) {}
         window.GW_XR_ACTIVE = true;
+        gogglesLabel();
         navType('NONE');
         frameCap(1000);
         xrProfile(true);
-        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; navType('EXAMINE'); frameCap(80); xrProfile(false); });
+        session.addEventListener('end', function () { window.GW_XR_ACTIVE = false; gogglesLabel(); navType('EXAMINE'); frameCap(80); xrProfile(false); });
         return session;
       });
     };
   }
+  // THE GOGGLES (Dave, from the headset, 2026-09-04): X_ITE's own
+  // headset button sits at the canvas's bottom-right corner -- under
+  // the HELM card, folded or not.  The card moves aside (right 70px)
+  // and a big button of our own at the top right presses X_ITE's
+  // for the pilot: it lives in the canvas's open shadow root, and a
+  // synthetic mouseup fired inside our own click keeps the user
+  // activation WebXR demands.  Ours appears only once X_ITE's has
+  // (no headset button where XR is unsupported), and its label
+  // follows the session.
+  function xiteButton () {
+    try {
+      var cv = document.querySelector('x3d-canvas');
+      return cv && cv.shadowRoot && cv.shadowRoot.querySelector('.x_ite-private-xr-button');
+    } catch (e) { return null; }
+  }
+  function gogglesLabel () {
+    var b = document.getElementById('gw-goggles');
+    if (b) b.textContent = window.GW_XR_ACTIVE ? 'take off the goggles' : 'put on the goggles';
+  }
+  (function goggles () {
+    if (!xiteButton()) { setTimeout(goggles, 500); return; }
+    if (document.getElementById('gw-goggles')) return;
+    var b = document.createElement('button');
+    b.id = 'gw-goggles'; b.type = 'button'; b.title = 'the headset: an immersive session';
+    b.style.cssText = 'position:fixed;top:14px;right:14px;z-index:11;background:#1a1a1a;color:#e8c839;border:2px solid #e8c839;border-radius:999px;padding:10px 18px;font-size:15px;font-family:sans-serif;cursor:pointer;';
+    b.addEventListener('click', function () {
+      var xb = xiteButton();
+      if (xb) { try { xb.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true })); } catch (e) {} }
+    });
+    document.body.appendChild(b);
+    gogglesLabel();
+  })();
   function wire (browser) {
     var scene = browser.currentScene;
     // the floodlight stands as remembered: a fresh scene document
@@ -7407,7 +7440,7 @@ function toggleHelm () {
 #helm-body select option { background:#1a1a1a; color:#e8c839; }
 #helm-body .rbtn { background:#141414; color:#e8c839; border:1px solid #7a6a1f; border-radius:4px; padding:2px 7px; font-size:11px; cursor:pointer; font-family:inherit; }
 #helm-body .rbtn.lit { background:#e8c839; color:#141414; border-color:#e8c839; }"))
-      (:div :style "position:fixed;bottom:14px;right:14px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
+      (:div :style "position:fixed;bottom:14px;right:70px;z-index:10;background:rgba(16,16,16,0.45);border:1px solid #e8c839;border-radius:10px;padding:10px 16px;font-family:sans-serif;color:#e8c839;font-size:13px;min-width:250px;max-width:430px;"
         (str (the helm-section main-div)))
       ;; HAILS: who is aboard this backend and what every cockpit
       ;; said to all the others -- polled, never pushed, never
