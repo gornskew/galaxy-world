@@ -90,6 +90,47 @@ The repo is `galaxy-world`; the property is
 lives with the Lisp — the package, the system, the repo — and the
 domain flattens it, the way domains do.  Same world either way.
 
+## Engineering (galaxyworld.dev)
+
+The game's developer property: where a player makes their ship
+better at the game.  One shared page at the root of galaxyworld.dev
+(`source/engineering.lisp`), in the same register as the game and
+the works, pushed as far as it will go -- nothing on that deck says
+what a word means ashore; it points at the Signal Book instead.
+Training is the one door ashore (Genworks Learn at genworks.dev),
+marked temporary until this deck keeps drills of its own.  Its
+Genworks-register analog is genworks.dev; the correlation is left for
+the reader to find.
+
+Hosting: the page is host-scoped to `*engineering-hosts*` in
+`source/publish.lisp` (the game is scoped to `.space`; neither
+answers on the other's names).  The proxy chain is Cloudflare ->
+shelly -> balaram -> the First Officer's berth, with a plain
+host-match bucket at each hop (`cyclops-shelly.sexp`,
+`cyclops-balaram.sexp`): no root rewrite, no affinity, because there
+is no session phase.  Locally, `galaxyworld.dev.localhost` mirrors
+it (narad's bucket), or curl the berth with the Host header:
+
+```bash
+curl -s -H 'Host: galaxyworld.dev' http://bridge:9080/ | head
+```
+
+Going live (the zone side, done by hand once):
+
+1. Add `galaxyworld.dev` as a zone in the Cloudflare account that
+   carries galaxyworld.space; Universal SSL issues the edge
+   certificate on its own, and that is what satisfies the `.dev`
+   HSTS preload (the whole TLD is HTTPS-only in browsers).
+2. At Namecheap (registered 2026-08-22, paid to 2036), replace the
+   default nameservers with the two Cloudflare assigns.
+3. Proxied A records for `@` and `www`, same target as
+   galaxyworld.space (shelly).  SSL mode Flexible to match the
+   sibling zones; Always Use HTTPS on.
+4. Load the galaxy-world system on balaram's berth as usual; the
+   buckets above ride the next config reload on shelly and balaram.
+5. The `galaxyworld.dev` node in smoke-tests `checks.sexp` goes
+   green.
+
 ## License
 
 AGPL-3.0-or-later, © 2026 Gornskew Enterprises. See `LICENSE`.

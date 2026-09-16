@@ -10,8 +10,22 @@
 ;; galaxyworld.test / galaxyworld.localhost are the local dev mirror.
 (defparameter *galaxy-world-hosts*
   (list "galaxyworld.space" "www.galaxyworld.space"
-        "galaxyworld.dev" "www.galaxyworld.dev"
         "galaxyworld.test" "galaxyworld.localhost"))
+
+;; ENGINEERING (galaxyworld.dev): the game's developer property, one
+;; shared page at the root of its own names (engineering.lisp).  The
+;; game does not answer on these names and the deck does not answer
+;; on the game's -- ruled 2026-09-16, canon.org "Property roles".
+;; galaxyworld.dev.localhost is the local dev mirror.
+(defparameter *engineering-hosts*
+  (list "galaxyworld.dev" "www.galaxyworld.dev"
+        "galaxyworld.dev.localhost"))
+
+(defparameter *engineering-robots-txt*
+  (format nil "User-agent: *~%Allow: /~%~%Sitemap: https://galaxyworld.dev/sitemap.xml~%"))
+
+(defparameter *engineering-sitemap-xml*
+  (format nil "<?xml version=\"1.0\" encoding=\"UTF-8\"?>~%<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">~%  <url>~%    <loc>https://galaxyworld.dev/</loc>~%    <lastmod>2026-09-16</lastmod>~%    <changefreq>monthly</changefreq>~%  </url>~%</urlset>~%"))
 
 ;; Crawlers are welcome on the bridge; session-phase URLs are minted,
 ;; mortal, and meaningless to index.
@@ -196,5 +210,21 @@
                               :server server)
   (gwl:publish-string-content "/sitemap.xml" *sitemap-xml*
                               :host *galaxy-world-hosts*
+                              :content-type "application/xml"
+                              :server server)
+
+  ;; ENGINEERING: the deck at the root of galaxyworld.dev.  A shared
+  ;; toplevel instance, no sessions, no URI rewriting -- the proxy
+  ;; hands "/" through unchanged for these names (no root rewrite
+  ;; in the .dev buckets, unlike the game's).
+  (gwl:publish-shared "galaxy-world::engineering-deck"
+                      :path "/" :server server :host *engineering-hosts*
+                      :key :engineering-deck)
+  (gwl:publish-string-content "/robots.txt" *engineering-robots-txt*
+                              :host *engineering-hosts*
+                              :content-type "text/plain"
+                              :server server)
+  (gwl:publish-string-content "/sitemap.xml" *engineering-sitemap-xml*
+                              :host *engineering-hosts*
                               :content-type "application/xml"
                               :server server))
