@@ -151,8 +151,8 @@ lives, for the player who wants it."))
           (:h3 "Send a cyborg")
           ((:span :class "file") "subspace · MCP")
           (:p "Every room answers on subspace, so a cyborg — Claude,
-Cursor, Codex, any client that speaks MCP — can be sent aboard to do
-the engineering. Say what you want the ship to do. The REPL is the
+Codex, any client that speaks MCP — can be sent aboard to do the
+engineering. Say what you want the ship to do. The REPL is the
 API."))
          ((:div :class "card")
           (:h3 "Fitted rooms")
